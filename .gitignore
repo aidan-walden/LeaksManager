@@ -1,0 +1,50 @@
+svelte/node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+svelte/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+svelte/.env
+svelte/.env.*
+!svelte/.env.test
+!svelte/.env.example
+
+# Vite
+svelte/vite.config.js.timestamp-*
+svelte/vite.config.ts.timestamp-*
+
+# SQLite
+*.db
+
+# User uploads
+svelte/static/uploads
+
+# IDE
+.cursor
+.claude
+
+# Python
+microservice/venv
+microservice/__pycache__
+microservice/*.pyc
+microservice/*.pyo
+microservice/*.pyd
+microservice/*.pyw
+microservice/*.pyz
+microservice/*.pywz
+microservice/*.pyzw
+microservice/*.pywz
