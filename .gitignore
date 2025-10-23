@@ -36,6 +36,7 @@ svelte/static/uploads
 # IDE
 .cursor
 .claude
+.vscode
 
 # Python
 microservice/venv

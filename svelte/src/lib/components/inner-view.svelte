@@ -27,19 +27,16 @@
 	let unmappedArtistsList = $state<string[]>([]);
 	let filesWithArtworkCount = $state(0);
 
-	async function handleUpload(files: File[]) {
-		// Handle the uploaded files
-		console.log('Uploaded files:', files);
-	}
-
-	async function handleUploadToAlbum(files: File[], albumId: number) {
+	async function handleUpload(files: File[], albumId?: number) {
 		try {
 			// Step 1: Upload files and extract metadata
 			const formData = new FormData();
 			for (const file of files) {
 				formData.append('files', file);
 			}
-			formData.append('albumId', albumId.toString());
+			if (albumId) {
+				formData.append('albumId', albumId.toString());
+			}
 
 			const uploadResponse = await fetch('?/uploadAndExtractMetadata', {
 				method: 'POST',
@@ -55,11 +52,9 @@
 			}
 
 			const uploadResult = await uploadResponse.json();
-			console.log('Upload result:', uploadResult);
 
 			// Check if it's a SvelteKit ActionResult with type 'failure'
 			if (uploadResult.type === 'failure') {
-				console.error('Upload failed:', uploadResult.data?.error);
 				alert(`Upload failed: ${uploadResult.data?.error || 'Unknown error'}`);
 				return;
 			}
@@ -71,12 +66,11 @@
 				console.log('Parsing data string with devalue:', data.substring(0, 100));
 				data = devalueParse(data);
 			}
-			console.log('Parsed data:', data);
 
 			// Store the data for later use
 			pendingUploadData = {
 				filesData: data.filesData,
-				albumId
+				albumId: albumId
 			};
 
 			// Store unmapped artists list if any
@@ -103,7 +97,7 @@
 			// No dialogs needed, proceed directly
 			await createSongs({}, false);
 		} catch (error) {
-			console.error('Error uploading to album:', error);
+			console.error('Error uploading:', error);
 			alert('An error occurred while uploading files');
 		}
 	}
@@ -176,26 +170,14 @@
 		if (!pendingUploadData) return;
 
 		try {
-			console.log('[createSongs] Starting with pendingUploadData:', {
-				hasPendingData: !!pendingUploadData,
-				hasFilesData: !!pendingUploadData?.filesData,
-				filesDataType: typeof pendingUploadData?.filesData,
-				filesDataIsArray: Array.isArray(pendingUploadData?.filesData)
-			});
-
 			// Convert to FormData with JSON strings
 			const formData = new FormData();
 			formData.append('filesData', JSON.stringify(pendingUploadData.filesData));
 			formData.append('artistMapping', JSON.stringify(artistMapping));
-			formData.append('albumId', pendingUploadData.albumId.toString());
+			if (pendingUploadData.albumId) {
+				formData.append('albumId', pendingUploadData.albumId.toString());
+			}
 			formData.append('useEmbeddedArtwork', useEmbeddedArtwork.toString());
-
-			console.log('[createSongs] Sending data:', {
-				filesDataCount: pendingUploadData.filesData?.length,
-				artistMapping,
-				albumId: pendingUploadData.albumId,
-				useEmbeddedArtwork
-			});
 
 			const createResponse = await fetch('?/createSongsWithMetadata', {
 				method: 'POST',
@@ -211,9 +193,6 @@
 			}
 
 			const createResult = await createResponse.json();
-			console.log('Create result raw:', createResult);
-			console.log('Create result type:', createResult.type);
-			console.log('Create result data:', createResult.data);
 
 			// Parse data if it's a string (using devalue)
 			let parsedData = createResult.data;
@@ -267,7 +246,12 @@
 {/snippet}
 
 {#if tab === 'songs'}
-	<FileDropZone onUpload={handleUpload} children={table} class="contents" clickable={false} />
+	<FileDropZone
+		onUpload={(files) => handleUpload(files)}
+		children={table}
+		class="contents"
+		clickable={false}
+	/>
 {:else if tab === 'albums'}
 	<div class="items-left flex flex-row gap-4">
 		<Button onclick={() => (creatingAlbum = true)}>+</Button>
@@ -279,7 +263,7 @@
 		{#each data.albums as album}
 			<div class="mb-4 w-[256px] rounded border p-4">
 				<FileDropZone
-					onUpload={(files) => handleUploadToAlbum(files, album.id)}
+					onUpload={(files) => handleUpload(files, album.id)}
 					class="contents"
 					clickable={false}
 					accept="audio/*"

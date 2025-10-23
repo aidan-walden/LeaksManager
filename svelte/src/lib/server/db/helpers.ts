@@ -500,6 +500,16 @@ export async function findArtistByNameCaseInsensitive(name: string) {
 	return result[0] || null;
 }
 
+export async function findAlbumByNameCaseInsensitive(name: string) {
+	const result = await db
+		.select()
+		.from(albums)
+		.where(sql`LOWER(${albums.name}) = LOWER(${name})`)
+		.limit(1);
+
+	return result[0] || null;
+}
+
 export async function updateSong(
 	songId: number,
 	data: {

@@ -6,7 +6,8 @@ import {
 	getAlbumWithArtists,
 	updateAlbum,
 	updateSong,
-	findArtistByNameCaseInsensitive
+	findArtistByNameCaseInsensitive,
+	findAlbumByNameCaseInsensitive
 } from '@/server/db/helpers';
 import type { PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
@@ -252,6 +253,7 @@ export const actions = {
 	uploadAndExtractMetadata: async ({ request }) => {
 		const formData = await request.formData();
 		const files = formData.getAll('files') as File[];
+		const uploadToAlbum = (formData.get('uploadToAlbum') as string) === 'true';
 
 		if (files.length === 0) {
 			return fail(400, { error: 'Files are required' });
@@ -259,6 +261,7 @@ export const actions = {
 
 		try {
 			interface FileData {
+				albumId?: number;
 				originalFilename: string;
 				filepath: string;
 				metadata: {
@@ -281,6 +284,7 @@ export const actions = {
 
 			const filesData: FileData[] = [];
 			const allArtistNames = new Set<string>();
+			const allAlbumNames = new Set<string>();
 			let filesWithArtwork = 0;
 
 			// Step 1: Save files and extract metadata
@@ -295,20 +299,12 @@ export const actions = {
 
 				// Extract metadata from file via microservice
 				const dbFilepath = `/uploads/songs/${filename}`;
-				console.log(
-					`[uploadAndExtractMetadata] Requesting metadata extraction for: ${dbFilepath}`
-				);
-				console.log(`[uploadAndExtractMetadata] Microservice URL: ${MICROSERVICE_URL}`);
 
 				const extractResponse = await fetch(`${MICROSERVICE_URL}/extract-metadata`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ filepath: dbFilepath })
 				});
-
-				console.log(
-					`[uploadAndExtractMetadata] Metadata extraction response status: ${extractResponse.status}`
-				);
 
 				if (!extractResponse.ok) {
 					const errorText = await extractResponse.text();
@@ -322,17 +318,13 @@ export const actions = {
 
 				const metadata = extractResponse.ok ? await extractResponse.json() : {};
 
-				console.log('[uploadAndExtractMetadata] Extracted metadata:', {
-					title: metadata.title,
-					artist: metadata.artist,
-					hasArtwork: !!metadata.artwork
-				});
-
 				// Parse artists from metadata
 				const parsedArtists = parseArtists(metadata.artist);
 				parsedArtists.forEach((artist) => allArtistNames.add(artist));
 
-				console.log('[uploadAndExtractMetadata] Parsed artists:', parsedArtists);
+				if (!uploadToAlbum) {
+					allAlbumNames.add(metadata.album || 'Unknown Album');
+				}
 
 				// Check if has artwork
 				if (metadata.artwork) {
@@ -346,11 +338,6 @@ export const actions = {
 					parsedArtists,
 					hasUnmappedArtists: false // Will be updated later
 				};
-
-				console.log(
-					'[uploadAndExtractMetadata] Created fileData entry:',
-					JSON.stringify(fileDataEntry, null, 2)
-				);
 
 				filesData.push(fileDataEntry);
 			}
@@ -378,6 +365,32 @@ export const actions = {
 				);
 			}
 
+			// Step 5: Check if we need to map albums
+			if (!uploadToAlbum) {
+				// Find album with the same name in DB
+				const albumNames = Array.from(allAlbumNames);
+				const existingAlbumsMap = new Map<string, number>(); // lowercase name → album ID
+
+				for (const albumName of albumNames) {
+					const existingAlbum = await findAlbumByNameCaseInsensitive(albumName);
+					if (existingAlbum) {
+						existingAlbumsMap.set(albumName.toLowerCase(), existingAlbum.id);
+					}
+				}
+
+				// Step 6: Map files to albums
+				for (const fileData of filesData) {
+					const albumName = fileData.metadata.album?.trim();
+					if (!albumName) {
+						continue;
+					}
+					const existingAlbum = existingAlbumsMap.get(albumName.toLowerCase());
+					if (existingAlbum) {
+						fileData.albumId = existingAlbum;
+					}
+				}
+			}
+
 			return {
 				filesData,
 				unmappedArtists,
@@ -394,7 +407,7 @@ export const actions = {
 			const formData = await request.formData();
 			const filesDataStr = formData.get('filesData') as string;
 			const artistMappingStr = formData.get('artistMapping') as string;
-			const albumId = formData.get('albumId') as string;
+			const albumId = formData.get('albumId') as string | undefined;
 			const useEmbeddedArtworkStr = formData.get('useEmbeddedArtwork') as string;
 
 			console.log('[createSongsWithMetadata] filesDataStr:', filesDataStr ? 'present' : 'missing');
@@ -413,11 +426,6 @@ export const actions = {
 			const artistMapping = artistMappingStr ? JSON.parse(artistMappingStr) : {};
 			const useEmbeddedArtwork = useEmbeddedArtworkStr === 'true';
 
-			console.log('[createSongsWithMetadata] Parsed filesData:', {
-				isArray: Array.isArray(filesData),
-				length: filesData?.length,
-				firstItem: filesData?.[0]
-			});
 			console.log('[createSongsWithMetadata] Parsed artistMapping:', artistMapping);
 
 			if (!Array.isArray(filesData)) {
@@ -508,11 +516,22 @@ export const actions = {
 					artworkPath = album.artworkPath;
 				}
 
+				// Use album ID from form data if available, otherwise use album ID from file data
+
+				const finalAlbumId = albumId
+					? parseInt(albumId)
+					: fileData.albumId
+						? parseInt(fileData.albumId)
+						: undefined;
+
+				console.log('[createSongsWithMetadata] Final album ID:', finalAlbumId);
+
 				// Create the song
 				const song = await createSong({
 					name: fileData.metadata.title || fileData.originalFilename,
 					filepath: fileData.filepath,
-					albumId: albumId ? parseInt(albumId) : undefined,
+
+					albumId: finalAlbumId,
 					artworkPath,
 					artistIds: finalArtistIds,
 					genre: fileData.metadata.genre,
