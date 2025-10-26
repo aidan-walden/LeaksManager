@@ -15,8 +15,17 @@ import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 import { MICROSERVICE_URL } from '$env/static/private';
 import { parseArtists } from '$lib/utils/artist-parser';
+import {
+	createAlbumSchema,
+	createArtistSchema,
+	deleteSongSchema,
+	updateSongSchema,
+	uploadAndExtractMetadataSchema,
+	uploadArtSchema,
+	uploadSongsSchema
+} from '@/schema';
 
-async function uploadAlbumArt(albumId: string, file: File) {
+async function uploadAlbumArt(albumId: number, file: File) {
 	// Placeholder function to simulate file upload
 	console.log(`Uploading album art for album ID: ${albumId}`);
 	// Implement actual upload logic here
@@ -26,16 +35,16 @@ async function uploadAlbumArt(albumId: string, file: File) {
 
 	const buffer = Buffer.from(await file.arrayBuffer());
 	await writeFile(filepath, buffer);
-	await updateAlbum(parseInt(albumId), { artworkPath: `/uploads/artwork/${filename}` });
+	await updateAlbum(albumId, { artworkPath: `/uploads/artwork/${filename}` });
 }
 
-async function uploadArtistArt(artistId: string, file: File) {
+async function uploadArtistArt(artistId: number, file: File) {
 	// Placeholder function to simulate file upload
 	console.log(`Uploading artist art for artist ID: ${artistId}`);
 	// Implement actual upload logic here
 }
 
-async function writeMetadataToDisk(songId: string) {
+async function writeMetadataToDisk(songId: number) {
 	const url = new URL(`${MICROSERVICE_URL}/write-metadata/${songId}`);
 	const response = await fetch(url);
 
@@ -66,27 +75,27 @@ export const actions = {
 		const artistIdsStr = formData.get('artistIds') as string;
 		const year = formData.get('year') as string;
 
-		console.log('Creating album with data:', { title, artistIdsStr, year });
+		const validated = createAlbumSchema.safeParse({
+			name: title,
+			artistIds: artistIdsStr,
+			year: year
+		});
 
-		if (!title || !artistIdsStr) {
-			console.error('Failed to create album: Missing required fields');
-			return fail(400, { error: 'Title and artist are required' });
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
 
-		const artistIds = artistIdsStr
-			.split(',')
-			.map((id) => parseInt(id))
-			.filter((id) => !isNaN(id));
-		if (artistIds.length === 0) {
-			console.error('Failed to create album: Invalid artist IDs');
-			return fail(400, { error: 'Invalid artist IDs' });
-		}
+		console.log('Creating album with data:', {
+			name: validated.data.name,
+			artistIds: validated.data.artistIds,
+			year: validated.data.year
+		});
 
 		try {
 			const dbAlbum = await createAlbum({
-				name: title,
-				artistIds: artistIds,
-				year: year ? parseInt(year) : undefined
+				name: validated.data.name,
+				artistIds: validated.data.artistIds,
+				year: validated.data.year ? parseInt(validated.data.year) : undefined
 			});
 			console.log('Album created successfully');
 			return { success: true, id: dbAlbum.id, message: 'Album created successfully' };
@@ -102,18 +111,29 @@ export const actions = {
 		const careerStart = formData.get('career-start') as string;
 		const careerEnd = formData.get('career-end') as string;
 
-		console.log('Creating artist with data:', { name, careerStart, careerEnd });
+		const validated = createArtistSchema.safeParse({
+			name,
+			careerStart,
+			careerEnd
+		});
 
-		if (!name) {
-			console.error('Failed to create artist: Missing required fields');
-			return fail(400, { error: 'Name is required' });
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
+
+		console.log('Creating artist with data:', {
+			name: validated.data.name,
+			careerStart: validated.data.careerStart,
+			careerEnd: validated.data.careerEnd
+		});
 
 		try {
 			const dbArtist = await createArtist({
-				name,
-				careerStartYear: careerStart ? parseInt(careerStart) : undefined,
-				careerEndYear: careerEnd ? parseInt(careerEnd) : undefined
+				name: validated.data.name,
+				careerStartYear: validated.data.careerStart
+					? parseInt(validated.data.careerStart)
+					: undefined,
+				careerEndYear: validated.data.careerEnd ? parseInt(validated.data.careerEnd) : undefined
 			});
 			console.log('Artist created successfully');
 			return { success: true, id: dbArtist.id, message: 'Artist created successfully' };
@@ -129,15 +149,21 @@ export const actions = {
 		const type = formData.get('type') as 'album' | 'artist';
 		const id = formData.get('id') as string;
 
-		if (!file || !type || !id) {
-			return fail(400, { error: 'File, type, and id are required' });
+		const validated = uploadArtSchema.safeParse({
+			file,
+			type,
+			id
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
 
 		try {
-			if (type === 'album') {
-				await uploadAlbumArt(id, file);
+			if (validated.data.type === 'album') {
+				await uploadAlbumArt(validated.data.id, validated.data.file);
 			} else {
-				await uploadArtistArt(id, file);
+				await uploadArtistArt(validated.data.id, validated.data.file);
 			}
 			return { success: true };
 		} catch (error) {
@@ -151,18 +177,20 @@ export const actions = {
 		const files = formData.getAll('files') as File[];
 		const albumId = formData.get('albumId') as string;
 
-		if (files.length === 0) {
-			return fail(400, { error: 'Files are required' });
+		const validated = uploadSongsSchema.safeParse({
+			files: files,
+			albumId: albumId
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
 
 		let album;
 
-		if (albumId) {
+		if (validated.data.albumId) {
 			// Verify album exists and fetch with artists
-			album = await getAlbumWithArtists(parseInt(albumId));
-			if (!album) {
-				return fail(400, { error: 'Album not found' });
-			}
+			album = await getAlbumWithArtists(validated.data.albumId);
 		}
 
 		let artworkPath: string | undefined = undefined;
@@ -178,7 +206,7 @@ export const actions = {
 			}
 		}
 
-		for (const file of files) {
+		for (const file of validated.data.files) {
 			const filename = `${Date.now()}-${file.name}`;
 			const filepath = join('static', 'uploads', 'songs', filename);
 
@@ -187,11 +215,11 @@ export const actions = {
 			const song = await createSong({
 				name: file.name,
 				filepath: `/uploads/songs/${filename}`,
-				albumId: albumId ? parseInt(albumId) : undefined,
+				albumId: validated.data.albumId ? validated.data.albumId : undefined,
 				artworkPath: artworkPath,
 				artistIds: artistIds
 			});
-			await writeMetadataToDisk(song.id.toString());
+			await writeMetadataToDisk(song.id);
 		}
 	},
 
@@ -203,20 +231,31 @@ export const actions = {
 		const album = formData.get('album') as string;
 		const songId = formData.get('songId') as string;
 
-		console.log('Updating song with data:', { songId, name, artistIdsStr, album });
+		const validated = updateSongSchema.safeParse({
+			name,
+			artistIdsStr,
+			album,
+			songId
+		});
 
-		if (!songId || !name || !artistIdsStr || !album) {
-			console.error('Failed to update song: Missing required fields');
-			return fail(400, { error: 'Song ID, name, artistIdsStr, and album are required' });
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
 
+		console.log('Updating song with data:', {
+			name: validated.data.name,
+			artistIdsStr: validated.data.artistIds,
+			album: validated.data.album,
+			songId: validated.data.songId
+		});
+
 		try {
-			await updateSong(parseInt(songId), {
+			await updateSong(validated.data.songId, {
 				name,
-				artistIds: artistIdsStr.split(',').map((id) => parseInt(id))
+				artistIds: validated.data.artistIds
 			});
 
-			await writeMetadataToDisk(songId);
+			await writeMetadataToDisk(validated.data.songId);
 
 			console.log('Song updated successfully');
 			return { success: true, message: 'Song updated successfully' };
@@ -229,16 +268,19 @@ export const actions = {
 	deleteSong: async ({ request }) => {
 		const formData = await request.formData();
 		const idStr = formData.get('id') as string;
-		const id = idStr ? parseInt(idStr) : null;
 
-		if (!id) {
-			return fail(400, { error: 'Song ID is required' });
+		const validated = deleteSongSchema.safeParse({
+			id: idStr
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
 		}
 
 		try {
 			// Implement song deletion logic here
-			console.log(`Deleting song with ID: ${id}`);
-			const song = await deleteSong(id);
+			console.log(`Deleting song with ID: ${validated.data.id}`);
+			const song = await deleteSong(validated.data.id);
 			if (song && song[0]) {
 				await unlink(join('static', song[0].filepath));
 			}
@@ -253,7 +295,16 @@ export const actions = {
 	uploadAndExtractMetadata: async ({ request }) => {
 		const formData = await request.formData();
 		const files = formData.getAll('files') as File[];
-		const uploadToAlbum = (formData.get('uploadToAlbum') as string) === 'true';
+		const uploadToAlbum = formData.get('uploadToAlbum') as string;
+
+		const validated = uploadAndExtractMetadataSchema.safeParse({
+			files: files,
+			uploadToAlbum: uploadToAlbum
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
+		}
 
 		if (files.length === 0) {
 			return fail(400, { error: 'Files are required' });
@@ -288,7 +339,7 @@ export const actions = {
 			let filesWithArtwork = 0;
 
 			// Step 1: Save files and extract metadata
-			for (const file of files) {
+			for (const file of validated.data.files) {
 				const filename = `${Date.now()}-${file.name}`;
 				const filepath = join('static', 'uploads', 'songs', filename);
 
@@ -322,7 +373,7 @@ export const actions = {
 				const parsedArtists = parseArtists(metadata.artist);
 				parsedArtists.forEach((artist) => allArtistNames.add(artist));
 
-				if (!uploadToAlbum) {
+				if (!validated.data.uploadToAlbum) {
 					allAlbumNames.add(metadata.album || 'Unknown Album');
 				}
 
@@ -366,7 +417,7 @@ export const actions = {
 			}
 
 			// Step 5: Check if we need to map albums
-			if (!uploadToAlbum) {
+			if (!validated.data.uploadToAlbum) {
 				// Find album with the same name in DB
 				const albumNames = Array.from(allAlbumNames);
 				const existingAlbumsMap = new Map<string, number>(); // lowercase name → album ID
@@ -544,7 +595,7 @@ export const actions = {
 				createdSongs.push(song);
 
 				// Step 5: Write metadata back to file
-				await writeMetadataToDisk(song.id.toString());
+				await writeMetadataToDisk(song.id);
 			}
 
 			return {
