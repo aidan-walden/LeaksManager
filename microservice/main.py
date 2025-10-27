@@ -48,17 +48,27 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
     Embed album artwork into the audio file based on file type.
     Uses song artwork if available, otherwise falls back to album artwork.
     """
+    print("=== EMBEDDING ARTWORK ===")
+    print(f"Song artwork path: {song_artwork_path}")
+    print(f"Album artwork path: {album_artwork_path}")
+    print(f"Audio file type: {type(audio_file)}")
+    print(f"Target filepath: {filepath}")
+
     # Determine which artwork to use
     artwork_path = song_artwork_path or album_artwork_path
+    print(f"Final artwork path to use: {artwork_path}")
 
     if not artwork_path:
+        print("No artwork path defined - returning early")
         return  # No artwork to embed
 
     # Convert path to absolute path (artwork paths are like "/uploads/artwork/...")
     full_artwork_path = Path("../svelte/static" + artwork_path)
+    print(f"Full artwork path: {full_artwork_path}")
+    print(f"Artwork file exists: {full_artwork_path.exists()}")
 
     if not full_artwork_path.exists():
-        print(f"Warning: Artwork file not found at {full_artwork_path}")
+        print(f"WARNING: Artwork file not found at {full_artwork_path} - returning early")
         return
 
     # Read artwork data
@@ -68,8 +78,11 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
     # Determine MIME type from extension
     ext = full_artwork_path.suffix.lower()
     mime_type = 'image/jpeg' if ext in ['.jpg', '.jpeg'] else 'image/png'
+    print(f"Artwork MIME type: {mime_type}")
+    print(f"Artwork data size: {len(artwork_data)} bytes")
 
     try:
+        print(f"Attempting to embed artwork for file type: {type(audio_file).__name__}")
         if isinstance(audio_file, (MP3, WAVE)):
             # For MP3/WAV, use ID3 APIC frame
             # Need to load with ID3 directly (not EasyID3)
@@ -89,6 +102,7 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
                 )
             )
             id3_file.save()
+            print("Successfully embedded artwork in MP3/WAVE file")
 
         elif isinstance(audio_file, MP4):
             # For MP4, reload as MP4 and add cover
@@ -97,6 +111,7 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
             image_format = MP4Cover.FORMAT_JPEG if ext in ['.jpg', '.jpeg'] else MP4Cover.FORMAT_PNG
             mp4_file['covr'] = [MP4Cover(artwork_data, imageformat=image_format)]
             mp4_file.save()
+            print("Successfully embedded artwork in MP4 file")
 
         elif isinstance(audio_file, FLAC):
             # For FLAC, use Picture
@@ -110,6 +125,7 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
             audio_file.clear_pictures()
             audio_file.add_picture(picture)
             audio_file.save()
+            print("Successfully embedded artwork in FLAC file")
 
         elif isinstance(audio_file, OggVorbis):
             # For OGG, create FLAC Picture and base64 encode
@@ -123,9 +139,12 @@ def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, f
             encoded_data = base64.b64encode(picture.write())
             audio_file['metadata_block_picture'] = [encoded_data.decode('ascii')]
             audio_file.save()
+            print("Successfully embedded artwork in OggVorbis file")
 
     except Exception as e:
-        print(f"Warning: Failed to embed artwork: {str(e)}")
+        print(f"ERROR: Failed to embed artwork: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def extract_artwork(audio_file, filepath: str) -> Optional[ArtworkData]:
@@ -364,7 +383,7 @@ def write_song_metadata(song_id: int):
         # Query song with all related metadata
         query = """
         SELECT
-            s.id, s.name, s.filepath, s.genre, s.year, s.producer, s.track_number, s.duration,
+            s.id, s.name, s.filepath, s.genre, s.year, s.track_number, s.duration,
             s.artwork_path, a.name as album_name, a.year as album_year, a.genre as album_genre,
             a.artwork_path as album_artwork_path,
             GROUP_CONCAT(ar.name, ', ') as artists,
@@ -374,7 +393,14 @@ def write_song_metadata(song_id: int):
                 LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
                 WHERE aa.album_id = s.album_id
                 ORDER BY aa."order"
-            ) as album_artists
+            ) as album_artists,
+            (
+                SELECT GROUP_CONCAT(p.name, ', ')
+                FROM song_producers sp
+                LEFT JOIN producers p ON sp.producer_id = p.id
+                WHERE sp.song_id = s.id
+                ORDER BY sp."order"
+            ) as producers
         FROM songs s
         LEFT JOIN albums a ON s.album_id = a.id
         LEFT JOIN song_artists sa ON s.id = sa.song_id
@@ -391,7 +417,13 @@ def write_song_metadata(song_id: int):
             raise HTTPException(status_code=404, detail=f"Song with ID {song_id} not found")
 
         # Extract song data
-        song_id, song_name, filepath, genre, year, producer, track_number, duration, song_artwork_path, album_name, album_year, album_genre, album_artwork_path, artists, album_artists = song_data
+        song_id, song_name, filepath, genre, year, track_number, duration, song_artwork_path, album_name, album_year, album_genre, album_artwork_path, artists, album_artists, producers = song_data
+
+        print(f"=== SONG DATA ===")
+        print(f"Song ID: {song_id}, Name: {song_name}")
+        print(f"Song artwork path: {song_artwork_path}")
+        print(f"Album name: {album_name}")
+        print(f"Album artwork path: {album_artwork_path}")
 
         # Determine album artist: use album's artists if available, otherwise fall back to song artists
         albumartist = album_artists if album_artists else artists
@@ -440,8 +472,8 @@ def write_song_metadata(song_id: int):
                 easy_file['date'] = str(year)
             if track_number:
                 easy_file['tracknumber'] = str(track_number)
-            if producer:
-                easy_file['composer'] = producer  # Map producer to composer field
+            if producers:
+                easy_file['composer'] = producers  # Map producers to composer field
 
             easy_file.save()
 
@@ -473,8 +505,8 @@ def write_song_metadata(song_id: int):
                 easy_file['date'] = str(year)
             if track_number:
                 easy_file['tracknumber'] = str(track_number)
-            if producer:
-                easy_file['composer'] = producer  # Map producer to composer field
+            if producers:
+                easy_file['composer'] = producers  # Map producers to composer field
 
             easy_file.save()
 
@@ -502,8 +534,8 @@ def write_song_metadata(song_id: int):
                 audio_file.tags['genre'] = genre
             if year:
                 audio_file.tags['date'] = str(year)
-            if producer:
-                audio_file.tags['producer'] = producer
+            if producers:
+                audio_file.tags['producer'] = producers
             if track_number:
                 audio_file.tags['tracknumber'] = str(track_number)
 
@@ -533,8 +565,8 @@ def write_song_metadata(song_id: int):
                     tags['genre'] = genre
                 if year:
                     tags['date'] = str(year)
-                if producer:
-                    tags['producer'] = producer
+                if producers:
+                    tags['producer'] = producers
                 if track_number:
                     tags['tracknumber'] = str(track_number)
 
@@ -560,7 +592,7 @@ def write_song_metadata(song_id: int):
                 "album": album_name,
                 "genre": genre,
                 "year": year,
-                "producer": producer,
+                "producers": producers,
                 "track_number": track_number
             }
         }

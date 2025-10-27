@@ -7,13 +7,13 @@ export const createAlbumSchema = z.object({
 		.transform((str) => str.split(',').map((str) => str.trim()))
 		.transform((arr) => arr.map(Number))
 		.pipe(z.array(z.number().int().positive())),
-	year: z.string().min(1)
+	year: z.preprocess((v) => v || undefined, z.string().min(1).optional())
 });
 
 export const createArtistSchema = z.object({
 	name: z.string().min(1),
-	careerStart: z.string().min(1).optional(),
-	careerEnd: z.string().min(1).optional()
+	careerStart: z.preprocess((v) => v || undefined, z.string().min(1).optional()),
+	careerEnd: z.preprocess((v) => v || undefined, z.string().min(1).optional())
 });
 
 export const uploadArtSchema = z.object({
@@ -44,5 +44,117 @@ export const deleteSongSchema = z.object({
 
 export const uploadAndExtractMetadataSchema = z.object({
 	files: z.array(z.instanceof(File)),
-	uploadToAlbum: z.coerce.boolean()
+	albumId: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().positive().optional())
 });
+
+export const fileDataSchema = z.object({
+	albumId: z.number().int().positive().optional(),
+	originalFilename: z.string().min(1),
+	filepath: z.string().min(1),
+	metadata: z.object({
+		title: z.string().nullish(),
+		artist: z.string().nullish(),
+		album: z.string().nullish(),
+		year: z.number().int().positive().nullish(),
+		genre: z.string().nullish(),
+		trackNumber: z.number().int().positive().nullish(),
+		producer: z.string().nullish(),
+		duration: z.number().nullish(),
+		artwork: z
+			.object({
+				data: z.string(),
+				mimeType: z.string()
+			})
+			.optional()
+	}),
+	parsedArtists: z.array(z.string().min(1)).optional(),
+	parsedProducers: z.array(z.string().min(1)).optional(),
+	hasUnmappedArtists: z.boolean()
+});
+
+export type FileData = z.infer<typeof fileDataSchema>;
+
+export const createSongsWithMetadataSchema = z.object({
+	albumId: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().positive().optional()),
+	filesData: z
+		.string()
+		.transform((str) => JSON.parse(str))
+		.pipe(z.array(fileDataSchema).min(1)),
+	artistMapping: z
+		.string()
+		.nullable()
+		.transform((v) => (v && v.trim() ? JSON.parse(v) : {})) as z.ZodType<
+		Record<string, number | 'CREATE_NEW'>
+	>,
+	useEmbeddedArtwork: z.preprocess(
+		(v) => v === 'true' || v === true,
+		z.boolean()
+	)
+});
+
+// Microservice API Schemas
+
+export const extractMetadataRequestSchema = z.object({
+	filepath: z.string().min(1)
+});
+
+export const artworkDataSchema = z.object({
+	data: z.string(),
+	mimeType: z.string()
+});
+
+export const extractedMetadataSchema = z.object({
+	title: z.string().nullish(),
+	artist: z.string().nullish(),
+	albumArtist: z.string().nullish(),
+	album: z.string().nullish(),
+	year: z.number().int().nullish(),
+	genre: z.string().nullish(),
+	trackNumber: z.number().int().nullish(),
+	producer: z.string().nullish(),
+	duration: z.number().nullish(),
+	artwork: artworkDataSchema.nullish()
+});
+
+export const writeMetadataResponseSchema = z.object({
+	success: z.boolean(),
+	message: z.string(),
+	song_id: z.number().int().positive(),
+	metadata_written: z.object({
+		title: z.string().nullish(),
+		artist: z.string().nullish(),
+		albumartist: z.string().nullish(),
+		album: z.string().nullish(),
+		genre: z.string().nullish(),
+		year: z.number().int().nullish(),
+		producers: z.string().nullish(),
+		track_number: z.number().int().nullish()
+	})
+});
+
+export type ExtractMetadataRequest = z.infer<typeof extractMetadataRequestSchema>;
+export type ArtworkData = z.infer<typeof artworkDataSchema>;
+export type ExtractedMetadata = z.infer<typeof extractedMetadataSchema>;
+export type WriteMetadataResponse = z.infer<typeof writeMetadataResponseSchema>;
+
+// export interface FileData {
+// 	albumId?: number;
+// 	originalFilename: string;
+// 	filepath: string;
+// 	metadata: {
+// 		title?: string;
+// 		artist?: string;
+// 		album?: string;
+// 		year?: number;
+// 		genre?: string;
+// 		trackNumber?: number;
+// 		producer?: string;
+// 		duration?: number;
+// 		artwork?: {
+// 			data: string;
+// 			mimeType: string;
+// 		};
+// 	};
+// 	parsedArtists: string[];
+// 	hasUnmappedArtists: boolean;
+// }

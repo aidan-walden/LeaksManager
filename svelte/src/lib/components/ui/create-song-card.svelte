@@ -47,6 +47,7 @@
 
 	// Store selected artist IDs
 	let selectedArtistIds = $state<number[]>([]);
+	let selectedProducerIds = $state<number[]>([]);
 
 	// Track initial values for edit mode
 	let initialValues = $state<{
@@ -64,6 +65,7 @@
 				// Edit mode: capture initial values for change detection
 				const artistIds = song.songArtists.map((sa) => sa.artistId);
 				selectedArtistIds = artistIds;
+
 				initialValues = {
 					name: song.name,
 					album: song.album?.name || '',
@@ -79,6 +81,7 @@
 		} else {
 			// Dialog closed - reset state
 			selectedArtistIds = [];
+			selectedProducerIds = [];
 			initialValues = null;
 			file = null;
 		}
@@ -116,6 +119,7 @@
 		const artistsChanged =
 			selectedArtistIds.length !== initial.artistIds.length ||
 			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
+
 		const fileChanged = initial.hasFile;
 
 		// Allow submission only if something changed
@@ -157,6 +161,7 @@
 			<input type="hidden" name="songId" value={song.id} />
 		{/if}
 		<input type="hidden" name="artistIds" value={selectedArtistIds.join(',')} />
+		<input type="hidden" name="producerIds" value={selectedProducerIds.join(',')} />
 	</div>
 {/snippet}
 

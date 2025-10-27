@@ -17,6 +17,10 @@
 					{
 						title: 'Artists',
 						url: '/artists'
+					},
+					{
+						title: 'Producers',
+						url: '/producers'
 					}
 				]
 			},

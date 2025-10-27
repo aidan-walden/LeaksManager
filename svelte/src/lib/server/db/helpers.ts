@@ -1,5 +1,13 @@
 import { db } from './index';
-import { artists, albums, songs, albumArtists, songArtists } from './schema';
+import {
+	artists,
+	albums,
+	songs,
+	albumArtists,
+	songArtists,
+	producers,
+	songProducers
+} from './schema';
 import { eq, sql } from 'drizzle-orm';
 
 /**
@@ -95,6 +103,32 @@ export async function setSongArtists(songId: number, artistIds: number[]) {
 	// Add new
 	if (artistIds.length > 0) {
 		await addArtistsToSong(songId, artistIds);
+	}
+}
+
+/**
+ * Add producers to a song
+ */
+export async function addProducersToSong(songId: number, producerIds: number[]) {
+	const values = producerIds.map((producerId, index) => ({
+		songId,
+		producerId,
+		order: index
+	}));
+
+	await db.insert(songProducers).values(values);
+}
+
+/**
+ * Remove all producers from a song and set new ones
+ */
+export async function setSongProducers(songId: number, producerIds: number[]) {
+	// Delete existing
+	await db.delete(songProducers).where(eq(songProducers.songId, songId));
+
+	// Add new
+	if (producerIds.length > 0) {
+		await addProducersToSong(songId, producerIds);
 	}
 }
 
@@ -294,11 +328,11 @@ export async function createSong(data: {
 	name: string;
 	filepath: string;
 	artistIds?: number[]; // Optional - songs can exist without artists
+	producerIds?: number[];
 	albumId?: number;
 	artworkPath?: string;
 	genre?: string;
 	year?: number;
-	producer?: string;
 	trackNumber?: number;
 	duration?: number;
 	fileType?: string;
@@ -314,7 +348,6 @@ export async function createSong(data: {
 			artworkPath: data.artworkPath,
 			genre: data.genre,
 			year: data.year,
-			producer: data.producer,
 			trackNumber: data.trackNumber,
 			duration: data.duration,
 			fileType: data.fileType,
@@ -333,6 +366,17 @@ export async function createSong(data: {
 		}));
 
 		await db.insert(songArtists).values(artistLinks);
+	}
+
+	// Do the same for producers
+	if (data.producerIds && data.producerIds.length > 0) {
+		const producerLinks = data.producerIds.map((producerId, index) => ({
+			songId: song.id,
+			producerId,
+			order: index
+		}));
+
+		await db.insert(songProducers).values(producerLinks);
 	}
 
 	return song;
@@ -510,16 +554,26 @@ export async function findAlbumByNameCaseInsensitive(name: string) {
 	return result[0] || null;
 }
 
+export async function findProducerByNameCaseInsensitive(name: string) {
+	const result = await db
+		.select()
+		.from(producers)
+		.where(sql`LOWER(${producers.name}) = LOWER(${name})`)
+		.limit(1);
+
+	return result[0] || null;
+}
+
 export async function updateSong(
 	songId: number,
 	data: {
 		name?: string;
 		albumId?: number;
 		artistIds?: number[];
+		producerIds?: number[];
 		artworkPath?: string;
 		genre?: string;
 		year?: number;
-		producer?: string;
 		trackNumber?: number;
 		additionalMetadata?: Record<string, any>;
 	}
@@ -533,6 +587,10 @@ export async function updateSong(
 
 	if (data.artistIds) {
 		await setSongArtists(songId, data.artistIds);
+	}
+
+	if (data.producerIds) {
+		await setSongProducers(songId, data.producerIds);
 	}
 }
 
