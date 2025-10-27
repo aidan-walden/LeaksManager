@@ -58,18 +58,6 @@ async function writeMetadataToDisk(songId: number) {
 	return data;
 }
 
-export const load: PageServerLoad = async ({ params, parent }) => {
-	const data = await parent(); // Gets data from layout
-	const tab = params.tab;
-
-	// Just return the relevant slice
-	if (tab === 'songs') return { songs: data.songs };
-	if (tab === 'albums') return { albums: data.albums };
-	if (tab === 'artists') return { artists: data.artists };
-
-	return {};
-};
-
 export const actions = {
 	createAlbum: async ({ request }) => {
 		const formData = await request.formData();
@@ -528,9 +516,6 @@ export const actions = {
 
 				// Handle artwork
 				let artworkPath: string | undefined = undefined;
-
-				console.log('[createSongsWithMetadata] useEmbeddedArtwork:', validated.data.useEmbeddedArtwork);
-				console.log('[createSongsWithMetadata] fileData.metadata.artwork exists:', !!fileData.metadata.artwork);
 
 				if (validated.data.useEmbeddedArtwork && fileData.metadata.artwork) {
 					console.log('[createSongsWithMetadata] BRANCH: Using embedded artwork from file');

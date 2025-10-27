@@ -47,62 +47,69 @@
 </script>
 
 {#snippet tabs()}
-	<Tabs.Root value="metadata" class="w-[400px]">
+	<Tabs.Root value="metadata" class="flex h-full w-full flex-col">
 		<Tabs.List>
 			<Tabs.Trigger value="metadata">{metadataTabLabel}</Tabs.Trigger>
 			<Tabs.Trigger value="upload">{uploadTabLabel}</Tabs.Trigger>
 		</Tabs.List>
-		<Tabs.Content value="metadata">
-			<form
-				id={formId}
-				method="POST"
-				action={formAction}
-				use:enhance={() => {
-					// Check if submission should proceed
-					if (beforeSubmit && !beforeSubmit()) {
-						return () => {}; // Cancel submission
-					}
-
-					loading = true;
-					return async ({ result, update }) => {
-						loading = false;
-
-						if (result.type === 'success') {
-							formElement.reset(); // Clear form on success
-							await invalidateAll(); // Refresh page data (e.g., song list)
-
-							// Call callback with the created record ID if available
-							if (callback && result.data?.id && typeof result.data.id === 'number') {
-								callback(result.data.id);
-							}
+		<Tabs.Content value="metadata" class="flex flex-1 justify-start">
+			<div class="w-full max-w-[400px]">
+				<form
+					id={formId}
+					method="POST"
+					action={formAction}
+					use:enhance={() => {
+						// Check if submission should proceed
+						if (beforeSubmit && !beforeSubmit()) {
+							return () => {}; // Cancel submission
 						}
 
-						await update(); // Apply the action result
-						open = false;
-					};
-				}}
-				bind:this={formElement}
-			>
-				{@render formFields(loading)}
-			</form>
+						loading = true;
+						return async ({ result, update }) => {
+							loading = false;
+
+							if (result.type === 'success') {
+								formElement.reset(); // Clear form on success
+								await invalidateAll(); // Refresh page data (e.g., song list)
+
+								// Call callback with the created record ID if available
+								if (callback && result.data?.id && typeof result.data.id === 'number') {
+									callback(result.data.id);
+								}
+							}
+
+							await update(); // Apply the action result
+							open = false;
+						};
+					}}
+					bind:this={formElement}
+				>
+					{@render formFields(loading)}
+				</form>
+			</div>
 		</Tabs.Content>
-		<Tabs.Content value="upload">
-			<FileDropZone
-				maxFiles={uploadMaxFiles}
-				accept={uploadAccept}
-				onUpload={onFileUpload ?? (() => Promise.resolve())}
-				disabled={loading}
-			>
-				{#if uploadFieldImage}
-					<img
-						src={URL.createObjectURL(uploadFieldImage)}
-						alt="Uploaded file preview"
-						class="mx-auto mb-4 h-32 w-32 rounded-md object-cover"
-					/>
-				{:else}
-					{uploadPlaceholder}
-				{/if}
-			</FileDropZone>
+		<Tabs.Content value="upload" class="flex flex-1 items-center justify-center p-4">
+			<div class="aspect-square w-full max-w-[20rem] mx-auto">
+				<FileDropZone
+					maxFiles={uploadMaxFiles}
+					accept={uploadAccept}
+					onUpload={onFileUpload ?? (() => Promise.resolve())}
+					disabled={loading}
+					class="size-full"
+				>
+					{#if uploadFieldImage}
+						<img
+							src={URL.createObjectURL(uploadFieldImage)}
+							alt="Uploaded file preview"
+							class="size-full rounded-md object-cover"
+						/>
+					{:else}
+						<div class="flex size-full items-center justify-center text-center">
+							{uploadPlaceholder}
+						</div>
+					{/if}
+				</FileDropZone>
+			</div>
 		</Tabs.Content>
 	</Tabs.Root>
 {/snippet}

@@ -5,6 +5,8 @@
 	import type { EditableSong } from '../columns';
 	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
+	import AlbumCombobox from '$lib/components/ui/album-combobox.svelte';
+	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
 
 	let {
@@ -20,7 +22,8 @@
 	} = $props();
 
 	// Get artists from context
-	const artists = getArtistsContext();
+	const artists = $derived(getArtistsContext());
+	const albums = $derived(getAlbumsContext());
 
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
@@ -48,11 +51,16 @@
 	// Store selected artist IDs
 	let selectedArtistIds = $state<number[]>([]);
 	let selectedProducerIds = $state<number[]>([]);
+	let selectedAlbumId = $state<number | null>(null);
+
+	const selectedAlbum = $derived(albums.find((album) => album.id === selectedAlbumId) ?? null);
+	const selectedAlbumName = $derived(() => selectedAlbum?.name ?? '');
 
 	// Track initial values for edit mode
 	let initialValues = $state<{
 		name: string;
 		album: string;
+		albumId: number | null;
 		artistIds: number[];
 		hasFile: boolean;
 	} | null>(null);
@@ -65,16 +73,19 @@
 				// Edit mode: capture initial values for change detection
 				const artistIds = song.songArtists.map((sa) => sa.artistId);
 				selectedArtistIds = artistIds;
+				selectedAlbumId = song.album ? song.album.id : null;
 
 				initialValues = {
 					name: song.name,
 					album: song.album?.name || '',
+					albumId: song.album ? song.album.id : null,
 					artistIds: [...artistIds],
 					hasFile: false
 				};
 			} else {
 				// Create mode: reset to empty state
 				selectedArtistIds = [];
+				selectedAlbumId = null;
 				initialValues = null;
 			}
 			file = null;
@@ -82,6 +93,7 @@
 			// Dialog closed - reset state
 			selectedArtistIds = [];
 			selectedProducerIds = [];
+			selectedAlbumId = null;
 			initialValues = null;
 			file = null;
 		}
@@ -115,7 +127,8 @@
 
 		// Check if any values changed
 		const nameChanged = currentName !== initial.name;
-		const albumChanged = currentAlbum !== initial.album;
+		const albumChanged =
+			currentAlbum !== initial.album || (selectedAlbumId ?? null) !== initial.albumId;
 		const artistsChanged =
 			selectedArtistIds.length !== initial.artistIds.length ||
 			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
@@ -146,20 +159,18 @@
 			<MultiArtistCombobox {artists} bind:value={selectedArtistIds} disabled={loading} />
 		</div>
 		<div class="grid gap-2">
-			<Label for="album">Album</Label>
-			<Input
-				id="album"
-				name="album"
-				type="text"
-				placeholder="Album Name"
-				value={song ? song.album?.name : ''}
-				required
-				disabled={loading}
-			/>
+			<Label>Album</Label>
+			<AlbumCombobox {albums} bind:value={selectedAlbumId} disabled={loading} />
 		</div>
 		{#if song}
 			<input type="hidden" name="songId" value={song.id} />
 		{/if}
+		<input type="hidden" name="album" value={selectedAlbumName} />
+		<input
+			type="hidden"
+			name="albumId"
+			value={selectedAlbumId !== null ? String(selectedAlbumId) : ''}
+		/>
 		<input type="hidden" name="artistIds" value={selectedArtistIds.join(',')} />
 		<input type="hidden" name="producerIds" value={selectedProducerIds.join(',')} />
 	</div>

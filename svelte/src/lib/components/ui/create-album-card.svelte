@@ -17,7 +17,7 @@
 		return file ? new Blob([file], { type: file.type }) : null;
 	});
 
-	const artists = getArtistsContext();
+	const artists = $derived(getArtistsContext());
 
 	let selectedArtistIds = $state<number[]>([]);
 

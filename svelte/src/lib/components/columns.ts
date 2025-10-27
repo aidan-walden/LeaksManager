@@ -4,8 +4,9 @@ import DataTableActions from '$lib/components/ui/data-table/data-table-actions.s
 import type { SongWithRelations } from '@/server/db/schema';
 import { invalidate, invalidateAll } from '$app/navigation';
 
-// This type extends SongWithRelations with the computed artist string
-export type EditableSong = SongWithRelations & {
+// This type mirrors the shape returned by getSongsReadable
+export type EditableSong = Omit<SongWithRelations, 'songProducers'> & {
+	songProducers?: SongWithRelations['songProducers'];
 	artist: string;
 };
 

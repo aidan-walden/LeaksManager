@@ -3,10 +3,20 @@ import type { Artist } from '@/server/db/schema';
 
 const ARTISTS_KEY = Symbol('artists');
 
-export function setArtistsContext(artists: Artist[]) {
-	setContext(ARTISTS_KEY, artists);
+type ArtistsContextValue<T extends Artist = Artist> = {
+	get current(): T[];
+};
+
+export function setArtistsContext<T extends Artist>(getValue: () => T[]) {
+	const contextValue: ArtistsContextValue<T> = {
+		get current() {
+			return getValue();
+		}
+	};
+	setContext(ARTISTS_KEY, contextValue);
 }
 
-export function getArtistsContext(): Artist[] {
-	return getContext(ARTISTS_KEY);
+export function getArtistsContext<T extends Artist = Artist>(): T[] {
+	const ctx = getContext<ArtistsContextValue<T>>(ARTISTS_KEY);
+	return ctx?.current ?? [];
 }

@@ -7,18 +7,57 @@
 	import CreateArtistCard from '$lib/components/ui/create-artist-card.svelte';
 	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import { setArtistsContext } from '$lib/contexts/artists-context';
+import { setArtistsContext } from '$lib/contexts/artists-context';
+import { setAlbumsContext } from '$lib/contexts/albums-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
 	import { parse as devalueParse } from 'devalue';
+	import SongsTableSkeleton from '$lib/components/ui/data-table/songs-table-skeleton.svelte';
+	import AlbumsSkeleton from '$lib/components/ui/albums-skeleton.svelte';
+	import ArtistsSkeleton from '$lib/components/ui/artists-skeleton.svelte';
+	import type { Artist } from '$lib/server/db/schema';
+	import type { PageData } from '../../routes/[tab]/$types';
 
-	let { tab, data }: { tab: string; data: any } = $props();
+type ArtistsPromise = PageData['artists'];
+type RawArtists = Awaited<ArtistsPromise>;
+type ArtistElement = RawArtists extends Array<infer T> ? (T extends Artist ? T : Artist) : Artist;
+type ArtistForContext = ArtistElement & { image?: string | null };
 
-	// Provide artists context for child components
-	setArtistsContext(data.artists);
+type AlbumsPromise = PageData['albums'];
+type RawAlbums = Awaited<AlbumsPromise>;
+type AlbumElement = RawAlbums extends Array<infer T> ? T : never;
+
+let { tab, data }: { tab: string; data: PageData } = $props();
+
+// Initialize artists state and set context synchronously
+let resolvedArtists = $state<ArtistForContext[]>([]);
+let resolvedAlbums = $state<AlbumElement[]>([]);
+
+// Set context with a getter function to maintain reactivity
+// Context must be set during component initialization
+setArtistsContext<ArtistForContext>(() => resolvedArtists);
+setAlbumsContext<AlbumElement>(() => resolvedAlbums);
+
+	const defaultThumbnail = '/images/default-album.png';
+
+	function resolveArtistImage(artist: ArtistElement) {
+		return (artist as ArtistForContext).image ?? defaultThumbnail;
+	}
+
+	// Update the reactive state when the promise resolves
+	$effect(() => {
+		data.artists.then((artists) => {
+			resolvedArtists = artists;
+		});
+	});
+
+	$effect(() => {
+		data.albums.then((albums) => {
+			resolvedAlbums = albums;
+		});
+	});
 
 	$inspect(tab, 'tab in InnerView');
-	console.log(data);
 
 	// Dialog state
 	let showArtistMappingDialog = $state(false);
@@ -237,12 +276,14 @@
 
 	let creatingAlbum = $state(false);
 	let creatingArtist = $state(false);
-
-	const defaultThumbnail = '/images/default-album.png';
 </script>
 
 {#snippet table()}
-	<DataTable data={data.songs} {columns} />
+	{#await data.songs}
+		<SongsTableSkeleton rowCount={data.limits.songsPerPage} />
+	{:then songs}
+		<DataTable data={songs} {columns} />
+	{/await}
 {/snippet}
 
 {#if tab === 'songs'}
@@ -259,27 +300,31 @@
 
 	<CreateAlbumCard bind:open={creatingAlbum} onOpenChange={(value) => (creatingAlbum = value)} />
 
-	<div class="mt-4 flex flex-row flex-wrap gap-4">
-		{#each data.albums as album}
-			<div class="mb-4 w-[256px] rounded border p-4">
-				<FileDropZone
-					onUpload={(files) => handleUpload(files, album.id)}
-					class="contents"
-					clickable={false}
-					accept="audio/*"
-				>
-					<AspectRatio ratio={1 / 1} class="bg-muted">
-						<img
-							src={album.artworkPath || defaultThumbnail}
-							alt={album.name}
-							class="rounded-md object-cover"
-						/>
-					</AspectRatio>
-					<p class="mt-2 block text-sm font-medium">{album.name}</p>
-				</FileDropZone>
-			</div>
-		{/each}
-	</div>
+	{#await data.albums}
+		<AlbumsSkeleton albumCount={data.limits.albumsPerPage} />
+	{:then albums}
+		<div class="mt-4 flex flex-row flex-wrap gap-4">
+			{#each albums as album}
+				<div class="mb-4 w-[256px] rounded border p-4">
+					<FileDropZone
+						onUpload={(files) => handleUpload(files, album.id)}
+						class="contents"
+						clickable={false}
+						accept="audio/*"
+					>
+						<AspectRatio ratio={1 / 1} class="bg-muted">
+							<img
+								src={album.artworkPath || defaultThumbnail}
+								alt={album.name}
+								class="rounded-md object-cover"
+							/>
+						</AspectRatio>
+						<p class="mt-2 block text-sm font-medium">{album.name}</p>
+					</FileDropZone>
+				</div>
+			{/each}
+		</div>
+	{/await}
 {:else if tab === 'artists'}
 	<div class="items-left flex flex-row gap-4">
 		<Button onclick={() => (creatingArtist = true)}>+</Button>
@@ -287,27 +332,31 @@
 
 	<CreateArtistCard bind:open={creatingArtist} onOpenChange={(value) => (creatingArtist = value)} />
 
-	<div class="mt-4 flex flex-row flex-wrap gap-4">
-		{#each data.artists as artist}
-			<div class="mb-4 w-[256px] rounded border p-4">
-				<AspectRatio ratio={1 / 1} class="bg-muted">
-					<img
-						src={artist.image || defaultThumbnail}
-						alt={artist.name}
-						class="rounded-md object-cover"
-					/>
-				</AspectRatio>
-				<p class="mt-2 block text-sm font-medium">{artist.name}</p>
-			</div>
-		{/each}
-	</div>
+	{#await data.artists}
+		<ArtistsSkeleton />
+	{:then artists}
+		<div class="mt-4 flex flex-row flex-wrap gap-4">
+			{#each artists as artist}
+				<div class="mb-4 w-[256px] rounded border p-4">
+					<AspectRatio ratio={1 / 1} class="bg-muted">
+						<img
+							src={resolveArtistImage(artist)}
+							alt={artist.name}
+							class="rounded-md object-cover"
+						/>
+					</AspectRatio>
+					<p class="mt-2 block text-sm font-medium">{artist.name}</p>
+				</div>
+			{/each}
+		</div>
+	{/await}
 {/if}
 
 <!-- Artist Mapping Dialog -->
 <ArtistMappingDialog
 	bind:open={showArtistMappingDialog}
 	unmappedArtists={unmappedArtistsList}
-	existingArtists={data.artists}
+	existingArtists={resolvedArtists}
 	onResolve={handleArtistMapping}
 	onCancel={handleArtistMappingCancel}
 />
