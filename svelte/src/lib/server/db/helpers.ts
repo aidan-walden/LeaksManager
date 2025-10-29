@@ -6,7 +6,8 @@ import {
 	albumArtists,
 	songArtists,
 	producers,
-	songProducers
+	songProducers,
+	settings
 } from './schema';
 import { eq, sql } from 'drizzle-orm';
 
@@ -321,6 +322,14 @@ export async function updateAlbum(
 		.where(eq(albums.id, albumId));
 }
 
+export async function deleteAlbum(albumId: number) {
+	return await db.transaction(async (tx) => {
+		await tx.update(songs).set({ albumId: null }).where(eq(songs.albumId, albumId));
+		await tx.delete(albumArtists).where(eq(albumArtists.albumId, albumId));
+		return await tx.delete(albums).where(eq(albums.id, albumId)).returning();
+	});
+}
+
 /**
  * Create a new song with artists
  */
@@ -406,6 +415,31 @@ export async function getAlbums(params: { limit?: number; offset?: number }) {
 	return albums;
 }
 
+/**
+ * Get all albums with songs included (for song count)
+ */
+export async function getAlbumsWithSongs(params: { limit?: number; offset?: number }) {
+	const limit = params.limit ?? 50;
+	const offset = params.offset ?? 0;
+
+	const albums = await db.query.albums.findMany({
+		limit,
+		offset,
+		with: {
+			albumArtists: {
+				with: {
+					artist: true
+				},
+				orderBy: (albumArtists, { asc }) => [asc(albumArtists.order)]
+			},
+			songs: true
+		},
+		orderBy: (albums, { desc }) => [desc(albums.createdAt)]
+	});
+
+	return albums;
+}
+
 export async function getAlbumById(albumId: number) {
 	return await db.query.albums.findFirst({
 		where: eq(albums.id, albumId)
@@ -478,6 +512,17 @@ export async function getSongsReadable(params: { limit?: number; offset?: number
 		artist: song.songArtists.map((sa) => sa.artist.name).join(', ')
 	}));
 	return songs;
+}
+
+/**
+ * Get all songs that are part of the album specified by albumId
+ */
+export async function getSongsFromAlbum(albumId: number) {
+	const foundSongs = await db.query.songs.findMany({
+		where: eq(songs.id, albumId)
+	});
+
+	return foundSongs;
 }
 
 /**
@@ -574,7 +619,7 @@ export async function updateSong(
 		artworkPath?: string;
 		genre?: string;
 		year?: number;
-		trackNumber?: number;
+		trackNumber?: number | null;
 		additionalMetadata?: Record<string, any>;
 	}
 ) {
@@ -596,4 +641,33 @@ export async function updateSong(
 
 export async function deleteSong(songId: number) {
 	return await db.delete(songs).where(eq(songs.id, songId)).returning();
+}
+
+/**
+ * Get application settings (singleton)
+ * Automatically initializes settings if they don't exist
+ */
+export async function getSettings() {
+	let result = await db.query.settings.findFirst({
+		where: eq(settings.id, 1)
+	});
+
+	// Initialize default settings if none exist
+	if (!result) {
+		await db.insert(settings).values({ id: 1 });
+		result = await db.query.settings.findFirst({ where: eq(settings.id, 1) });
+	}
+
+	return result!;
+}
+
+/**
+ * Update application settings
+ */
+export async function updateSettings(updates: Partial<typeof settings.$inferInsert>) {
+	return await db
+		.update(settings)
+		.set({ ...updates, updatedAt: new Date() })
+		.where(eq(settings.id, 1))
+		.returning();
 }

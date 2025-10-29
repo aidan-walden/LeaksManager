@@ -1,0 +1,110 @@
+<script lang="ts">
+	import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import CreateAlbumCard from '$lib/components/ui/create-album-card.svelte';
+	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
+	import AlbumsSkeleton from '$lib/components/ui/albums-skeleton.svelte';
+	import type { PageData } from '../../../routes/[tab]/$types';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import { invalidateAll } from '$app/navigation';
+	import type { EditableAlbum } from '@/schema';
+
+	type AlbumsPromise = PageData['albums'];
+
+	let creatingAlbum = $state(false);
+	let currentAlbum = $state<EditableAlbum | null>(null);
+
+	async function onDelete(id: number) {
+		const formData = new FormData();
+		formData.append('id', id.toString());
+		await fetch('?/deleteAlbum', {
+			method: 'POST',
+			body: formData
+		});
+
+		await invalidateAll();
+	}
+
+	function openCreateModal() {
+		currentAlbum = null;
+		creatingAlbum = true;
+	}
+
+	function onClickEdit(album: EditableAlbum) {
+		currentAlbum = album;
+		creatingAlbum = true;
+	}
+
+	let {
+		albumsPromise,
+		albumsPerPage,
+		defaultThumbnail,
+		onUpload
+	}: {
+		albumsPromise: AlbumsPromise;
+		albumsPerPage: number;
+		defaultThumbnail: string;
+		onUpload: (files: File[], albumId: number) => Promise<void>;
+	} = $props();
+</script>
+
+<div class="items-left flex flex-row gap-4">
+	<Button onclick={openCreateModal}>+</Button>
+</div>
+
+<CreateAlbumCard
+	bind:open={creatingAlbum}
+	album={currentAlbum}
+	onOpenChange={(value) => {
+		creatingAlbum = value;
+	}}
+/>
+
+{#await albumsPromise}
+	<AlbumsSkeleton albumCount={albumsPerPage} />
+{:then albums}
+	<div class="mt-4 flex flex-row flex-wrap gap-4">
+		{#each albums as album (album.id)}
+			<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
+				<FileDropZone
+					onUpload={(files) => onUpload(files, album.id)}
+					class="contents"
+					clickable={false}
+					accept="audio/*"
+				>
+					<AspectRatio ratio={1 / 1} class="bg-muted">
+						<img
+							src={album.artworkPath || defaultThumbnail}
+							alt={album.name}
+							class="rounded-md object-cover"
+						/>
+					</AspectRatio>
+					<div class="flex flex-row justify-between">
+						<p class="mt-2 block text-sm font-medium">{album.name}</p>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+										<span class="sr-only">Open menu</span>
+										<EllipsisIcon />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content>
+								<DropdownMenu.Group>
+									<DropdownMenu.Label>Actions</DropdownMenu.Label>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Item onclick={() => onClickEdit(album)}>Edit</DropdownMenu.Item>
+									<DropdownMenu.Item style="color: red;" onclick={() => onDelete(album.id)}
+										>Delete</DropdownMenu.Item
+									>
+								</DropdownMenu.Group>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					</div>
+				</FileDropZone>
+			</div>
+		{/each}
+	</div>
+{/await}

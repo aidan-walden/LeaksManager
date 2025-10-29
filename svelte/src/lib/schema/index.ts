@@ -1,5 +1,10 @@
 import * as z from 'zod';
 
+export const artworkDataSchema = z.object({
+	data: z.string(),
+	mimeType: z.string()
+});
+
 export const createAlbumSchema = z.object({
 	name: z.string().min(1),
 	artistIds: z
@@ -7,8 +12,48 @@ export const createAlbumSchema = z.object({
 		.transform((str) => str.split(',').map((str) => str.trim()))
 		.transform((arr) => arr.map(Number))
 		.pipe(z.array(z.number().int().positive())),
-	year: z.preprocess((v) => v || undefined, z.string().min(1).optional())
+	year: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().int().optional())
 });
+
+export const updateAlbumSchema = z.object({
+	id: z.coerce.number().int().positive(),
+	name: z.string().min(1),
+	artistIds: z
+		.string()
+		.transform((str) => str.split(',').map((str) => str.trim()))
+		.transform((arr) => arr.map(Number))
+		.pipe(z.array(z.number().int().positive())),
+	year: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().int().optional()),
+	genre: z.preprocess((v) => v || undefined, z.string().min(1).optional())
+});
+
+const editableArtistSchema = z
+	.object({
+		id: z.number().int().positive(),
+		name: z.string().min(1)
+	})
+	.catchall(z.unknown());
+
+const editableAlbumArtistSchema = z
+	.object({
+		artistId: z.number().int().positive(),
+		order: z.number().int().optional().nullable(),
+		artist: editableArtistSchema.nullable().optional()
+	})
+	.catchall(z.unknown());
+
+export const editableAlbumSchema = z
+	.object({
+		id: z.number().int().positive(),
+		name: z.string().min(1),
+		artworkPath: z.string().nullish(),
+		genre: z.string().nullish(),
+		year: z.number().int().nullable().optional(),
+		albumArtists: z.array(editableAlbumArtistSchema).optional()
+	})
+	.catchall(z.unknown());
+
+export type EditableAlbum = z.infer<typeof editableAlbumSchema>;
 
 export const createArtistSchema = z.object({
 	name: z.string().min(1),
@@ -24,7 +69,10 @@ export const uploadArtSchema = z.object({
 
 export const uploadSongsSchema = z.object({
 	files: z.array(z.instanceof(File)),
-	albumId: z.coerce.number().int().positive()
+	albumId: z.preprocess(
+		(v) => (v === null || v === '' ? undefined : v),
+		z.coerce.number().int().positive().optional()
+	)
 });
 
 export const updateSongSchema = z.object({
@@ -35,16 +83,27 @@ export const updateSongSchema = z.object({
 		.transform((arr) => arr.map(Number))
 		.pipe(z.array(z.number().int().positive())),
 	album: z.string().min(1),
+	albumId: z.preprocess(
+		(v) => (v === null || v === '' ? undefined : v),
+		z.coerce.number().int().positive().optional()
+	),
+	trackNumber: z.preprocess(
+		(v) => (v === null || v === '' ? null : v),
+		z.coerce.number().int().positive().nullable()
+	),
 	songId: z.coerce.number().int().positive()
 });
 
-export const deleteSongSchema = z.object({
+export const deleteRecordByIdSchema = z.object({
 	id: z.coerce.number().int().positive()
 });
 
 export const uploadAndExtractMetadataSchema = z.object({
 	files: z.array(z.instanceof(File)),
-	albumId: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().positive().optional())
+	albumId: z.preprocess(
+		(v) => (v === null || v === '' ? undefined : v),
+		z.coerce.number().int().positive().optional()
+	)
 });
 
 export const fileDataSchema = z.object({
@@ -60,12 +119,7 @@ export const fileDataSchema = z.object({
 		trackNumber: z.number().int().positive().nullish(),
 		producer: z.string().nullish(),
 		duration: z.number().nullish(),
-		artwork: z
-			.object({
-				data: z.string(),
-				mimeType: z.string()
-			})
-			.optional()
+		artwork: artworkDataSchema.nullish()
 	}),
 	parsedArtists: z.array(z.string().min(1)).optional(),
 	parsedProducers: z.array(z.string().min(1)).optional(),
@@ -75,7 +129,10 @@ export const fileDataSchema = z.object({
 export type FileData = z.infer<typeof fileDataSchema>;
 
 export const createSongsWithMetadataSchema = z.object({
-	albumId: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().positive().optional()),
+	albumId: z.preprocess(
+		(v) => (v === null || v === '' ? undefined : v),
+		z.coerce.number().int().positive().optional()
+	),
 	filesData: z
 		.string()
 		.transform((str) => JSON.parse(str))
@@ -86,21 +143,13 @@ export const createSongsWithMetadataSchema = z.object({
 		.transform((v) => (v && v.trim() ? JSON.parse(v) : {})) as z.ZodType<
 		Record<string, number | 'CREATE_NEW'>
 	>,
-	useEmbeddedArtwork: z.preprocess(
-		(v) => v === 'true' || v === true,
-		z.boolean()
-	)
+	useEmbeddedArtwork: z.preprocess((v) => v === 'true' || v === true, z.boolean())
 });
 
 // Microservice API Schemas
 
 export const extractMetadataRequestSchema = z.object({
 	filepath: z.string().min(1)
-});
-
-export const artworkDataSchema = z.object({
-	data: z.string(),
-	mimeType: z.string()
 });
 
 export const extractedMetadataSchema = z.object({
@@ -136,6 +185,14 @@ export type ExtractMetadataRequest = z.infer<typeof extractMetadataRequestSchema
 export type ArtworkData = z.infer<typeof artworkDataSchema>;
 export type ExtractedMetadata = z.infer<typeof extractedMetadataSchema>;
 export type WriteMetadataResponse = z.infer<typeof writeMetadataResponseSchema>;
+
+// Settings Schema
+
+export const updateSettingsSchema = z.object({
+	clearTrackNumberOnUpload: z.boolean().optional(),
+	importToAppleMusic: z.boolean().optional(),
+	automaticallyMakeSingles: z.boolean().optional()
+});
 
 // export interface FileData {
 // 	albumId?: number;

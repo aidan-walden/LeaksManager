@@ -7,9 +7,12 @@ import {
 	updateAlbum,
 	updateSong,
 	findArtistByNameCaseInsensitive,
-	findAlbumByNameCaseInsensitive
+	findAlbumByNameCaseInsensitive,
+	deleteAlbum,
+	setAlbumArtists,
+	getSongsFromAlbum,
+	getSettings
 } from '@/server/db/helpers';
-import type { PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
@@ -19,7 +22,8 @@ import {
 	createAlbumSchema,
 	createArtistSchema,
 	createSongsWithMetadataSchema,
-	deleteSongSchema,
+	deleteRecordByIdSchema,
+	updateAlbumSchema,
 	updateSongSchema,
 	uploadAndExtractMetadataSchema,
 	uploadArtSchema,
@@ -85,7 +89,7 @@ export const actions = {
 			const dbAlbum = await createAlbum({
 				name: validated.data.name,
 				artistIds: validated.data.artistIds,
-				year: validated.data.year ? parseInt(validated.data.year) : undefined
+				year: validated.data.year ? validated.data.year : undefined
 			});
 			console.log('Album created successfully');
 			return { success: true, id: dbAlbum.id, message: 'Album created successfully' };
@@ -163,6 +167,9 @@ export const actions = {
 	},
 
 	uploadSongs: async ({ request }) => {
+		// Load settings to check if track numbers should be cleared
+		const settings = await getSettings();
+
 		const formData = await request.formData();
 		const files = formData.getAll('files') as File[];
 		const albumId = formData.get('albumId') as string | null;
@@ -173,6 +180,7 @@ export const actions = {
 		});
 
 		if (!validated.success) {
+			console.error('Upload songs validation error:', validated.error);
 			return fail(400, { error: 'Invalid form data' });
 		}
 
@@ -202,12 +210,40 @@ export const actions = {
 
 			const buffer = Buffer.from(await file.arrayBuffer());
 			await writeFile(filepath, buffer);
+
+			// Always extract all metadata from the file
+			let metadata: any = {};
+			try {
+				const dbFilepath = `/uploads/songs/${filename}`;
+				const extractResponse = await fetch(`${MICROSERVICE_URL}/extract-metadata`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ filepath: dbFilepath })
+				});
+
+				if (extractResponse.ok) {
+					metadata = await extractResponse.json();
+				}
+			} catch (error) {
+				console.error('Error extracting metadata:', error);
+				// Continue without metadata
+			}
+
+			// Conditionally clear track number based on setting
+			const trackNumber = settings.clearTrackNumberOnUpload
+				? undefined
+				: metadata.trackNumber ?? undefined;
+
 			const song = await createSong({
-				name: file.name,
+				name: metadata.title || file.name,
 				filepath: `/uploads/songs/${filename}`,
 				albumId: validated.data.albumId ? validated.data.albumId : undefined,
 				artworkPath: artworkPath,
-				artistIds: artistIds
+				artistIds: artistIds,
+				genre: metadata.genre ?? undefined,
+				year: metadata.year ?? undefined,
+				trackNumber: trackNumber,
+				duration: metadata.duration ?? undefined
 			});
 			await writeMetadataToDisk(song.id);
 		}
@@ -219,16 +255,21 @@ export const actions = {
 		const name = formData.get('name') as string | null;
 		const artistIdsStr = formData.get('artistIds') as string | null;
 		const album = formData.get('album') as string | null;
+		const albumId = formData.get('albumId') as string | null;
+		const trackNumber = formData.get('trackNumber') as string | null;
 		const songId = formData.get('songId') as string | null;
 
 		const validated = updateSongSchema.safeParse({
 			name,
 			artistIds: artistIdsStr,
 			album,
+			albumId,
+			trackNumber,
 			songId
 		});
 
 		if (!validated.success) {
+			console.error('Validation error:', validated.error);
 			return fail(400, { error: 'Invalid form data' });
 		}
 
@@ -236,13 +277,17 @@ export const actions = {
 			name: validated.data.name,
 			artistIdsStr: validated.data.artistIds,
 			album: validated.data.album,
+			albumId: validated.data.albumId,
+			trackNumber: validated.data.trackNumber,
 			songId: validated.data.songId
 		});
 
 		try {
 			await updateSong(validated.data.songId, {
 				name: validated.data.name,
-				artistIds: validated.data.artistIds
+				artistIds: validated.data.artistIds,
+				albumId: validated.data.albumId,
+				trackNumber: validated.data.trackNumber
 			});
 
 			await writeMetadataToDisk(validated.data.songId);
@@ -259,7 +304,7 @@ export const actions = {
 		const formData = await request.formData();
 		const idStr = formData.get('id') as string | null;
 
-		const validated = deleteSongSchema.safeParse({
+		const validated = deleteRecordByIdSchema.safeParse({
 			id: idStr
 		});
 
@@ -268,7 +313,6 @@ export const actions = {
 		}
 
 		try {
-			// Implement song deletion logic here
 			console.log(`Deleting song with ID: ${validated.data.id}`);
 			const song = await deleteSong(validated.data.id);
 			if (song && song[0]) {
@@ -279,6 +323,29 @@ export const actions = {
 		} catch (error) {
 			console.error('Error deleting song:', error);
 			return fail(500, { error: 'Failed to delete song' });
+		}
+	},
+
+	deleteAlbum: async ({ request }) => {
+		const formData = await request.formData();
+		const idStr = formData.get('id') as string | null;
+
+		const validated = deleteRecordByIdSchema.safeParse({
+			id: idStr
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
+		}
+
+		try {
+			console.log(`Deleting album with ID: ${validated.data.id}`);
+			await deleteAlbum(validated.data.id);
+
+			return { success: true, message: 'Album deleted successfully' };
+		} catch (error) {
+			console.error('Error deleting album:', error);
+			return fail(500, { error: 'Failed to delete album' });
 		}
 	},
 
@@ -423,6 +490,9 @@ export const actions = {
 
 	createSongsWithMetadata: async ({ request }) => {
 		try {
+			// Load settings to check if track numbers should be cleared
+			const settings = await getSettings();
+
 			const formData = await request.formData();
 			const filesDataStr = formData.get('filesData') as string | null;
 			const artistMappingStr = formData.get('artistMapping') as string | null;
@@ -559,7 +629,9 @@ export const actions = {
 					artistIds: finalArtistIds,
 					genre: fileData.metadata.genre ?? undefined,
 					year: fileData.metadata.year ?? undefined,
-					trackNumber: fileData.metadata.trackNumber ?? undefined,
+					trackNumber: settings.clearTrackNumberOnUpload
+						? undefined
+						: fileData.metadata.trackNumber ?? undefined,
 					duration: fileData.metadata.duration ?? undefined
 				});
 
@@ -579,6 +651,57 @@ export const actions = {
 			return fail(500, {
 				error: `Failed to create songs with metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
 			});
+		}
+	},
+
+	updateAlbum: async ({ request }) => {
+		try {
+			const formData = await request.formData();
+			const name = formData.get('name') as string | null;
+			const year = formData.get('year') as string | null;
+			const genre = formData.get('genre') as string | null;
+			const albumId = formData.get('albumId') as string | null;
+			const artistIds = formData.get('artistIds') as string | null;
+
+			const validated = updateAlbumSchema.safeParse({
+				id: albumId,
+				name: name,
+				year: year,
+				genre: genre,
+				artistIds: artistIds
+			});
+
+			if (!validated.success) {
+				return fail(400, { error: 'Invalid form data' });
+			}
+
+			await updateAlbum(validated.data.id, {
+				name: validated.data.name,
+				year: validated.data.year,
+				genre: validated.data.genre
+			});
+
+			await setAlbumArtists(validated.data.id, validated.data.artistIds);
+
+			// Write updated metadata to all songs in this album
+			try {
+				const response = await fetch(`${MICROSERVICE_URL}/write-metadata/album/${validated.data.id}`);
+				if (!response.ok) {
+					console.error('Failed to write metadata to album songs:', await response.text());
+					// Don't fail the entire request, just log the error
+				} else {
+					const result = await response.json();
+					console.log(`Wrote metadata to ${result.songs_processed} songs in album`);
+				}
+			} catch (error) {
+				console.error('Error calling microservice to write album metadata:', error);
+				// Don't fail the entire request
+			}
+
+			return { success: true, message: 'Album updated successfully' };
+		} catch (error) {
+			console.error('Error updating album:', error);
+			return fail(500, { error: 'Failed to update album' });
 		}
 	},
 

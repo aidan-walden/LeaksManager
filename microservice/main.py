@@ -373,6 +373,90 @@ def read_root():
     songs = cursor.fetchall()
     return {"songs": songs}
 
+@app.get("/write-metadata/album/{album_id}")
+def write_album_metadata(album_id: int):
+    """
+    Write metadata to all songs in an album.
+    Useful after updating album information to sync changes to all song files.
+    """
+    print(f"Writing metadata to all songs in album ID: {album_id}")
+    try:
+        # First, verify the album exists
+        cursor.execute("SELECT id, name FROM albums WHERE id = ?", (album_id,))
+        album = cursor.fetchone()
+
+        if not album:
+            raise HTTPException(status_code=404, detail=f"Album with ID {album_id} not found")
+
+        album_db_id, album_name = album
+        print(f"Found album: {album_name} (ID: {album_db_id})")
+
+        # Get all songs for this album
+        cursor.execute("SELECT id FROM songs WHERE album_id = ?", (album_id,))
+        song_ids = cursor.fetchall()
+
+        if not song_ids:
+            return {
+                "success": True,
+                "message": f"No songs found for album '{album_name}' (ID: {album_id})",
+                "album_id": album_id,
+                "album_name": album_name,
+                "songs_processed": 0,
+                "songs_failed": 0,
+                "results": []
+            }
+
+        print(f"Found {len(song_ids)} songs in album")
+
+        results = []
+        songs_succeeded = 0
+        songs_failed = 0
+
+        # Write metadata for each song
+        for (song_id,) in song_ids:
+            try:
+                # Call the existing write_song_metadata function
+                result = write_song_metadata(song_id)
+                results.append({
+                    "song_id": song_id,
+                    "success": True,
+                    "metadata": result.get("metadata_written", {})
+                })
+                songs_succeeded += 1
+                print(f"Successfully wrote metadata for song ID {song_id}")
+            except HTTPException as e:
+                results.append({
+                    "song_id": song_id,
+                    "success": False,
+                    "error": e.detail
+                })
+                songs_failed += 1
+                print(f"Failed to write metadata for song ID {song_id}: {e.detail}")
+            except Exception as e:
+                results.append({
+                    "song_id": song_id,
+                    "success": False,
+                    "error": str(e)
+                })
+                songs_failed += 1
+                print(f"Failed to write metadata for song ID {song_id}: {str(e)}")
+
+        return {
+            "success": True,
+            "message": f"Processed {len(song_ids)} songs from album '{album_name}'",
+            "album_id": album_id,
+            "album_name": album_name,
+            "songs_processed": songs_succeeded,
+            "songs_failed": songs_failed,
+            "results": results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error writing album metadata: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error writing album metadata: {str(e)}")
+
 @app.get("/write-metadata/{song_id}")
 def write_song_metadata(song_id: int):
     """
@@ -417,13 +501,69 @@ def write_song_metadata(song_id: int):
             raise HTTPException(status_code=404, detail=f"Song with ID {song_id} not found")
 
         # Extract song data
-        song_id, song_name, filepath, genre, year, track_number, duration, song_artwork_path, album_name, album_year, album_genre, album_artwork_path, artists, album_artists, producers = song_data
+        (
+            song_id,
+            song_name,
+            filepath,
+            song_genre,
+            year,
+            track_number,
+            duration,
+            song_artwork_path,
+            album_name,
+            album_year,
+            album_genre,
+            album_artwork_path,
+            artists,
+            album_artists,
+            producers,
+        ) = song_data
 
         print(f"=== SONG DATA ===")
         print(f"Song ID: {song_id}, Name: {song_name}")
         print(f"Song artwork path: {song_artwork_path}")
         print(f"Album name: {album_name}")
         print(f"Album artwork path: {album_artwork_path}")
+        print(f"Song genre: {song_genre}, Album genre: {album_genre}")
+
+        # Prefer explicit song genre, but fall back to album genre when missing
+        genre_to_write = song_genre or album_genre
+
+        # Query settings for automatically_make_singles
+        cursor.execute("SELECT automatically_make_singles FROM settings WHERE id = 1")
+        settings_result = cursor.fetchone()
+        automatically_make_singles = settings_result[0] if settings_result else False
+        print(f"Automatically make singles: {automatically_make_singles}")
+
+        # Handle songs with no album
+        if not album_name:
+            if automatically_make_singles:
+                # Make this a single
+                album_name = f"{song_name} - Single"
+                track_number_str = "1/1"
+                print(f"Creating single: album='{album_name}', track={track_number_str}")
+            else:
+                # Don't write album or track number
+                album_name = None
+                track_number_str = None
+                print("Song has no album and singles disabled - will not write album/track metadata")
+        else:
+            # Calculate total tracks in the album (if song belongs to an album)
+            total_tracks = None
+            cursor.execute("SELECT COUNT(*) FROM songs WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)", (song_id,))
+            result = cursor.fetchone()
+            if result:
+                total_tracks = result[0]
+                print(f"Total tracks in album: {total_tracks}")
+
+            # Format track number as "track/total" if we have both values
+            track_number_str = None
+            if track_number:
+                if total_tracks:
+                    track_number_str = f"{track_number}/{total_tracks}"
+                else:
+                    track_number_str = str(track_number)
+                print(f"Track number string: {track_number_str}")
 
         # Determine album artist: use album's artists if available, otherwise fall back to song artists
         albumartist = album_artists if album_artists else artists
@@ -466,12 +606,18 @@ def write_song_metadata(song_id: int):
                 easy_file['albumartist'] = albumartist
             if album_name:
                 easy_file['album'] = album_name
-            if genre:
-                easy_file['genre'] = genre
+            if genre_to_write:
+                easy_file['genre'] = genre_to_write
             if year:
                 easy_file['date'] = str(year)
-            if track_number:
-                easy_file['tracknumber'] = str(track_number)
+
+            # Explicitly handle track number - set it or ensure it's removed
+            if track_number_str:
+                easy_file['tracknumber'] = track_number_str
+            elif 'tracknumber' in easy_file:
+                # Explicitly delete track number to clear existing metadata
+                del easy_file['tracknumber']
+
             if producers:
                 easy_file['composer'] = producers  # Map producers to composer field
 
@@ -503,8 +649,14 @@ def write_song_metadata(song_id: int):
                 easy_file['genre'] = genre
             if year:
                 easy_file['date'] = str(year)
-            if track_number:
-                easy_file['tracknumber'] = str(track_number)
+
+            # Explicitly handle track number - set it or ensure it's removed
+            if track_number_str:
+                easy_file['tracknumber'] = track_number_str
+            elif 'tracknumber' in easy_file:
+                # Explicitly delete track number to clear existing metadata
+                del easy_file['tracknumber']
+
             if producers:
                 easy_file['composer'] = producers  # Map producers to composer field
 
@@ -530,14 +682,19 @@ def write_song_metadata(song_id: int):
                 audio_file.tags['albumartist'] = albumartist
             if album_name:
                 audio_file.tags['album'] = album_name
-            if genre:
-                audio_file.tags['genre'] = genre
+            if genre_to_write:
+                audio_file.tags['genre'] = genre_to_write
             if year:
                 audio_file.tags['date'] = str(year)
             if producers:
                 audio_file.tags['producer'] = producers
-            if track_number:
-                audio_file.tags['tracknumber'] = str(track_number)
+
+            # Explicitly handle track number - set it or ensure it's removed
+            if track_number_str:
+                audio_file.tags['tracknumber'] = track_number_str
+            elif 'tracknumber' in audio_file.tags:
+                # Explicitly delete track number to clear existing metadata
+                del audio_file.tags['tracknumber']
 
             audio_file.save()
 
@@ -561,14 +718,19 @@ def write_song_metadata(song_id: int):
                     tags['albumartist'] = albumartist
                 if album_name:
                     tags['album'] = album_name
-                if genre:
-                    tags['genre'] = genre
+                if genre_to_write:
+                    tags['genre'] = genre_to_write
                 if year:
                     tags['date'] = str(year)
                 if producers:
                     tags['producer'] = producers
-                if track_number:
-                    tags['tracknumber'] = str(track_number)
+
+                # Explicitly handle track number - set it or ensure it's removed
+                if track_number_str:
+                    tags['tracknumber'] = track_number_str
+                elif 'tracknumber' in tags:
+                    # Explicitly delete track number to clear existing metadata
+                    del tags['tracknumber']
 
                 audio_file.save()
 
@@ -590,10 +752,10 @@ def write_song_metadata(song_id: int):
                 "artist": artists,
                 "albumartist": albumartist,
                 "album": album_name,
-                "genre": genre,
+                "genre": genre_to_write,
                 "year": year,
                 "producers": producers,
-                "track_number": track_number
+                "track_number": track_number_str if track_number_str else track_number
             }
         }
         

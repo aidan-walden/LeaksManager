@@ -19,6 +19,20 @@ export const producers = sqliteTable('producers', {
 	updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 });
 
+export const settings = sqliteTable('settings', {
+	id: integer('id').primaryKey().default(1),
+	clearTrackNumberOnUpload: integer('clear_track_number_on_upload', { mode: 'boolean' })
+		.notNull()
+		.default(false),
+	importToAppleMusic: integer('import_to_apple_music', { mode: 'boolean' })
+		.notNull()
+		.default(false),
+	automaticallyMakeSingles: integer('automatically_make_singles', { mode: 'boolean' })
+		.notNull()
+		.default(false),
+	updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
+});
+
 export const albums = sqliteTable('albums', {
 	id: integer('id').primaryKey({ autoIncrement: true }),
 	name: text('name').notNull(),
@@ -169,6 +183,9 @@ export type NewSongArtist = typeof songArtists.$inferInsert;
 
 export type SongProducer = typeof songProducers.$inferSelect;
 export type NewSongProducer = typeof songProducers.$inferInsert;
+
+export type Settings = typeof settings.$inferSelect;
+export type NewSettings = typeof settings.$inferInsert;
 
 export type SongWithRelations = Song & {
 	album: Album | null;

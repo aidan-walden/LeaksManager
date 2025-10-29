@@ -1,20 +1,13 @@
 <script lang="ts">
-	import DataTable from '$lib/components/ui/data-table/data-table.svelte';
-	import { columns } from './columns';
-	import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import CreateAlbumCard from '$lib/components/ui/create-album-card.svelte';
-	import CreateArtistCard from '$lib/components/ui/create-artist-card.svelte';
-	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
+	import SongsTab from './inner-view/songs-tab.svelte';
+	import AlbumsTab from './inner-view/albums-tab.svelte';
+	import ArtistsTab from './inner-view/artists-tab.svelte';
 	import { invalidateAll } from '$app/navigation';
-import { setArtistsContext } from '$lib/contexts/artists-context';
-import { setAlbumsContext } from '$lib/contexts/albums-context';
+	import { setArtistsContext } from '$lib/contexts/artists-context';
+	import { setAlbumsContext } from '$lib/contexts/albums-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
 	import { parse as devalueParse } from 'devalue';
-	import SongsTableSkeleton from '$lib/components/ui/data-table/songs-table-skeleton.svelte';
-	import AlbumsSkeleton from '$lib/components/ui/albums-skeleton.svelte';
-	import ArtistsSkeleton from '$lib/components/ui/artists-skeleton.svelte';
 	import type { Artist } from '$lib/server/db/schema';
 	import type { PageData } from '../../routes/[tab]/$types';
 
@@ -38,318 +31,249 @@ let resolvedAlbums = $state<AlbumElement[]>([]);
 setArtistsContext<ArtistForContext>(() => resolvedArtists);
 setAlbumsContext<AlbumElement>(() => resolvedAlbums);
 
-	const defaultThumbnail = '/images/default-album.png';
+const defaultThumbnail = '/images/default-album.png';
 
-	function resolveArtistImage(artist: ArtistElement) {
-		return (artist as ArtistForContext).image ?? defaultThumbnail;
-	}
-
-	// Update the reactive state when the promise resolves
-	$effect(() => {
-		data.artists.then((artists) => {
-			resolvedArtists = artists;
-		});
+// Update the reactive state when the promise resolves
+$effect(() => {
+	data.artists.then((artists) => {
+		resolvedArtists = artists;
 	});
+});
 
-	$effect(() => {
-		data.albums.then((albums) => {
-			resolvedAlbums = albums;
-		});
+$effect(() => {
+	data.albums.then((albums) => {
+		resolvedAlbums = albums;
 	});
+});
 
-	$inspect(tab, 'tab in InnerView');
+$inspect(tab, 'tab in InnerView');
 
-	// Dialog state
-	let showArtistMappingDialog = $state(false);
-	let showArtworkChoiceDialog = $state(false);
-	let pendingUploadData: any = $state(null);
-	let unmappedArtistsList = $state<string[]>([]);
-	let filesWithArtworkCount = $state(0);
+// Dialog state
+let showArtistMappingDialog = $state(false);
+let showArtworkChoiceDialog = $state(false);
+let pendingUploadData: any = $state(null);
+let unmappedArtistsList = $state<string[]>([]);
+let filesWithArtworkCount = $state(0);
 
-	async function handleUpload(files: File[], albumId?: number) {
-		try {
-			// Step 1: Upload files and extract metadata
-			const formData = new FormData();
-			for (const file of files) {
-				formData.append('files', file);
-			}
-			if (albumId) {
-				formData.append('albumId', albumId.toString());
-			}
-
-			const uploadResponse = await fetch('?/uploadAndExtractMetadata', {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!uploadResponse.ok) {
-				console.error('Upload response not OK:', uploadResponse.status, uploadResponse.statusText);
-				const text = await uploadResponse.text();
-				console.error('Response body:', text);
-				alert(`Upload failed: ${uploadResponse.statusText}`);
-				return;
-			}
-
-			const uploadResult = await uploadResponse.json();
-
-			// Check if it's a SvelteKit ActionResult with type 'failure'
-			if (uploadResult.type === 'failure') {
-				alert(`Upload failed: ${uploadResult.data?.error || 'Unknown error'}`);
-				return;
-			}
-
-			// Extract data from SvelteKit action result
-			// SvelteKit serializes the data using devalue, so we need to parse it with devalue
-			let data = uploadResult.type === 'success' ? uploadResult.data : uploadResult;
-			if (typeof data === 'string') {
-				console.log('Parsing data string with devalue:', data.substring(0, 100));
-				data = devalueParse(data);
-			}
-
-			// Store the data for later use
-			pendingUploadData = {
-				filesData: data.filesData,
-				albumId: albumId
-			};
-
-			// Store unmapped artists list if any
-			if (data.unmappedArtists && data.unmappedArtists.length > 0) {
-				unmappedArtistsList = data.unmappedArtists;
-			} else {
-				unmappedArtistsList = [];
-			}
-
-			// Step 2: Check if any files have embedded artwork
-			if (data.filesWithArtwork > 0) {
-				filesWithArtworkCount = data.filesWithArtwork;
-				showArtworkChoiceDialog = true;
-				return; // Wait for user choice
-			}
-
-			// Step 3: Check if any artists need mapping
-			if (unmappedArtistsList.length > 0) {
-				pendingUploadData.useEmbeddedArtwork = false; // No artwork dialog shown, default to false
-				showArtistMappingDialog = true;
-				return; // Wait for user mapping
-			}
-
-			// No dialogs needed, proceed directly
-			await createSongs({}, false);
-		} catch (error) {
-			console.error('Error uploading:', error);
-			alert('An error occurred while uploading files');
+async function handleUpload(files: File[], albumId?: number) {
+	try {
+		// Step 1: Upload files and extract metadata
+		const formData = new FormData();
+		for (const file of files) {
+			formData.append('files', file);
 		}
-	}
+		if (albumId) {
+			formData.append('albumId', albumId.toString());
+		}
 
-	async function handleArtworkChoice(useEmbedded: boolean) {
-		if (!pendingUploadData) return;
+		const uploadResponse = await fetch('?/uploadAndExtractMetadata', {
+			method: 'POST',
+			body: formData
+		});
 
-		pendingUploadData.useEmbeddedArtwork = useEmbedded;
-
-		// Check if we need to show artist mapping dialog
-		if (unmappedArtistsList.length > 0) {
-			showArtistMappingDialog = true;
+		if (!uploadResponse.ok) {
+			console.error('Upload response not OK:', uploadResponse.status, uploadResponse.statusText);
+			const text = await uploadResponse.text();
+			console.error('Response body:', text);
+			alert(`Upload failed: ${uploadResponse.statusText}`);
 			return;
 		}
 
-		// No artist mapping needed, proceed
-		await createSongs({}, useEmbedded);
-	}
+		const uploadResult = await uploadResponse.json();
 
-	async function handleArtistMapping(mapping: Record<string, number | 'CREATE_NEW'>) {
-		if (!pendingUploadData) return;
-
-		await createSongs(
-			mapping,
-			pendingUploadData.useEmbeddedArtwork !== undefined
-				? pendingUploadData.useEmbeddedArtwork
-				: false
-		);
-	}
-
-	async function handleArtistMappingCancel() {
-		if (!pendingUploadData) return;
-
-		// Filter out files that have unmapped artists
-		const filesToKeep = pendingUploadData.filesData.filter((f: any) => !f.hasUnmappedArtists);
-		const filesToDelete = pendingUploadData.filesData.filter((f: any) => f.hasUnmappedArtists);
-
-		// Cleanup files that won't be uploaded
-		if (filesToDelete.length > 0) {
-			const filepaths = filesToDelete.map((f: any) => f.filepath);
-			const cleanupFormData = new FormData();
-			cleanupFormData.append('filepaths', JSON.stringify(filepaths));
-
-			await fetch('?/cleanupFiles', {
-				method: 'POST',
-				body: cleanupFormData
-			});
+		// Check if it's a SvelteKit ActionResult with type 'failure'
+		if (uploadResult.type === 'failure') {
+			alert(`Upload failed: ${uploadResult.data?.error || 'Unknown error'}`);
+			return;
 		}
 
-		// If there are files to keep, create songs for those
-		if (filesToKeep.length > 0) {
-			pendingUploadData.filesData = filesToKeep;
-			await createSongs(
-				{},
-				pendingUploadData.useEmbeddedArtwork !== undefined
-					? pendingUploadData.useEmbeddedArtwork
-					: false
-			);
+		// Extract data from SvelteKit action result
+		// SvelteKit serializes the data using devalue, so we need to parse it with devalue
+		let data = uploadResult.type === 'success' ? uploadResult.data : uploadResult;
+		if (typeof data === 'string') {
+			console.log('Parsing data string with devalue:', data.substring(0, 100));
+			data = devalueParse(data);
+		}
+
+		// Store the data for later use
+		pendingUploadData = {
+			filesData: data.filesData,
+			albumId: albumId
+		};
+
+		// Store unmapped artists list if any
+		if (data.unmappedArtists && data.unmappedArtists.length > 0) {
+			unmappedArtistsList = data.unmappedArtists;
 		} else {
-			// All files were skipped
-			pendingUploadData = null;
-			await invalidateAll();
-		}
-	}
-
-	async function createSongs(
-		artistMapping: Record<string, number | 'CREATE_NEW'>,
-		useEmbeddedArtwork: boolean
-	) {
-		if (!pendingUploadData) return;
-
-		try {
-			// Convert to FormData with JSON strings
-			const formData = new FormData();
-			formData.append('filesData', JSON.stringify(pendingUploadData.filesData));
-			formData.append('artistMapping', JSON.stringify(artistMapping));
-			if (pendingUploadData.albumId) {
-				formData.append('albumId', pendingUploadData.albumId.toString());
-			}
-			formData.append('useEmbeddedArtwork', useEmbeddedArtwork.toString());
-
-			const createResponse = await fetch('?/createSongsWithMetadata', {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!createResponse.ok) {
-				console.error('Create response not OK:', createResponse.status, createResponse.statusText);
-				const text = await createResponse.text();
-				console.error('Response body:', text);
-				alert(`Failed to create songs: ${createResponse.statusText}`);
-				return;
-			}
-
-			const createResult = await createResponse.json();
-
-			// Parse data if it's a string (using devalue)
-			let parsedData = createResult.data;
-			if (typeof parsedData === 'string') {
-				console.log('Parsing create result data string with devalue');
-				parsedData = devalueParse(parsedData);
-			}
-
-			// Check if it's a SvelteKit ActionResult with type 'failure'
-			if (createResult.type === 'failure') {
-				const errorMsg = parsedData?.error || parsedData?.[1] || 'Unknown error';
-				console.error('Song creation failed:', errorMsg);
-				alert(`Failed to create songs: ${errorMsg}`);
-				return;
-			}
-
-			// Extract data from SvelteKit action result
-			let resultData = createResult.type === 'success' ? parsedData : createResult;
-
-			console.log('Result data extracted:', resultData);
-			console.log('Result data songs:', resultData?.songs);
-			console.log('Successfully created songs:', resultData?.songs);
-
-			// Clear pending data
-			pendingUploadData = null;
 			unmappedArtistsList = [];
-			filesWithArtworkCount = 0;
-
-			// Refresh the UI
-			await invalidateAll();
-		} catch (error) {
-			console.error('Error creating songs:', error);
-			if (error instanceof Error) {
-				console.error('Error message:', error.message);
-				console.error('Error stack:', error.stack);
-			}
-			alert(
-				`An error occurred while creating songs: ${error instanceof Error ? error.message : 'Unknown error'}`
-			);
 		}
+
+		// Step 2: Check if any files have embedded artwork
+		if (data.filesWithArtwork > 0) {
+			filesWithArtworkCount = data.filesWithArtwork;
+			showArtworkChoiceDialog = true;
+			return; // Wait for user choice
+		}
+
+		// Step 3: Check if any artists need mapping
+		if (unmappedArtistsList.length > 0) {
+			pendingUploadData.useEmbeddedArtwork = false; // No artwork dialog shown, default to false
+			showArtistMappingDialog = true;
+			return; // Wait for user mapping
+		}
+
+		// No dialogs needed, proceed directly
+		await createSongs({}, false);
+	} catch (error) {
+		console.error('Error uploading:', error);
+		alert('An error occurred while uploading files');
+	}
+}
+
+async function handleArtworkChoice(useEmbedded: boolean) {
+	if (!pendingUploadData) return;
+
+	pendingUploadData.useEmbeddedArtwork = useEmbedded;
+
+	// Check if we need to show artist mapping dialog
+	if (unmappedArtistsList.length > 0) {
+		showArtistMappingDialog = true;
+		return;
 	}
 
-	let creatingAlbum = $state(false);
-	let creatingArtist = $state(false);
+	// No artist mapping needed, proceed
+	await createSongs({}, useEmbedded);
+}
+
+async function handleArtistMapping(mapping: Record<string, number | 'CREATE_NEW'>) {
+	if (!pendingUploadData) return;
+
+	await createSongs(
+		mapping,
+		pendingUploadData.useEmbeddedArtwork !== undefined ? pendingUploadData.useEmbeddedArtwork : false
+	);
+}
+
+async function handleArtistMappingCancel() {
+	if (!pendingUploadData) return;
+
+	// Filter out files that have unmapped artists
+	const filesToKeep = pendingUploadData.filesData.filter((f: any) => !f.hasUnmappedArtists);
+	const filesToDelete = pendingUploadData.filesData.filter((f: any) => f.hasUnmappedArtists);
+
+	// Cleanup files that won't be uploaded
+	if (filesToDelete.length > 0) {
+		const filepaths = filesToDelete.map((f: any) => f.filepath);
+		const cleanupFormData = new FormData();
+		cleanupFormData.append('filepaths', JSON.stringify(filepaths));
+
+		await fetch('?/cleanupFiles', {
+			method: 'POST',
+			body: cleanupFormData
+		});
+	}
+
+	// If there are files to keep, create songs for those
+	if (filesToKeep.length > 0) {
+		pendingUploadData.filesData = filesToKeep;
+		await createSongs(
+			{},
+			pendingUploadData.useEmbeddedArtwork !== undefined ? pendingUploadData.useEmbeddedArtwork : false
+		);
+	} else {
+		// All files were skipped
+		pendingUploadData = null;
+		await invalidateAll();
+	}
+}
+
+async function createSongs(
+	artistMapping: Record<string, number | 'CREATE_NEW'>,
+	useEmbeddedArtwork: boolean
+) {
+	if (!pendingUploadData) return;
+
+	try {
+		// Convert to FormData with JSON strings
+		const formData = new FormData();
+		formData.append('filesData', JSON.stringify(pendingUploadData.filesData));
+		formData.append('artistMapping', JSON.stringify(artistMapping));
+		if (pendingUploadData.albumId) {
+			formData.append('albumId', pendingUploadData.albumId.toString());
+		}
+		formData.append('useEmbeddedArtwork', useEmbeddedArtwork.toString());
+
+		const createResponse = await fetch('?/createSongsWithMetadata', {
+			method: 'POST',
+			body: formData
+		});
+
+		if (!createResponse.ok) {
+			console.error('Create response not OK:', createResponse.status, createResponse.statusText);
+			const text = await createResponse.text();
+			console.error('Response body:', text);
+			alert(`Failed to create songs: ${createResponse.statusText}`);
+			return;
+		}
+
+		const createResult = await createResponse.json();
+
+		// Parse data if it's a string (using devalue)
+		let parsedData = createResult.data;
+		if (typeof parsedData === 'string') {
+			console.log('Parsing create result data string with devalue');
+			parsedData = devalueParse(parsedData);
+		}
+
+		// Check if it's a SvelteKit ActionResult with type 'failure'
+		if (createResult.type === 'failure') {
+			const errorMsg = parsedData?.error || parsedData?.[1] || 'Unknown error';
+			console.error('Song creation failed:', errorMsg);
+			alert(`Failed to create songs: ${errorMsg}`);
+			return;
+		}
+
+		// Extract data from SvelteKit action result
+		let resultData = createResult.type === 'success' ? parsedData : createResult;
+
+		console.log('Result data extracted:', resultData);
+		console.log('Result data songs:', resultData?.songs);
+		console.log('Successfully created songs:', resultData?.songs);
+
+		// Clear pending data
+		pendingUploadData = null;
+		unmappedArtistsList = [];
+		filesWithArtworkCount = 0;
+
+		// Refresh the UI
+		await invalidateAll();
+	} catch (error) {
+		console.error('Error creating songs:', error);
+		if (error instanceof Error) {
+			console.error('Error message:', error.message);
+			console.error('Error stack:', error.stack);
+		}
+		alert(`An error occurred while creating songs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+	}
+}
+
 </script>
 
-{#snippet table()}
-	{#await data.songs}
-		<SongsTableSkeleton rowCount={data.limits.songsPerPage} />
-	{:then songs}
-		<DataTable data={songs} {columns} />
-	{/await}
-{/snippet}
-
 {#if tab === 'songs'}
-	<FileDropZone
+	<SongsTab
+		songsPromise={data.songs}
+		songsPerPage={data.limits.songsPerPage}
 		onUpload={(files) => handleUpload(files)}
-		children={table}
-		class="contents"
-		clickable={false}
 	/>
 {:else if tab === 'albums'}
-	<div class="items-left flex flex-row gap-4">
-		<Button onclick={() => (creatingAlbum = true)}>+</Button>
-	</div>
-
-	<CreateAlbumCard bind:open={creatingAlbum} onOpenChange={(value) => (creatingAlbum = value)} />
-
-	{#await data.albums}
-		<AlbumsSkeleton albumCount={data.limits.albumsPerPage} />
-	{:then albums}
-		<div class="mt-4 flex flex-row flex-wrap gap-4">
-			{#each albums as album}
-				<div class="mb-4 w-[256px] rounded border p-4">
-					<FileDropZone
-						onUpload={(files) => handleUpload(files, album.id)}
-						class="contents"
-						clickable={false}
-						accept="audio/*"
-					>
-						<AspectRatio ratio={1 / 1} class="bg-muted">
-							<img
-								src={album.artworkPath || defaultThumbnail}
-								alt={album.name}
-								class="rounded-md object-cover"
-							/>
-						</AspectRatio>
-						<p class="mt-2 block text-sm font-medium">{album.name}</p>
-					</FileDropZone>
-				</div>
-			{/each}
-		</div>
-	{/await}
+	<AlbumsTab
+		albumsPromise={data.albums}
+		albumsPerPage={data.limits.albumsPerPage}
+		defaultThumbnail={defaultThumbnail}
+		onUpload={(files, albumId) => handleUpload(files, albumId)}
+	/>
 {:else if tab === 'artists'}
-	<div class="items-left flex flex-row gap-4">
-		<Button onclick={() => (creatingArtist = true)}>+</Button>
-	</div>
-
-	<CreateArtistCard bind:open={creatingArtist} onOpenChange={(value) => (creatingArtist = value)} />
-
-	{#await data.artists}
-		<ArtistsSkeleton />
-	{:then artists}
-		<div class="mt-4 flex flex-row flex-wrap gap-4">
-			{#each artists as artist}
-				<div class="mb-4 w-[256px] rounded border p-4">
-					<AspectRatio ratio={1 / 1} class="bg-muted">
-						<img
-							src={resolveArtistImage(artist)}
-							alt={artist.name}
-							class="rounded-md object-cover"
-						/>
-					</AspectRatio>
-					<p class="mt-2 block text-sm font-medium">{artist.name}</p>
-				</div>
-			{/each}
-		</div>
-	{/await}
+	<ArtistsTab artistsPromise={data.artists} defaultThumbnail={defaultThumbnail} />
 {/if}
 
 <!-- Artist Mapping Dialog -->

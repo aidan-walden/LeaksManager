@@ -8,6 +8,9 @@
 	import AlbumCombobox from '$lib/components/ui/album-combobox.svelte';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
+	import type { Album, Song } from '@/server/db/schema';
+
+	type AlbumWithSongs = Album & { songs: Song[] };
 
 	let {
 		open = $bindable(),
@@ -23,7 +26,7 @@
 
 	// Get artists from context
 	const artists = $derived(getArtistsContext());
-	const albums = $derived(getAlbumsContext());
+	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
 
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
@@ -52,9 +55,20 @@
 	let selectedArtistIds = $state<number[]>([]);
 	let selectedProducerIds = $state<number[]>([]);
 	let selectedAlbumId = $state<number | null>(null);
+	let trackNumber = $state<number | null>(null);
 
 	const selectedAlbum = $derived(albums.find((album) => album.id === selectedAlbumId) ?? null);
-	const selectedAlbumName = $derived(() => selectedAlbum?.name ?? '');
+	const selectedAlbumName = $derived(selectedAlbum?.name ?? '');
+
+	// Calculate total tracks in the selected album (including this song if editing)
+	const totalTracks = $derived.by(() => {
+		if (!selectedAlbum) return 0;
+		// Count songs in the album
+		const songsInAlbum = selectedAlbum.songs?.length ?? 0;
+		// If we're creating a new song and an album is selected, it will be added
+		// If we're editing, the song is already counted
+		return song ? songsInAlbum : songsInAlbum + 1;
+	});
 
 	// Track initial values for edit mode
 	let initialValues = $state<{
@@ -62,6 +76,7 @@
 		album: string;
 		albumId: number | null;
 		artistIds: number[];
+		trackNumber: number | null;
 		hasFile: boolean;
 	} | null>(null);
 
@@ -74,18 +89,21 @@
 				const artistIds = song.songArtists.map((sa) => sa.artistId);
 				selectedArtistIds = artistIds;
 				selectedAlbumId = song.album ? song.album.id : null;
+				trackNumber = song.trackNumber ?? null;
 
 				initialValues = {
 					name: song.name,
 					album: song.album?.name || '',
 					albumId: song.album ? song.album.id : null,
 					artistIds: [...artistIds],
+					trackNumber: song.trackNumber ?? null,
 					hasFile: false
 				};
 			} else {
 				// Create mode: reset to empty state
 				selectedArtistIds = [];
 				selectedAlbumId = null;
+				trackNumber = null;
 				initialValues = null;
 			}
 			file = null;
@@ -94,6 +112,7 @@
 			selectedArtistIds = [];
 			selectedProducerIds = [];
 			selectedAlbumId = null;
+			trackNumber = null;
 			initialValues = null;
 			file = null;
 		}
@@ -132,11 +151,12 @@
 		const artistsChanged =
 			selectedArtistIds.length !== initial.artistIds.length ||
 			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
+		const trackNumberChanged = trackNumber !== initial.trackNumber;
 
 		const fileChanged = initial.hasFile;
 
 		// Allow submission only if something changed
-		return nameChanged || albumChanged || artistsChanged || fileChanged;
+		return nameChanged || albumChanged || artistsChanged || trackNumberChanged || fileChanged;
 	};
 </script>
 
@@ -161,6 +181,30 @@
 		<div class="grid gap-2">
 			<Label>Album</Label>
 			<AlbumCombobox {albums} bind:value={selectedAlbumId} disabled={loading} />
+		</div>
+		<div class="grid gap-2">
+			<Label for="track-number">Track Number</Label>
+			<div class="flex items-center gap-2">
+				<span class="text-sm text-muted-foreground">Track</span>
+				<Input
+					id="track-number"
+					name="trackNumber"
+					type="number"
+					min="1"
+					placeholder={song?.trackNumber?.toString() ?? ''}
+					bind:value={trackNumber}
+					disabled={loading || !selectedAlbumId}
+					class="w-20"
+				/>
+				<span class="text-sm text-muted-foreground">of</span>
+				<Input
+					type="number"
+					value={totalTracks}
+					disabled
+					class="w-20"
+					readonly
+				/>
+			</div>
 		</div>
 		{#if song}
 			<input type="hidden" name="songId" value={song.id} />

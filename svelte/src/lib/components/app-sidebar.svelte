@@ -25,56 +25,12 @@
 				]
 			},
 			{
-				title: 'Building Your Application',
-				url: '#',
+				title: 'Application',
+				url: '',
 				items: [
 					{
-						title: 'Routing',
-						url: '#'
-					},
-					{
-						title: 'Data Fetching',
-						url: '#'
-					},
-					{
-						title: 'Rendering',
-						url: '#'
-					},
-					{
-						title: 'Caching',
-						url: '#'
-					},
-					{
-						title: 'Styling',
-						url: '#'
-					},
-					{
-						title: 'Optimizing',
-						url: '#'
-					},
-					{
-						title: 'Configuring',
-						url: '#'
-					},
-					{
-						title: 'Testing',
-						url: '#'
-					},
-					{
-						title: 'Authentication',
-						url: '#'
-					},
-					{
-						title: 'Deploying',
-						url: '#'
-					},
-					{
-						title: 'Upgrading',
-						url: '#'
-					},
-					{
-						title: 'Examples',
-						url: '#'
+						title: 'Settings',
+						url: ''
 					}
 				]
 			}
@@ -88,9 +44,13 @@
 
 	let {
 		currentPath = '/',
+		onSettingsClick,
 		ref = $bindable(null),
 		...restProps
-	}: ComponentProps<typeof Sidebar.Root> & { currentPath?: string } = $props();
+	}: ComponentProps<typeof Sidebar.Root> & {
+		currentPath?: string;
+		onSettingsClick?: () => void;
+	} = $props();
 </script>
 
 <Sidebar.Root {...restProps} bind:ref>
@@ -102,13 +62,19 @@
 				<Sidebar.GroupContent>
 					<Sidebar.Menu>
 						{#each group.items as item (item.title)}
-							<Sidebar.MenuItem>
-								<Sidebar.MenuButton isActive={currentPath === item.url}>
-									{#snippet child({ props })}
-										<a href={item.url} {...props}>{item.title}</a>
-									{/snippet}
+							{#if item.title === 'Settings'}
+								<Sidebar.MenuButton onclick={onSettingsClick}>
+									{item.title}
 								</Sidebar.MenuButton>
-							</Sidebar.MenuItem>
+							{:else}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton isActive={currentPath === item.url}>
+										{#snippet child({ props })}
+											<a href={item.url} {...props}>{item.title}</a>
+										{/snippet}
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/if}
 						{/each}
 					</Sidebar.Menu>
 				</Sidebar.GroupContent>
