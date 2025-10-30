@@ -5,6 +5,7 @@
 	import type { EditableSong } from '../columns';
 	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
+	import { getProducersContext } from '$lib/contexts/producers-context';
 	import AlbumCombobox from '$lib/components/ui/album-combobox.svelte';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
@@ -26,6 +27,7 @@
 
 	// Get artists from context
 	const artists = $derived(getArtistsContext());
+	const producers = $derived(getProducersContext());
 	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
 
 	let file = $state<File | null>(null);
@@ -76,6 +78,7 @@
 		album: string;
 		albumId: number | null;
 		artistIds: number[];
+		producerIds: number[];
 		trackNumber: number | null;
 		hasFile: boolean;
 	} | null>(null);
@@ -87,7 +90,12 @@
 			if (song) {
 				// Edit mode: capture initial values for change detection
 				const artistIds = song.songArtists.map((sa) => sa.artistId);
+				const producerIds = song.songProducers?.map((sp) => sp.producerId);
 				selectedArtistIds = artistIds;
+				if (producerIds !== undefined) {
+					selectedProducerIds = producerIds;
+				}
+
 				selectedAlbumId = song.album ? song.album.id : null;
 				trackNumber = song.trackNumber ?? null;
 
@@ -96,12 +104,14 @@
 					album: song.album?.name || '',
 					albumId: song.album ? song.album.id : null,
 					artistIds: [...artistIds],
+					producerIds: producerIds ? [...producerIds] : [],
 					trackNumber: song.trackNumber ?? null,
 					hasFile: false
 				};
 			} else {
 				// Create mode: reset to empty state
 				selectedArtistIds = [];
+				selectedProducerIds = [];
 				selectedAlbumId = null;
 				trackNumber = null;
 				initialValues = null;
@@ -152,11 +162,21 @@
 			selectedArtistIds.length !== initial.artistIds.length ||
 			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
 		const trackNumberChanged = trackNumber !== initial.trackNumber;
+		const producersChanged =
+			selectedProducerIds.length !== initial.producerIds.length ||
+			selectedProducerIds.some((id, index) => id !== initial.producerIds[index]);
 
 		const fileChanged = initial.hasFile;
 
 		// Allow submission only if something changed
-		return nameChanged || albumChanged || artistsChanged || trackNumberChanged || fileChanged;
+		return (
+			nameChanged ||
+			albumChanged ||
+			artistsChanged ||
+			trackNumberChanged ||
+			producersChanged ||
+			fileChanged
+		);
 	};
 </script>
 
@@ -176,7 +196,21 @@
 		</div>
 		<div class="grid gap-2">
 			<Label for="artist">Artist</Label>
-			<MultiArtistCombobox {artists} bind:value={selectedArtistIds} disabled={loading} />
+			<MultiArtistCombobox
+				{artists}
+				useProducerMode={false}
+				bind:value={selectedArtistIds}
+				disabled={loading}
+			/>
+		</div>
+		<div class="grid gap-2">
+			<Label for="producer">Producer</Label>
+			<MultiArtistCombobox
+				artists={producers}
+				bind:value={selectedProducerIds}
+				useProducerMode={true}
+				disabled={loading}
+			/>
 		</div>
 		<div class="grid gap-2">
 			<Label>Album</Label>
@@ -197,13 +231,7 @@
 					class="w-20"
 				/>
 				<span class="text-sm text-muted-foreground">of</span>
-				<Input
-					type="number"
-					value={totalTracks}
-					disabled
-					class="w-20"
-					readonly
-				/>
+				<Input type="number" value={totalTracks} disabled class="w-20" readonly />
 			</div>
 		</div>
 		{#if song}

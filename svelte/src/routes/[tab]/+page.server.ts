@@ -1,8 +1,11 @@
 import {
 	createAlbum,
 	createArtist,
+	createProducer,
+	createProducerWithAliases,
 	createSong,
 	deleteSong,
+	deleteProducer,
 	getAlbumWithArtists,
 	updateAlbum,
 	updateSong,
@@ -11,18 +14,24 @@ import {
 	deleteAlbum,
 	setAlbumArtists,
 	getSongsFromAlbum,
-	getSettings
+	getSettings,
+	updateProducerWithAliases,
+	getSongsByArtist,
+	getSongsByProducer
 } from '@/server/db/helpers';
 import { fail } from '@sveltejs/kit';
 import { join } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
 import { MICROSERVICE_URL } from '$env/static/private';
 import { parseArtists } from '$lib/utils/artist-parser';
+import { matchProducersFromFilename } from '$lib/utils/producer-matcher';
 import {
 	createAlbumSchema,
 	createArtistSchema,
+	createProducerSchema,
 	createSongsWithMetadataSchema,
 	deleteRecordByIdSchema,
+	updateProducerSchema,
 	updateAlbumSchema,
 	updateSongSchema,
 	uploadAndExtractMetadataSchema,
@@ -62,17 +71,48 @@ async function writeMetadataToDisk(songId: number) {
 	return data;
 }
 
+function parseAliasesFromFormData(formData: FormData) {
+	const aliases: Array<{ name: string; artistIds: number[] }> = [];
+	let index = 0;
+
+	while (formData.has(`aliases[${index}].name`)) {
+		const aliasName = formData.get(`aliases[${index}].name`) as string;
+		const artistIdsStr = formData.get(`aliases[${index}].artistIds`) as string;
+
+		if (aliasName && aliasName.trim().length > 0) {
+			const artistIds =
+				artistIdsStr && artistIdsStr.trim().length > 0
+					? artistIdsStr
+							.split(',')
+							.map((id) => parseInt(id.trim(), 10))
+							.filter((id) => !isNaN(id))
+					: [];
+
+			aliases.push({
+				name: aliasName.trim(),
+				artistIds
+			});
+		}
+
+		index++;
+	}
+
+	return aliases;
+}
+
 export const actions = {
 	createAlbum: async ({ request }) => {
 		const formData = await request.formData();
 		const title = formData.get('name') as string | null;
 		const artistIdsStr = formData.get('artistIds') as string | null;
 		const year = formData.get('year') as string | null;
+		const genre = formData.get('genre') as string | null;
 
 		const validated = createAlbumSchema.safeParse({
 			name: title,
 			artistIds: artistIdsStr,
-			year: year
+			year: year,
+			genre: genre
 		});
 
 		if (!validated.success) {
@@ -89,7 +129,8 @@ export const actions = {
 			const dbAlbum = await createAlbum({
 				name: validated.data.name,
 				artistIds: validated.data.artistIds,
-				year: validated.data.year ? validated.data.year : undefined
+				year: validated.data.year ? validated.data.year : undefined,
+				genre: validated.data.genre ? validated.data.genre : undefined
 			});
 			console.log('Album created successfully');
 			return { success: true, id: dbAlbum.id, message: 'Album created successfully' };
@@ -134,6 +175,117 @@ export const actions = {
 		} catch (error) {
 			console.error('Error creating artist:', error);
 			return fail(500, { error: 'Failed to create artist' });
+		}
+	},
+
+	createProducer: async ({ request }) => {
+		const formData = await request.formData();
+		const name = formData.get('name') as string | null;
+
+		const aliases = parseAliasesFromFormData(formData);
+
+		const validated = createProducerSchema.safeParse({
+			name,
+			aliases
+		});
+
+		if (!validated.success) {
+			console.error('Validation failed:', validated.error);
+			return fail(400, { error: 'Invalid form data' });
+		}
+
+		console.log('Creating producer with data:', {
+			name: validated.data.name,
+			aliases: validated.data.aliases
+		});
+
+		try {
+			const dbProducer = await createProducerWithAliases({
+				name: validated.data.name,
+				aliases: validated.data.aliases
+			});
+			console.log('Producer created successfully with aliases');
+			return { success: true, id: dbProducer.id, message: 'Producer created successfully' };
+		} catch (error) {
+			console.error('Error creating producer:', error);
+			// Check if it's an alias uniqueness error
+			if (error instanceof Error && error.message.includes('already exists')) {
+				return fail(400, { error: error.message });
+			}
+			return fail(500, { error: 'Failed to create producer' });
+		}
+	},
+
+	updateProducer: async ({ request }) => {
+		const formData = await request.formData();
+		const idStr = formData.get('id') as string | null;
+		const name = formData.get('name') as string | null;
+
+		const aliases = parseAliasesFromFormData(formData);
+
+		const validated = updateProducerSchema.safeParse({
+			id: idStr,
+			name,
+			aliases
+		});
+
+		if (!validated.success) {
+			console.error('Validation failed:', validated.error);
+			return fail(400, { error: 'Invalid form data' });
+		}
+
+		console.log('Updating producer with data:', {
+			id: validated.data.id,
+			name: validated.data.name,
+			aliases: validated.data.aliases
+		});
+
+		try {
+			const dbProducer = await updateProducerWithAliases({
+				id: validated.data.id,
+				name: validated.data.name,
+				aliases: validated.data.aliases
+			});
+			console.log('Producer updated successfully');
+
+			const songs = await getSongsByProducer(validated.data.id);
+
+			const songIds = songs.map((song) => song.songId);
+
+			return {
+				success: true,
+				id: dbProducer?.id,
+				message: 'Producer updated successfully'
+			};
+		} catch (error) {
+			console.error('Error updating producer:', error);
+			if (error instanceof Error && error.message.includes('already exists')) {
+				return fail(400, { error: error.message });
+			}
+			return fail(500, { error: 'Failed to update producer' });
+		}
+	},
+
+	deleteProducer: async ({ request }) => {
+		const formData = await request.formData();
+		const idStr = formData.get('id') as string | null;
+
+		const validated = deleteRecordByIdSchema.safeParse({
+			id: idStr
+		});
+
+		if (!validated.success) {
+			return fail(400, { error: 'Invalid form data' });
+		}
+
+		try {
+			console.log(`Deleting producer with ID: ${validated.data.id}`);
+			await deleteProducer(validated.data.id);
+
+			return { success: true, message: 'Producer deleted successfully' };
+		} catch (error) {
+			console.error('Error deleting producer:', error);
+			return fail(500, { error: 'Failed to delete producer' });
 		}
 	},
 
@@ -232,7 +384,7 @@ export const actions = {
 			// Conditionally clear track number based on setting
 			const trackNumber = settings.clearTrackNumberOnUpload
 				? undefined
-				: metadata.trackNumber ?? undefined;
+				: (metadata.trackNumber ?? undefined);
 
 			const song = await createSong({
 				name: metadata.title || file.name,
@@ -254,6 +406,7 @@ export const actions = {
 		const formData = await request.formData();
 		const name = formData.get('name') as string | null;
 		const artistIdsStr = formData.get('artistIds') as string | null;
+		const producerIdsStr = formData.get('producerIds') as string | null;
 		const album = formData.get('album') as string | null;
 		const albumId = formData.get('albumId') as string | null;
 		const trackNumber = formData.get('trackNumber') as string | null;
@@ -262,6 +415,7 @@ export const actions = {
 		const validated = updateSongSchema.safeParse({
 			name,
 			artistIds: artistIdsStr,
+			producerIds: producerIdsStr,
 			album,
 			albumId,
 			trackNumber,
@@ -275,7 +429,8 @@ export const actions = {
 
 		console.log('Updating song with data:', {
 			name: validated.data.name,
-			artistIdsStr: validated.data.artistIds,
+			artistIds: validated.data.artistIds,
+			producerIds: validated.data.producerIds,
 			album: validated.data.album,
 			albumId: validated.data.albumId,
 			trackNumber: validated.data.trackNumber,
@@ -286,6 +441,7 @@ export const actions = {
 			await updateSong(validated.data.songId, {
 				name: validated.data.name,
 				artistIds: validated.data.artistIds,
+				producerIds: validated.data.producerIds,
 				albumId: validated.data.albumId,
 				trackNumber: validated.data.trackNumber
 			});
@@ -620,6 +776,21 @@ export const actions = {
 				console.log('[createSongsWithMetadata] Artwork path for song:', artworkPath);
 				console.log('[createSongsWithMetadata] Current album artwork:', currentAlbum?.artworkPath);
 
+				// Match producers from filename based on aliases
+				let producerIds: number[] = [];
+				try {
+					producerIds = await matchProducersFromFilename(fileData.originalFilename, finalArtistIds);
+					if (producerIds.length > 0) {
+						console.log(
+							`[createSongsWithMetadata] Matched ${producerIds.length} producer(s) from filename:`,
+							producerIds
+						);
+					}
+				} catch (error) {
+					console.error('[createSongsWithMetadata] Error matching producers:', error);
+					// Continue without producers if matching fails
+				}
+
 				// Create the song
 				const song = await createSong({
 					name: fileData.metadata.title || fileData.originalFilename,
@@ -627,11 +798,12 @@ export const actions = {
 					albumId: finalAlbumId,
 					artworkPath,
 					artistIds: finalArtistIds,
+					producerIds,
 					genre: fileData.metadata.genre ?? undefined,
 					year: fileData.metadata.year ?? undefined,
 					trackNumber: settings.clearTrackNumberOnUpload
 						? undefined
-						: fileData.metadata.trackNumber ?? undefined,
+						: (fileData.metadata.trackNumber ?? undefined),
 					duration: fileData.metadata.duration ?? undefined
 				});
 
@@ -685,7 +857,9 @@ export const actions = {
 
 			// Write updated metadata to all songs in this album
 			try {
-				const response = await fetch(`${MICROSERVICE_URL}/write-metadata/album/${validated.data.id}`);
+				const response = await fetch(
+					`${MICROSERVICE_URL}/write-metadata/album/${validated.data.id}`
+				);
 				if (!response.ok) {
 					console.error('Failed to write metadata to album songs:', await response.text());
 					// Don't fail the entire request, just log the error

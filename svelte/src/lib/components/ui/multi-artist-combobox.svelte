@@ -1,33 +1,29 @@
-<script lang="ts">
+<script lang="ts" generics="T extends { id: number; name: string }">
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { tick } from 'svelte';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { cn } from '$lib/utils/utils.js';
-	import type { Artist } from '@/server/db/schema';
 
 	let {
 		artists,
 		value = $bindable([]),
 		disabled = false,
-		placeholder = 'Select artists...'
+		useProducerMode = false
 	}: {
-		artists: Artist[];
+		artists: T[];
 		value?: number[];
 		disabled?: boolean;
-		placeholder?: string;
+		useProducerMode: boolean;
 	} = $props();
 
 	let open = $state(false);
 	let triggerRef = $state<HTMLButtonElement>(null!);
 
-	const selectedArtists = $derived(
-		artists.filter((artist) => value.includes(artist.id))
-	);
+	const selectedArtists = $derived(artists.filter((artist) => value.includes(artist.id)));
 
 	function toggleArtist(artistId: number) {
 		if (value.includes(artistId)) {
@@ -42,12 +38,8 @@
 		value = value.filter((id) => id !== artistId);
 	}
 
-	function closeAndFocusTrigger() {
-		open = false;
-		tick().then(() => {
-			triggerRef?.focus();
-		});
-	}
+	const placeholder = useProducerMode ? 'Select producers...' : 'Select artists...';
+	const searchPlaceholcer = useProducerMode ? 'Search producers...' : 'Search artists...';
 </script>
 
 <Popover.Root bind:open>
@@ -56,12 +48,12 @@
 			<Button
 				{...props}
 				variant="outline"
-				class="w-full justify-start min-h-[36px] h-auto"
+				class="h-auto min-h-[36px] w-full justify-start"
 				role="combobox"
 				aria-expanded={open}
 				{disabled}
 			>
-				<div class="flex flex-1 flex-wrap gap-1 items-center">
+				<div class="flex flex-1 flex-wrap items-center gap-1">
 					{#if selectedArtists.length === 0}
 						<span class="text-muted-foreground">{placeholder}</span>
 					{:else}
@@ -70,7 +62,7 @@
 								{artist.name}
 								<button
 									type="button"
-									class="ml-1 rounded-full outline-none ring-offset-background hover:bg-accent hover:text-accent-foreground"
+									class="ml-1 rounded-full ring-offset-background outline-none hover:bg-accent hover:text-accent-foreground"
 									onclick={(e) => removeArtist(artist.id, e)}
 								>
 									<XIcon class="h-3 w-3" />
@@ -86,7 +78,7 @@
 	</Popover.Trigger>
 	<Popover.Content class="w-[400px] p-0">
 		<Command.Root>
-			<Command.Input placeholder="Search artists..." />
+			<Command.Input placeholder={searchPlaceholcer} />
 			<Command.List>
 				<Command.Empty>No artist found.</Command.Empty>
 				<Command.Group>
@@ -98,10 +90,7 @@
 							}}
 						>
 							<CheckIcon
-								class={cn(
-									'mr-2 h-4 w-4',
-									!value.includes(artist.id) && 'text-transparent'
-								)}
+								class={cn('mr-2 h-4 w-4', !value.includes(artist.id) && 'text-transparent')}
 							/>
 							{artist.name}
 						</Command.Item>

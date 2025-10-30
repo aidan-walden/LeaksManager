@@ -179,6 +179,7 @@
 				{artists}
 				bind:value={selectedArtistIds}
 				disabled={loading || formLoading}
+				useProducerMode={false}
 			/>
 		</div>
 		<div class="grid gap-2">

@@ -2,9 +2,11 @@
 	import SongsTab from './inner-view/songs-tab.svelte';
 	import AlbumsTab from './inner-view/albums-tab.svelte';
 	import ArtistsTab from './inner-view/artists-tab.svelte';
+	import ProducersTab from './inner-view/producers-tab.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { setArtistsContext } from '$lib/contexts/artists-context';
 	import { setAlbumsContext } from '$lib/contexts/albums-context';
+	import { setProducersContext } from '$lib/contexts/producers-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
 	import { parse as devalueParse } from 'devalue';
@@ -20,16 +22,22 @@ type AlbumsPromise = PageData['albums'];
 type RawAlbums = Awaited<AlbumsPromise>;
 type AlbumElement = RawAlbums extends Array<infer T> ? T : never;
 
+type ProducersPromise = PageData['producers'];
+type RawProducers = Awaited<ProducersPromise>;
+type ProducerElement = RawProducers extends Array<infer T> ? T : never;
+
 let { tab, data }: { tab: string; data: PageData } = $props();
 
 // Initialize artists state and set context synchronously
 let resolvedArtists = $state<ArtistForContext[]>([]);
 let resolvedAlbums = $state<AlbumElement[]>([]);
+let resolvedProducers = $state<ProducerElement[]>([]);
 
 // Set context with a getter function to maintain reactivity
 // Context must be set during component initialization
 setArtistsContext<ArtistForContext>(() => resolvedArtists);
 setAlbumsContext<AlbumElement>(() => resolvedAlbums);
+setProducersContext<ProducerElement>(() => resolvedProducers);
 
 const defaultThumbnail = '/images/default-album.png';
 
@@ -43,6 +51,12 @@ $effect(() => {
 $effect(() => {
 	data.albums.then((albums) => {
 		resolvedAlbums = albums;
+	});
+});
+
+$effect(() => {
+	data.producers.then((producers) => {
+		resolvedProducers = producers;
 	});
 });
 
@@ -274,6 +288,8 @@ async function createSongs(
 	/>
 {:else if tab === 'artists'}
 	<ArtistsTab artistsPromise={data.artists} defaultThumbnail={defaultThumbnail} />
+{:else if tab === 'producers'}
+	<ProducersTab producersPromise={data.producers} artistsPromise={data.artists} />
 {/if}
 
 <!-- Artist Mapping Dialog -->

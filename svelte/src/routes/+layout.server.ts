@@ -1,4 +1,4 @@
-import { getAlbumsWithSongs, getArtists, getSongsReadable, getSettings } from '$lib/server/db/helpers';
+import { getAlbumsWithSongs, getArtists, getProducers, getSongsReadable, getSettings } from '$lib/server/db/helpers';
 
 export const load = async () => {
 	const SONGS_PER_PAGE = 25;
@@ -8,6 +8,7 @@ export const load = async () => {
 		songs: getSongsReadable({ limit: SONGS_PER_PAGE, offset: 0 }),
 		albums: getAlbumsWithSongs({ limit: ALBUMS_PER_PAGE, offset: 0 }),
 		artists: getArtists(),
+		producers: getProducers(),
 		settings: await getSettings(),
 		isServerMac: process.platform === 'darwin',
 		limits: {

@@ -1,4 +1,4 @@
-from typing import Union, Optional
+from typing import List, Tuple, Union, Optional
 import sqlite3
 import os
 import base64
@@ -37,11 +37,50 @@ class ExtractedMetadata(BaseModel):
     producer: Optional[str] = None
     duration: Optional[float] = None
     artwork: Optional[ArtworkData] = None
+
+class SongsList(BaseModel):
+    songs: List[int]
+
+
 # Use check_same_thread=False to allow connection across threads
 # This is safe since we're only doing read operations on the database
 db = sqlite3.connect("../svelte/local.db", check_same_thread=False)
 cursor = db.cursor()
 
+def query_songs(song_ids: Tuple[int, ...]):
+    # Query song with all related metadata
+    query = """
+    SELECT
+        s.id, s.name, s.filepath, s.genre, s.year, s.track_number, s.duration,
+        s.artwork_path, a.name as album_name, a.year as album_year, a.genre as album_genre,
+        a.artwork_path as album_artwork_path,
+        GROUP_CONCAT(ar.name, ', ') as artists,
+        (
+            SELECT GROUP_CONCAT(ar2.name, ', ')
+            FROM album_artists aa
+            LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
+            WHERE aa.album_id = s.album_id
+            ORDER BY aa."order"
+        ) as album_artists,
+        (
+            SELECT GROUP_CONCAT(p.name, ', ')
+            FROM song_producers sp
+            LEFT JOIN producers p ON sp.producer_id = p.id
+            WHERE sp.song_id = s.id
+            ORDER BY sp."order"
+        ) as producers
+    FROM songs s
+    LEFT JOIN albums a ON s.album_id = a.id
+    LEFT JOIN song_artists sa ON s.id = sa.song_id
+    LEFT JOIN artists ar ON sa.artist_id = ar.id
+    WHERE s.id = ?
+    GROUP BY s.id
+    """
+
+    cursor.execute(query, (song_id,))
+    song_data = cursor.fetchone()
+
+    return song_data
 
 def embed_artwork(audio_file, song_artwork_path: str, album_artwork_path: str, filepath: str):
     """
@@ -464,37 +503,7 @@ def write_song_metadata(song_id: int):
     """
     print(f"Writing metadata to disk for song ID: {song_id}")
     try:
-        # Query song with all related metadata
-        query = """
-        SELECT
-            s.id, s.name, s.filepath, s.genre, s.year, s.track_number, s.duration,
-            s.artwork_path, a.name as album_name, a.year as album_year, a.genre as album_genre,
-            a.artwork_path as album_artwork_path,
-            GROUP_CONCAT(ar.name, ', ') as artists,
-            (
-                SELECT GROUP_CONCAT(ar2.name, ', ')
-                FROM album_artists aa
-                LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
-                WHERE aa.album_id = s.album_id
-                ORDER BY aa."order"
-            ) as album_artists,
-            (
-                SELECT GROUP_CONCAT(p.name, ', ')
-                FROM song_producers sp
-                LEFT JOIN producers p ON sp.producer_id = p.id
-                WHERE sp.song_id = s.id
-                ORDER BY sp."order"
-            ) as producers
-        FROM songs s
-        LEFT JOIN albums a ON s.album_id = a.id
-        LEFT JOIN song_artists sa ON s.id = sa.song_id
-        LEFT JOIN artists ar ON sa.artist_id = ar.id
-        WHERE s.id = ?
-        GROUP BY s.id
-        """
-
-        cursor.execute(query, (song_id,))
-        song_data = cursor.fetchone()
+        
 
         if not song_data:
             print(f"Song with ID {song_id} not found")
@@ -645,8 +654,8 @@ def write_song_metadata(song_id: int):
                 easy_file['albumartist'] = albumartist
             if album_name:
                 easy_file['album'] = album_name
-            if genre:
-                easy_file['genre'] = genre
+            if genre_to_write:
+                easy_file['genre'] = genre_to_write
             if year:
                 easy_file['date'] = str(year)
 
@@ -765,3 +774,6 @@ def write_song_metadata(song_id: int):
     except Exception as e:
         print(f"Exception: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error writing metadata: {str(e)}")
+
+@app.post("/write-metadata/bulk/songs")
+def write_song_metadata_bulk(songs_list: SongsList):

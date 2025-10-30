@@ -7,9 +7,11 @@ import {
 	songArtists,
 	producers,
 	songProducers,
+	producerAliases,
+	producerAliasArtists,
 	settings
 } from './schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, inArray, and, ne } from 'drizzle-orm';
 
 /**
  * Get an album with all its artists
@@ -30,7 +32,7 @@ export async function getAlbumWithArtists(albumId: number) {
 }
 
 /**
- * Get a song with all its artists
+ * Get a song with all its artists and producers
  */
 export async function getSongWithArtists(songId: number) {
 	return await db.query.songs.findFirst({
@@ -41,6 +43,12 @@ export async function getSongWithArtists(songId: number) {
 					artist: true
 				},
 				orderBy: (songArtists, { asc }) => [asc(songArtists.order)]
+			},
+			songProducers: {
+				with: {
+					producer: true
+				},
+				orderBy: (songProducers, { asc }) => [asc(songProducers.order)]
 			},
 			album: {
 				with: {
@@ -472,6 +480,12 @@ export async function getSongs(params: { limit?: number; offset?: number }) {
 				},
 				orderBy: (songArtists, { asc }) => [asc(songArtists.order)]
 			},
+			songProducers: {
+				with: {
+					producer: true
+				},
+				orderBy: (songProducers, { asc }) => [asc(songProducers.order)]
+			},
 			album: {
 				with: {
 					albumArtists: {
@@ -502,6 +516,12 @@ export async function getSongsReadable(params: { limit?: number; offset?: number
 				},
 				orderBy: (songArtists, { asc }) => [asc(songArtists.order)]
 			},
+			songProducers: {
+				with: {
+					producer: true
+				},
+				orderBy: (songProducers, { asc }) => [asc(songProducers.order)]
+			},
 			album: true
 		},
 		orderBy: (songs, { desc }) => [desc(songs.createdAt)]
@@ -520,6 +540,14 @@ export async function getSongsReadable(params: { limit?: number; offset?: number
 export async function getSongsFromAlbum(albumId: number) {
 	const foundSongs = await db.query.songs.findMany({
 		where: eq(songs.id, albumId)
+	});
+
+	return foundSongs;
+}
+
+export async function getSongsByProducer(producerId: number) {
+	const foundSongs = await db.query.songProducers.findMany({
+		where: eq(songProducers.producerId, producerId)
 	});
 
 	return foundSongs;
@@ -607,6 +635,317 @@ export async function findProducerByNameCaseInsensitive(name: string) {
 		.limit(1);
 
 	return result[0] || null;
+}
+
+/**
+ * Get all producers with pagination
+ */
+export async function getProducers(params?: { limit?: number; offset?: number }) {
+	const limit = params?.limit;
+	const offset = params?.offset ?? 0;
+
+	const producerList = await db.query.producers.findMany({
+		limit,
+		offset,
+		with: {
+			songProducers: {
+				with: {
+					song: true
+				}
+			},
+			producerAliases: {
+				with: {
+					producerAliasArtists: {
+						with: {
+							artist: true
+						}
+					}
+				}
+			}
+		}
+	});
+
+	return producerList;
+}
+
+/**
+ * Get total count of producers (useful for pagination)
+ */
+export async function getProducersCount() {
+	const result = await db.select({ count: sql<number>`count(*)` }).from(producers);
+
+	return result[0].count;
+}
+
+/**
+ * Create a new producer
+ */
+export async function createProducer(data: {
+	name: string;
+	additionalMetadata?: Record<string, any>;
+}) {
+	const result = await db
+		.insert(producers)
+		.values({
+			name: data.name,
+			additionalMetadata: data.additionalMetadata
+		})
+		.returning();
+
+	return result[0];
+}
+
+/**
+ * Delete a producer
+ */
+export async function deleteProducer(producerId: number) {
+	// Delete the producer (junction table entries cascade automatically)
+	await db.delete(producers).where(eq(producers.id, producerId));
+}
+
+/**
+ * Create a producer with aliases
+ */
+export async function createProducerWithAliases(data: {
+	name: string;
+	aliases?: Array<{
+		name: string;
+		artistIds?: number[];
+	}>;
+	additionalMetadata?: Record<string, any>;
+}) {
+	return await db.transaction(async (tx) => {
+		// Create the producer
+		const producerResult = await tx
+			.insert(producers)
+			.values({
+				name: data.name,
+				additionalMetadata: data.additionalMetadata
+			})
+			.returning();
+
+		const producer = producerResult[0];
+
+		// Create aliases if provided
+		if (data.aliases && data.aliases.length > 0) {
+			for (const alias of data.aliases) {
+				// Check if alias already exists (case-insensitive)
+				const existingAlias = await tx
+					.select()
+					.from(producerAliases)
+					.where(sql`LOWER(${producerAliases.alias}) = LOWER(${alias.name})`)
+					.limit(1);
+
+				if (existingAlias.length > 0) {
+					throw new Error(`Alias "${alias.name}" already exists for another producer`);
+				}
+
+				// Create the alias
+				const aliasResult = await tx
+					.insert(producerAliases)
+					.values({
+						producerId: producer.id,
+						alias: alias.name
+					})
+					.returning();
+
+				const createdAlias = aliasResult[0];
+
+				// Create artist restrictions if provided
+				if (alias.artistIds && alias.artistIds.length > 0) {
+					const artistLinks = alias.artistIds.map((artistId) => ({
+						aliasId: createdAlias.id,
+						artistId
+					}));
+
+					await tx.insert(producerAliasArtists).values(artistLinks);
+				}
+			}
+		}
+
+		return producer;
+	});
+}
+
+export async function updateProducerWithAliases(data: {
+	id: number;
+	name: string;
+	aliases?: Array<{
+		name: string;
+		artistIds?: number[];
+	}>;
+}) {
+	return await db.transaction(async (tx) => {
+		if (data.aliases && data.aliases.length > 0) {
+			for (const alias of data.aliases) {
+				const conflictingAlias = await tx
+					.select({ id: producerAliases.id })
+					.from(producerAliases)
+					.where(
+						and(
+							sql`LOWER(${producerAliases.alias}) = LOWER(${alias.name})`,
+							ne(producerAliases.producerId, data.id)
+						)
+					)
+					.limit(1);
+
+				if (conflictingAlias.length > 0) {
+					throw new Error(`Alias "${alias.name}" already exists for another producer`);
+				}
+			}
+		}
+
+		await tx.update(producers).set({ name: data.name }).where(eq(producers.id, data.id));
+
+		const existingAliases = await tx
+			.select({ id: producerAliases.id })
+			.from(producerAliases)
+			.where(eq(producerAliases.producerId, data.id));
+
+		if (existingAliases.length > 0) {
+			const aliasIds = existingAliases.map((alias) => alias.id);
+			await tx.delete(producerAliasArtists).where(inArray(producerAliasArtists.aliasId, aliasIds));
+			await tx.delete(producerAliases).where(eq(producerAliases.producerId, data.id));
+		}
+
+		if (data.aliases && data.aliases.length > 0) {
+			for (const alias of data.aliases) {
+				const aliasResult = await tx
+					.insert(producerAliases)
+					.values({
+						producerId: data.id,
+						alias: alias.name
+					})
+					.returning();
+
+				const createdAlias = aliasResult[0];
+
+				if (alias.artistIds && alias.artistIds.length > 0) {
+					const artistLinks = alias.artistIds.map((artistId) => ({
+						aliasId: createdAlias.id,
+						artistId
+					}));
+
+					await tx.insert(producerAliasArtists).values(artistLinks);
+				}
+			}
+		}
+
+		return await tx.query.producers.findFirst({
+			where: eq(producers.id, data.id),
+			with: {
+				producerAliases: {
+					with: {
+						producerAliasArtists: {
+							with: {
+								artist: true
+							}
+						}
+					}
+				}
+			}
+		});
+	});
+}
+
+/**
+ * Get a producer with all its aliases
+ */
+export async function getProducerWithAliases(producerId: number) {
+	return await db.query.producers.findFirst({
+		where: eq(producers.id, producerId),
+		with: {
+			producerAliases: {
+				with: {
+					producerAliasArtists: {
+						with: {
+							artist: true
+						}
+					}
+				}
+			}
+		}
+	});
+}
+
+/**
+ * Get all producers with their aliases
+ */
+export async function getAllProducersWithAliases(params?: { limit?: number; offset?: number }) {
+	const limit = params?.limit;
+	const offset = params?.offset ?? 0;
+
+	return await db.query.producers.findMany({
+		limit,
+		offset,
+		with: {
+			producerAliases: {
+				with: {
+					producerAliasArtists: {
+						with: {
+							artist: true
+						}
+					}
+				}
+			}
+		}
+	});
+}
+
+/**
+ * Find a producer by alias name (case-insensitive)
+ * Optionally filters by artist context - if songArtistIds provided, only returns
+ * producer if the alias is global OR if the alias is restricted to one of the song's artists
+ */
+export async function getProducerByAlias(aliasName: string, songArtistIds?: number[]) {
+	// Find the alias (case-insensitive)
+	const aliasResult = await db
+		.select()
+		.from(producerAliases)
+		.where(sql`LOWER(${producerAliases.alias}) = LOWER(${aliasName})`)
+		.limit(1);
+
+	if (aliasResult.length === 0) {
+		return null;
+	}
+
+	const alias = aliasResult[0];
+
+	// If no artist context provided, return the producer
+	if (!songArtistIds || songArtistIds.length === 0) {
+		const producer = await db.query.producers.findFirst({
+			where: eq(producers.id, alias.producerId)
+		});
+		return producer || null;
+	}
+
+	// Check if this alias has artist restrictions
+	const artistRestrictions = await db
+		.select()
+		.from(producerAliasArtists)
+		.where(eq(producerAliasArtists.aliasId, alias.id));
+
+	// If no artist restrictions, it's global - return the producer
+	if (artistRestrictions.length === 0) {
+		const producer = await db.query.producers.findFirst({
+			where: eq(producers.id, alias.producerId)
+		});
+		return producer || null;
+	}
+
+	// Check if any of the song's artists match the alias restrictions
+	const restrictedArtistIds = artistRestrictions.map((r) => r.artistId);
+	const hasMatchingArtist = songArtistIds.some((id) => restrictedArtistIds.includes(id));
+
+	if (hasMatchingArtist) {
+		const producer = await db.query.producers.findFirst({
+			where: eq(producers.id, alias.producerId)
+		});
+		return producer || null;
+	}
+
+	// Artist context doesn't match - don't return the producer
+	return null;
 }
 
 export async function updateSong(

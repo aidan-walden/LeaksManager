@@ -12,7 +12,11 @@ export const createAlbumSchema = z.object({
 		.transform((str) => str.split(',').map((str) => str.trim()))
 		.transform((arr) => arr.map(Number))
 		.pipe(z.array(z.number().int().positive())),
-	year: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().int().optional())
+	genre: z.preprocess((v) => v || undefined, z.string().min(1).optional()),
+	year: z.preprocess(
+		(v) => (v === '' || v === null ? undefined : v),
+		z.coerce.number().int().optional()
+	)
 });
 
 export const updateAlbumSchema = z.object({
@@ -23,7 +27,10 @@ export const updateAlbumSchema = z.object({
 		.transform((str) => str.split(',').map((str) => str.trim()))
 		.transform((arr) => arr.map(Number))
 		.pipe(z.array(z.number().int().positive())),
-	year: z.preprocess((v) => (v === '' || v === null ? undefined : v), z.coerce.number().int().optional()),
+	year: z.preprocess(
+		(v) => (v === '' || v === null ? undefined : v),
+		z.coerce.number().int().optional()
+	),
 	genre: z.preprocess((v) => v || undefined, z.string().min(1).optional())
 });
 
@@ -61,6 +68,50 @@ export const createArtistSchema = z.object({
 	careerEnd: z.preprocess((v) => v || undefined, z.string().min(1).optional())
 });
 
+export const aliasSchema = z.object({
+	name: z.string().min(1),
+	artistIds: z.array(z.number().int().positive()).optional().default([])
+});
+
+export const createProducerSchema = z.object({
+	name: z.string().min(1),
+	aliases: z.array(aliasSchema).optional().default([])
+});
+
+export const updateProducerSchema = z.object({
+	id: z.coerce.number().int().positive(),
+	name: z.string().min(1),
+	aliases: z.array(aliasSchema).optional().default([])
+});
+
+export type CreateProducerData = z.infer<typeof createProducerSchema>;
+export type AliasData = z.infer<typeof aliasSchema>;
+
+const editableProducerAliasArtistSchema = z
+	.object({
+		artistId: z.number().int().positive(),
+		artist: editableArtistSchema.nullish()
+	})
+	.catchall(z.unknown());
+
+const editableProducerAliasSchema = z
+	.object({
+		id: z.number().int().positive(),
+		alias: z.string().min(1),
+		producerAliasArtists: z.array(editableProducerAliasArtistSchema).optional()
+	})
+	.catchall(z.unknown());
+
+export const editableProducerSchema = z
+	.object({
+		id: z.number().int().positive(),
+		name: z.string().min(1),
+		producerAliases: z.array(editableProducerAliasSchema).optional()
+	})
+	.catchall(z.unknown());
+
+export type EditableProducer = z.infer<typeof editableProducerSchema>;
+
 export const uploadArtSchema = z.object({
 	file: z.instanceof(File),
 	type: z.enum(['album', 'artist']),
@@ -81,6 +132,12 @@ export const updateSongSchema = z.object({
 		.string()
 		.transform((str) => str.split(',').map((str) => str.trim()))
 		.transform((arr) => arr.map(Number))
+		.pipe(z.array(z.number().int().positive())),
+	producerIds: z
+		.string()
+		.optional()
+		.transform((str) => (str && str.trim() ? str.split(',').map((s) => s.trim()) : []))
+		.transform((arr) => arr.map(Number).filter((n) => !isNaN(n)))
 		.pipe(z.array(z.number().int().positive())),
 	album: z.string().min(1),
 	albumId: z.preprocess(

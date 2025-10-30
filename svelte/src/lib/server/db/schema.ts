@@ -4,6 +4,7 @@ import { relations } from 'drizzle-orm';
 export const artists = sqliteTable('artists', {
 	id: integer('id').primaryKey({ autoIncrement: true }),
 	name: text('name').notNull(),
+	image: text('image'),
 	careerStartYear: integer('career_start_year'),
 	careerEndYear: integer('career_end_year'),
 	additionalMetadata: text('additional_metadata', { mode: 'json' }).$type<Record<string, any>>(),
@@ -105,14 +106,39 @@ export const songProducers = sqliteTable(
 	(table) => [primaryKey({ columns: [table.songId, table.producerId] })]
 );
 
+export const producerAliases = sqliteTable('producer_aliases', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	producerId: integer('producer_id')
+		.notNull()
+		.references(() => producers.id, { onDelete: 'cascade' }),
+	alias: text('alias').notNull().unique(),
+	createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
+});
+
+export const producerAliasArtists = sqliteTable(
+	'producer_alias_artists',
+	{
+		aliasId: integer('alias_id')
+			.notNull()
+			.references(() => producerAliases.id, { onDelete: 'cascade' }),
+		artistId: integer('artist_id')
+			.notNull()
+			.references(() => artists.id, { onDelete: 'cascade' }),
+		createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
+	},
+	(table) => [primaryKey({ columns: [table.aliasId, table.artistId] })]
+);
+
 // Relations
 export const artistsRelations = relations(artists, ({ many }) => ({
 	albumArtists: many(albumArtists),
-	songArtists: many(songArtists)
+	songArtists: many(songArtists),
+	producerAliasArtists: many(producerAliasArtists)
 }));
 
 export const producersRelations = relations(producers, ({ many }) => ({
-	songProducers: many(songProducers)
+	songProducers: many(songProducers),
+	producerAliases: many(producerAliases)
 }));
 
 export const albumsRelations = relations(albums, ({ many }) => ({
@@ -162,6 +188,25 @@ export const songProducersRelations = relations(songProducers, ({ one }) => ({
 	})
 }));
 
+export const producerAliasesRelations = relations(producerAliases, ({ one, many }) => ({
+	producer: one(producers, {
+		fields: [producerAliases.producerId],
+		references: [producers.id]
+	}),
+	producerAliasArtists: many(producerAliasArtists)
+}));
+
+export const producerAliasArtistsRelations = relations(producerAliasArtists, ({ one }) => ({
+	alias: one(producerAliases, {
+		fields: [producerAliasArtists.aliasId],
+		references: [producerAliases.id]
+	}),
+	artist: one(artists, {
+		fields: [producerAliasArtists.artistId],
+		references: [artists.id]
+	})
+}));
+
 // Type exports
 export type Artist = typeof artists.$inferSelect;
 export type NewArtist = typeof artists.$inferInsert;
@@ -184,6 +229,12 @@ export type NewSongArtist = typeof songArtists.$inferInsert;
 export type SongProducer = typeof songProducers.$inferSelect;
 export type NewSongProducer = typeof songProducers.$inferInsert;
 
+export type ProducerAlias = typeof producerAliases.$inferSelect;
+export type NewProducerAlias = typeof producerAliases.$inferInsert;
+
+export type ProducerAliasArtist = typeof producerAliasArtists.$inferSelect;
+export type NewProducerAliasArtist = typeof producerAliasArtists.$inferInsert;
+
 export type Settings = typeof settings.$inferSelect;
 export type NewSettings = typeof settings.$inferInsert;
 
@@ -191,4 +242,10 @@ export type SongWithRelations = Song & {
 	album: Album | null;
 	songArtists: (SongArtist & { artist: Artist | null })[];
 	songProducers: (SongProducer & { producer: Producer | null })[];
+};
+
+export type ProducerWithAliases = Producer & {
+	producerAliases: (ProducerAlias & {
+		producerAliasArtists: (ProducerAliasArtist & { artist: Artist | null })[];
+	})[];
 };
