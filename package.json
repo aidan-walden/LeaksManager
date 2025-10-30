@@ -1,0 +1,12 @@
+{
+  "name": "leaks-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Music/leak management application with SvelteKit frontend and FastAPI microservice",
+  "packageManager": "pnpm@9.14.4",
+  "scripts": {
+    "dev": "pnpm --filter svelte dev",
+    "build": "pnpm --filter svelte build",
+    "check": "pnpm --filter svelte check"
+  }
+}

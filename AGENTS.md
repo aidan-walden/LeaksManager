@@ -70,21 +70,21 @@ Work in the appropriate directory based on your task:
 
 ### Frontend (run from `svelte/` directory)
 ```bash
-npm run dev              # Start dev server
-npm run build            # Production build
-npm run preview          # Preview production build
-npm run check            # Type-check
-npm run check:watch      # Type-check in watch mode
-npm run format           # Format with Prettier
-npm run lint             # Check formatting
+pnpm dev              # Start dev server
+pnpm build            # Production build
+pnpm preview          # Preview production build
+pnpm check            # Type-check
+pnpm check:watch      # Type-check in watch mode
+pnpm format           # Format with Prettier
+pnpm lint             # Check formatting
 ```
 
 ### Database (run from `svelte/` directory)
 ```bash
-npm run db:push          # Push schema changes to database
-npm run db:generate      # Generate migrations
-npm run db:migrate       # Run migrations
-npm run db:studio        # Open Drizzle Studio GUI
+pnpm db:push          # Push schema changes to database
+pnpm db:generate      # Generate migrations
+pnpm db:migrate       # Run migrations
+pnpm db:studio        # Open Drizzle Studio GUI
 ```
 
 ### Microservice (run from `microservice/` directory)
