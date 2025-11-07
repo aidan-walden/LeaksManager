@@ -248,9 +248,21 @@ export const actions = {
 			});
 			console.log('Producer updated successfully');
 
-			const songs = await getSongsByProducer(validated.data.id);
-
-			const songIds = songs.map((song) => song.songId);
+			try {
+				const response = await fetch(
+					`${MICROSERVICE_URL}/write-metadata/producer/${validated.data.id}`
+				);
+				if (!response.ok) {
+					console.error('Failed to write metadata to producer songs:', await response.text());
+					// Don't fail the entire request, just log the error
+				} else {
+					const result = await response.json();
+					console.log(`Wrote metadata to ${result.songs_processed} songs for producer`);
+				}
+			} catch (error) {
+				console.error('Error calling microservice to write producer metadata:', error);
+				// Don't fail the entire request
+			}
 
 			return {
 				success: true,

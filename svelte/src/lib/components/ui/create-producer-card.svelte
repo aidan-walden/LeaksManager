@@ -4,37 +4,38 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CreateCard from './create-card.svelte';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import MultiArtistCombobox from './multi-artist-combobox.svelte';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-import type { EditableProducer } from '@/schema';
-type ArtistOption = { id: number; name: string };
+	import type { EditableProducer } from '@/schema';
+	type ArtistOption = { id: number; name: string };
 
 	let {
-	open = $bindable(),
-	onOpenChange,
-	callback,
-	artists,
-	producer = null
-}: {
-	open: boolean;
-	onOpenChange?: (open: boolean) => void;
-	callback?: () => void;
-	artists: ArtistOption[];
-	producer?: EditableProducer | null;
-} = $props();
+		open = $bindable(),
+		onOpenChange,
+		callback,
+		artists,
+		producer = null
+	}: {
+		open: boolean;
+		onOpenChange?: (open: boolean) => void;
+		callback?: () => void;
+		artists: ArtistOption[];
+		producer?: EditableProducer | null;
+	} = $props();
 
-type Alias = {
-	name: string;
-	artistIds: number[];
-};
+	type Alias = {
+		name: string;
+		artistIds: number[];
+	};
 
-let aliases = $state<Alias[]>([]);
-let name = $state('');
+	let aliases = $state<Alias[]>([]);
+	let name = $state('');
 
-function addAlias() {
-	aliases = [...aliases, { name: '', artistIds: [] }];
-}
+	function addAlias() {
+		aliases = [...aliases, { name: '', artistIds: [] }];
+	}
 
 	function removeAlias(index: number) {
 		aliases = aliases.filter((_, i) => i !== index);
@@ -47,7 +48,9 @@ function addAlias() {
 			aliases = (producer.producerAliases ?? []).map((alias) => ({
 				name: alias.alias,
 				artistIds:
-					alias.producerAliasArtists?.map((link) => link.artistId).filter((id) => !Number.isNaN(id)) ?? []
+					alias.producerAliasArtists
+						?.map((link) => link.artistId)
+						.filter((id) => !Number.isNaN(id)) ?? []
 			}));
 			return;
 		}
@@ -96,7 +99,8 @@ function addAlias() {
 			</div>
 
 			{#if aliases.length > 0}
-				<div class="flex flex-col gap-3">
+				<ScrollArea class="max-h-[200px] pr-4">
+					<div class="flex flex-col gap-3">
 					{#each aliases as alias, index (index)}
 						<div class="grid gap-2 rounded-lg border p-3">
 							<div class="flex items-center justify-between gap-2">
@@ -137,7 +141,8 @@ function addAlias() {
 							</div>
 						</div>
 					{/each}
-				</div>
+					</div>
+				</ScrollArea>
 			{:else}
 				<p class="text-sm text-muted-foreground">
 					No aliases added. Aliases help match producers from filenames.

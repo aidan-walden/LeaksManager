@@ -55,3 +55,6 @@ microservice/*.pyz
 microservice/*.pywz
 microservice/*.pyzw
 microservice/*.pywz
+
+# Chromaprint
+microservice/bin/fpcalc

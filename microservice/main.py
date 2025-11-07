@@ -1,8 +1,10 @@
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Dict, Any
 import sqlite3
 import os
 import base64
 from pathlib import Path
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -47,7 +49,17 @@ class SongsList(BaseModel):
 db = sqlite3.connect("../svelte/local.db", check_same_thread=False)
 cursor = db.cursor()
 
-def query_songs(song_ids: Tuple[int, ...]):
+# Thread-local storage for database connections
+thread_local = threading.local()
+
+def get_thread_db_connection():
+    """Get a thread-safe database connection for the current thread."""
+    if not hasattr(thread_local, 'db'):
+        thread_local.db = sqlite3.connect("../svelte/local.db", check_same_thread=False)
+        thread_local.cursor = thread_local.db.cursor()
+    return thread_local.cursor
+
+def query_songs(song_id: int, cursor_override=None):
     # Query song with all related metadata
     query = """
     SELECT
@@ -77,8 +89,10 @@ def query_songs(song_ids: Tuple[int, ...]):
     GROUP BY s.id
     """
 
-    cursor.execute(query, (song_id,))
-    song_data = cursor.fetchone()
+    # Use provided cursor or global cursor
+    db_cursor = cursor_override if cursor_override is not None else cursor
+    db_cursor.execute(query, (song_id,))
+    song_data = db_cursor.fetchone()
 
     return song_data
 
@@ -413,12 +427,19 @@ def read_root():
     return {"songs": songs}
 
 @app.get("/write-metadata/album/{album_id}")
-def write_album_metadata(album_id: int):
+def write_album_metadata(album_id: int, max_workers: int = 4):
     """
-    Write metadata to all songs in an album.
+    Write metadata to all songs in an album using parallel processing.
     Useful after updating album information to sync changes to all song files.
+
+    Args:
+        album_id: The album ID
+        max_workers: Maximum number of parallel workers (default: 4, capped at 10)
     """
-    print(f"Writing metadata to all songs in album ID: {album_id}")
+    # Limit max_workers to prevent resource exhaustion
+    max_workers = min(max(max_workers, 1), 10)
+
+    print(f"Writing metadata to all songs in album ID: {album_id} using {max_workers} workers")
     try:
         # First, verify the album exists
         cursor.execute("SELECT id, name FROM albums WHERE id = ?", (album_id,))
@@ -432,7 +453,7 @@ def write_album_metadata(album_id: int):
 
         # Get all songs for this album
         cursor.execute("SELECT id FROM songs WHERE album_id = ?", (album_id,))
-        song_ids = cursor.fetchall()
+        song_ids = [row[0] for row in cursor.fetchall()]
 
         if not song_ids:
             return {
@@ -445,40 +466,31 @@ def write_album_metadata(album_id: int):
                 "results": []
             }
 
-        print(f"Found {len(song_ids)} songs in album")
+        print(f"Found {len(song_ids)} songs in album. Processing with {max_workers} workers...")
 
         results = []
         songs_succeeded = 0
         songs_failed = 0
 
-        # Write metadata for each song
-        for (song_id,) in song_ids:
-            try:
-                # Call the existing write_song_metadata function
-                result = write_song_metadata(song_id)
-                results.append({
-                    "song_id": song_id,
-                    "success": True,
-                    "metadata": result.get("metadata_written", {})
-                })
-                songs_succeeded += 1
-                print(f"Successfully wrote metadata for song ID {song_id}")
-            except HTTPException as e:
-                results.append({
-                    "song_id": song_id,
-                    "success": False,
-                    "error": e.detail
-                })
-                songs_failed += 1
-                print(f"Failed to write metadata for song ID {song_id}: {e.detail}")
-            except Exception as e:
-                results.append({
-                    "song_id": song_id,
-                    "success": False,
-                    "error": str(e)
-                })
-                songs_failed += 1
-                print(f"Failed to write metadata for song ID {song_id}: {str(e)}")
+        # Use ThreadPoolExecutor for parallel processing
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_song_id = {
+                executor.submit(write_song_metadata_worker, song_id): song_id
+                for song_id in song_ids
+            }
+
+            # Process results as they complete
+            for future in as_completed(future_to_song_id):
+                result = future.result()
+                results.append(result)
+
+                if result["success"]:
+                    songs_succeeded += 1
+                    print(f"Successfully wrote metadata for song ID {result['song_id']}")
+                else:
+                    songs_failed += 1
+                    print(f"Failed to write metadata for song ID {result['song_id']}: {result['error']}")
 
         return {
             "success": True,
@@ -496,284 +508,415 @@ def write_album_metadata(album_id: int):
         print(f"Error writing album metadata: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error writing album metadata: {str(e)}")
 
-@app.get("/write-metadata/{song_id}")
-def write_song_metadata(song_id: int):
+def _write_song_metadata_internal(song_id: int, db_cursor) -> Dict[str, Any]:
     """
-    Write metadata from database to the actual audio file using mutagen.
+    Internal function to write metadata from database to the actual audio file using mutagen.
+    Used by both the endpoint and the worker pool.
+
+    Args:
+        song_id: The song ID to write metadata for
+        db_cursor: Database cursor to use for queries
+
+    Returns:
+        Dict containing success status and metadata written
     """
     print(f"Writing metadata to disk for song ID: {song_id}")
-    try:
-        
 
-        if not song_data:
-            print(f"Song with ID {song_id} not found")
-            raise HTTPException(status_code=404, detail=f"Song with ID {song_id} not found")
+    song_data = query_songs(song_id, cursor_override=db_cursor)
 
-        # Extract song data
-        (
-            song_id,
-            song_name,
-            filepath,
-            song_genre,
-            year,
-            track_number,
-            duration,
-            song_artwork_path,
-            album_name,
-            album_year,
-            album_genre,
-            album_artwork_path,
-            artists,
-            album_artists,
-            producers,
-        ) = song_data
+    if not song_data:
+        print(f"Song with ID {song_id} not found")
+        raise HTTPException(status_code=404, detail=f"Song with ID {song_id} not found")
 
-        print(f"=== SONG DATA ===")
-        print(f"Song ID: {song_id}, Name: {song_name}")
-        print(f"Song artwork path: {song_artwork_path}")
-        print(f"Album name: {album_name}")
-        print(f"Album artwork path: {album_artwork_path}")
-        print(f"Song genre: {song_genre}, Album genre: {album_genre}")
+    # Extract song data
+    (
+        song_id,
+        song_name,
+        filepath,
+        song_genre,
+        year,
+        track_number,
+        duration,
+        song_artwork_path,
+        album_name,
+        album_year,
+        album_genre,
+        album_artwork_path,
+        artists,
+        album_artists,
+        producers,
+    ) = song_data
 
-        # Prefer explicit song genre, but fall back to album genre when missing
-        genre_to_write = song_genre or album_genre
+    print(f"=== SONG DATA ===")
+    print(f"Song ID: {song_id}, Name: {song_name}")
+    print(f"Song artwork path: {song_artwork_path}")
+    print(f"Album name: {album_name}")
+    print(f"Album artwork path: {album_artwork_path}")
+    print(f"Song genre: {song_genre}, Album genre: {album_genre}")
 
-        # Query settings for automatically_make_singles
-        cursor.execute("SELECT automatically_make_singles FROM settings WHERE id = 1")
-        settings_result = cursor.fetchone()
-        automatically_make_singles = settings_result[0] if settings_result else False
-        print(f"Automatically make singles: {automatically_make_singles}")
+    # Prefer explicit song genre, but fall back to album genre when missing
+    genre_to_write = song_genre or album_genre
 
-        # Handle songs with no album
-        if not album_name:
-            if automatically_make_singles:
-                # Make this a single
-                album_name = f"{song_name} - Single"
-                track_number_str = "1/1"
-                print(f"Creating single: album='{album_name}', track={track_number_str}")
-            else:
-                # Don't write album or track number
-                album_name = None
-                track_number_str = None
-                print("Song has no album and singles disabled - will not write album/track metadata")
+    # Query settings for automatically_make_singles
+    db_cursor.execute("SELECT automatically_make_singles FROM settings WHERE id = 1")
+    settings_result = db_cursor.fetchone()
+    automatically_make_singles = settings_result[0] if settings_result else False
+    print(f"Automatically make singles: {automatically_make_singles}")
+
+    # Handle songs with no album
+    if not album_name:
+        if automatically_make_singles:
+            # Make this a single
+            album_name = f"{song_name} - Single"
+            track_number_str = "1/1"
+            print(f"Creating single: album='{album_name}', track={track_number_str}")
         else:
-            # Calculate total tracks in the album (if song belongs to an album)
-            total_tracks = None
-            cursor.execute("SELECT COUNT(*) FROM songs WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)", (song_id,))
-            result = cursor.fetchone()
-            if result:
-                total_tracks = result[0]
-                print(f"Total tracks in album: {total_tracks}")
-
-            # Format track number as "track/total" if we have both values
+            # Don't write album or track number
+            album_name = None
             track_number_str = None
-            if track_number:
-                if total_tracks:
-                    track_number_str = f"{track_number}/{total_tracks}"
-                else:
-                    track_number_str = str(track_number)
-                print(f"Track number string: {track_number_str}")
+            print("Song has no album and singles disabled - will not write album/track metadata")
+    else:
+        # Calculate total tracks in the album (if song belongs to an album)
+        total_tracks = None
+        db_cursor.execute("SELECT COUNT(*) FROM songs WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)", (song_id,))
+        result = db_cursor.fetchone()
+        if result:
+            total_tracks = result[0]
+            print(f"Total tracks in album: {total_tracks}")
 
-        # Determine album artist: use album's artists if available, otherwise fall back to song artists
-        albumartist = album_artists if album_artists else artists
+        # Format track number as "track/total" if we have both values
+        track_number_str = None
+        if track_number:
+            if total_tracks:
+                track_number_str = f"{track_number}/{total_tracks}"
+            else:
+                track_number_str = str(track_number)
+            print(f"Track number string: {track_number_str}")
 
-        # Check if file exists
-        full_filepath = Path("../svelte/static" + filepath)
-        if not full_filepath.exists():
-            print(f"Audio file not found at {filepath}")
-            raise HTTPException(status_code=404, detail=f"Audio file not found at {filepath}")
-        
-        print(f"Audio file found at {full_filepath}")
+    # Determine album artist: use album's artists if available, otherwise fall back to song artists
+    albumartist = album_artists if album_artists else artists
 
-        # Load the audio file with mutagen to detect type
-        audio_file = MutagenFile(str(full_filepath))
+    # Check if file exists
+    full_filepath = Path("../svelte/static" + filepath)
+    if not full_filepath.exists():
+        print(f"Audio file not found at {filepath}")
+        raise HTTPException(status_code=404, detail=f"Audio file not found at {filepath}")
 
-        if audio_file is None:
-            print(f"Unsupported audio file format: {full_filepath.suffix}")
-            raise HTTPException(status_code=400, detail=f"Unsupported audio file format: {full_filepath.suffix}")
+    print(f"Audio file found at {full_filepath}")
 
-        # Write metadata based on file type
-        if isinstance(audio_file, (MP3, WAVE)):
-            # For MP3 and WAV files, use EasyID3 for simplified tag handling
-            try:
-                easy_file = EasyID3(str(full_filepath))
-            except:
-                # Create new tags if they don't exist
-                audio_file.add_tags()
-                audio_file.save()
-                easy_file = EasyID3(str(full_filepath))
+    # Load the audio file with mutagen to detect type
+    audio_file = MutagenFile(str(full_filepath))
 
-            # Clear existing tags
-            easy_file.delete()
+    if audio_file is None:
+        print(f"Unsupported audio file format: {full_filepath.suffix}")
+        raise HTTPException(status_code=400, detail=f"Unsupported audio file format: {full_filepath.suffix}")
 
-            # Set metadata using simple key-value pairs
+    # Write metadata based on file type
+    if isinstance(audio_file, (MP3, WAVE)):
+        # For MP3 and WAV files, use EasyID3 for simplified tag handling
+        try:
+            easy_file = EasyID3(str(full_filepath))
+        except:
+            # Create new tags if they don't exist
+            audio_file.add_tags()
+            audio_file.save()
+            easy_file = EasyID3(str(full_filepath))
+
+        # Clear existing tags
+        easy_file.delete()
+
+        # Set metadata using simple key-value pairs
+        if song_name:
+            easy_file['title'] = song_name
+        if artists:
+            easy_file['artist'] = artists
+        if albumartist:
+            easy_file['albumartist'] = albumartist
+        if album_name:
+            easy_file['album'] = album_name
+        if genre_to_write:
+            easy_file['genre'] = genre_to_write
+        if year:
+            easy_file['date'] = str(year)
+
+        # Explicitly handle track number - set it or ensure it's removed
+        if track_number_str:
+            easy_file['tracknumber'] = track_number_str
+        elif 'tracknumber' in easy_file:
+            # Explicitly delete track number to clear existing metadata
+            del easy_file['tracknumber']
+
+        if producers:
+            easy_file['composer'] = producers  # Map producers to composer field
+
+        easy_file.save()
+
+        # Embed artwork after text metadata
+        embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
+
+    elif isinstance(audio_file, MP4):
+        # For MP4/M4A files, use EasyMP4
+        try:
+            easy_file = EasyMP4(str(full_filepath))
+        except:
+            audio_file.add_tags()
+            audio_file.save()
+            easy_file = EasyMP4(str(full_filepath))
+
+        easy_file.delete()
+
+        if song_name:
+            easy_file['title'] = song_name
+        if artists:
+            easy_file['artist'] = artists
+        if albumartist:
+            easy_file['albumartist'] = albumartist
+        if album_name:
+            easy_file['album'] = album_name
+        if genre_to_write:
+            easy_file['genre'] = genre_to_write
+        if year:
+            easy_file['date'] = str(year)
+
+        # Explicitly handle track number - set it or ensure it's removed
+        if track_number_str:
+            easy_file['tracknumber'] = track_number_str
+        elif 'tracknumber' in easy_file:
+            # Explicitly delete track number to clear existing metadata
+            del easy_file['tracknumber']
+
+        if producers:
+            easy_file['composer'] = producers  # Map producers to composer field
+
+        easy_file.save()
+
+        # Embed artwork after text metadata
+        embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
+
+    elif isinstance(audio_file, (FLAC, OggVorbis)):
+        # For FLAC and OGG files, use Vorbis comments
+        if not audio_file.tags:
+            audio_file.add_tags()
+
+        # Clear existing tags
+        audio_file.tags.clear()
+
+        # Set metadata
+        if song_name:
+            audio_file.tags['title'] = song_name
+        if artists:
+            audio_file.tags['artist'] = artists
+        if albumartist:
+            audio_file.tags['albumartist'] = albumartist
+        if album_name:
+            audio_file.tags['album'] = album_name
+        if genre_to_write:
+            audio_file.tags['genre'] = genre_to_write
+        if year:
+            audio_file.tags['date'] = str(year)
+        if producers:
+            audio_file.tags['producer'] = producers
+
+        # Explicitly handle track number - set it or ensure it's removed
+        if track_number_str:
+            audio_file.tags['tracknumber'] = track_number_str
+        elif 'tracknumber' in audio_file.tags:
+            # Explicitly delete track number to clear existing metadata
+            del audio_file.tags['tracknumber']
+
+        audio_file.save()
+
+        # Embed artwork after text metadata
+        embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
+
+    else:
+        # Try generic approach for other formats
+        if not audio_file.tags:
+            audio_file.add_tags()
+
+        tags = audio_file.tags
+
+        # Attempt to set tags using common Vorbis-style keys
+        try:
             if song_name:
-                easy_file['title'] = song_name
+                tags['title'] = song_name
             if artists:
-                easy_file['artist'] = artists
+                tags['artist'] = artists
             if albumartist:
-                easy_file['albumartist'] = albumartist
+                tags['albumartist'] = albumartist
             if album_name:
-                easy_file['album'] = album_name
+                tags['album'] = album_name
             if genre_to_write:
-                easy_file['genre'] = genre_to_write
+                tags['genre'] = genre_to_write
             if year:
-                easy_file['date'] = str(year)
+                tags['date'] = str(year)
+            if producers:
+                tags['producer'] = producers
 
             # Explicitly handle track number - set it or ensure it's removed
             if track_number_str:
-                easy_file['tracknumber'] = track_number_str
-            elif 'tracknumber' in easy_file:
+                tags['tracknumber'] = track_number_str
+            elif 'tracknumber' in tags:
                 # Explicitly delete track number to clear existing metadata
-                del easy_file['tracknumber']
-
-            if producers:
-                easy_file['composer'] = producers  # Map producers to composer field
-
-            easy_file.save()
-
-            # Embed artwork after text metadata
-            embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
-
-        elif isinstance(audio_file, MP4):
-            # For MP4/M4A files, use EasyMP4
-            try:
-                easy_file = EasyMP4(str(full_filepath))
-            except:
-                audio_file.add_tags()
-                audio_file.save()
-                easy_file = EasyMP4(str(full_filepath))
-
-            easy_file.delete()
-
-            if song_name:
-                easy_file['title'] = song_name
-            if artists:
-                easy_file['artist'] = artists
-            if albumartist:
-                easy_file['albumartist'] = albumartist
-            if album_name:
-                easy_file['album'] = album_name
-            if genre_to_write:
-                easy_file['genre'] = genre_to_write
-            if year:
-                easy_file['date'] = str(year)
-
-            # Explicitly handle track number - set it or ensure it's removed
-            if track_number_str:
-                easy_file['tracknumber'] = track_number_str
-            elif 'tracknumber' in easy_file:
-                # Explicitly delete track number to clear existing metadata
-                del easy_file['tracknumber']
-
-            if producers:
-                easy_file['composer'] = producers  # Map producers to composer field
-
-            easy_file.save()
-
-            # Embed artwork after text metadata
-            embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
-
-        elif isinstance(audio_file, (FLAC, OggVorbis)):
-            # For FLAC and OGG files, use Vorbis comments
-            if not audio_file.tags:
-                audio_file.add_tags()
-
-            # Clear existing tags
-            audio_file.tags.clear()
-
-            # Set metadata
-            if song_name:
-                audio_file.tags['title'] = song_name
-            if artists:
-                audio_file.tags['artist'] = artists
-            if albumartist:
-                audio_file.tags['albumartist'] = albumartist
-            if album_name:
-                audio_file.tags['album'] = album_name
-            if genre_to_write:
-                audio_file.tags['genre'] = genre_to_write
-            if year:
-                audio_file.tags['date'] = str(year)
-            if producers:
-                audio_file.tags['producer'] = producers
-
-            # Explicitly handle track number - set it or ensure it's removed
-            if track_number_str:
-                audio_file.tags['tracknumber'] = track_number_str
-            elif 'tracknumber' in audio_file.tags:
-                # Explicitly delete track number to clear existing metadata
-                del audio_file.tags['tracknumber']
+                del tags['tracknumber']
 
             audio_file.save()
 
             # Embed artwork after text metadata
             embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
+        except Exception as e:
+            print(f"Error embedding artwork: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported audio file format: {type(audio_file).__name__}. Error: {str(e)}"
+            )
 
-        else:
-            # Try generic approach for other formats
-            if not audio_file.tags:
-                audio_file.add_tags()
-
-            tags = audio_file.tags
-
-            # Attempt to set tags using common Vorbis-style keys
-            try:
-                if song_name:
-                    tags['title'] = song_name
-                if artists:
-                    tags['artist'] = artists
-                if albumartist:
-                    tags['albumartist'] = albumartist
-                if album_name:
-                    tags['album'] = album_name
-                if genre_to_write:
-                    tags['genre'] = genre_to_write
-                if year:
-                    tags['date'] = str(year)
-                if producers:
-                    tags['producer'] = producers
-
-                # Explicitly handle track number - set it or ensure it's removed
-                if track_number_str:
-                    tags['tracknumber'] = track_number_str
-                elif 'tracknumber' in tags:
-                    # Explicitly delete track number to clear existing metadata
-                    del tags['tracknumber']
-
-                audio_file.save()
-
-                # Embed artwork after text metadata
-                embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))
-            except Exception as e:
-                print(f"Error embedding artwork: {str(e)}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unsupported audio file format: {type(audio_file).__name__}. Error: {str(e)}"
-                )
-
-        return {
-            "success": True,
-            "message": f"Metadata successfully written to {filepath}",
-            "song_id": song_id,
-            "metadata_written": {
-                "title": song_name,
-                "artist": artists,
-                "albumartist": albumartist,
-                "album": album_name,
-                "genre": genre_to_write,
-                "year": year,
-                "producers": producers,
-                "track_number": track_number_str if track_number_str else track_number
-            }
+    return {
+        "success": True,
+        "message": f"Metadata successfully written to {filepath}",
+        "song_id": song_id,
+        "metadata_written": {
+            "title": song_name,
+            "artist": artists,
+            "albumartist": albumartist,
+            "album": album_name,
+            "genre": genre_to_write,
+            "year": year,
+            "producers": producers,
+            "track_number": track_number_str if track_number_str else track_number
         }
-        
+    }
+
+
+@app.get("/write-metadata/{song_id}")
+def write_song_metadata(song_id: int):
+    """
+    Write metadata from database to the actual audio file using mutagen.
+    """
+    try:
+        return _write_song_metadata_internal(song_id, cursor)
     except HTTPException:
-        print(f"HTTPException: {str(e)}")
         raise
     except Exception as e:
         print(f"Exception: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error writing metadata: {str(e)}")
 
-@app.post("/write-metadata/bulk/songs")
-def write_song_metadata_bulk(songs_list: SongsList):
+
+def write_song_metadata_worker(song_id: int) -> Dict[str, Any]:
+    """
+    Worker function for writing metadata to a single song in a thread pool.
+    Returns a dict with song_id, success status, and result/error.
+
+    Args:
+        song_id: The song ID to process
+
+    Returns:
+        Dict with 'song_id', 'success', and either 'metadata' or 'error'
+    """
+    try:
+        # Get thread-local database cursor
+        thread_cursor = get_thread_db_connection()
+
+        # Call the internal function with thread-local cursor
+        result = _write_song_metadata_internal(song_id, thread_cursor)
+
+        return {
+            "song_id": song_id,
+            "success": True,
+            "metadata": result.get("metadata_written", {})
+        }
+    except HTTPException as e:
+        return {
+            "song_id": song_id,
+            "success": False,
+            "error": e.detail
+        }
+    except Exception as e:
+        return {
+            "song_id": song_id,
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get("/write-metadata/producer/{producer_id}")
+def write_producer_metadata(producer_id: int, max_workers: int = 4):
+    """
+    Write metadata to all songs by a producer using parallel processing.
+    Useful after updating producer information to sync changes to all song files.
+
+    Args:
+        producer_id: The producer ID
+        max_workers: Maximum number of parallel workers (default: 4, capped at 10)
+    """
+    # Limit max_workers to prevent resource exhaustion
+    max_workers = min(max(max_workers, 1), 10)
+
+    print(f"Writing metadata to all songs by producer ID: {producer_id} using {max_workers} workers")
+    try:
+        # First, verify the producer exists
+        cursor.execute("SELECT id, name FROM producers WHERE id = ?", (producer_id,))
+        producer = cursor.fetchone()
+
+        if not producer:
+            raise HTTPException(status_code=404, detail=f"Producer with ID {producer_id} not found")
+
+        producer_db_id, producer_name = producer
+        print(f"Found producer: {producer_name} (ID: {producer_db_id})")
+
+        # Get all songs for this producer
+        cursor.execute("SELECT song_id FROM song_producers WHERE producer_id = ?", (producer_id,))
+        song_ids = [row[0] for row in cursor.fetchall()]
+
+        if not song_ids:
+            return {
+                "success": True,
+                "message": f"No songs found for producer '{producer_name}' (ID: {producer_id})",
+                "producer_id": producer_id,
+                "producer_name": producer_name,
+                "songs_processed": 0,
+                "songs_failed": 0,
+                "results": []
+            }
+
+        print(f"Found {len(song_ids)} songs for producer. Processing with {max_workers} workers...")
+
+        results = []
+        songs_succeeded = 0
+        songs_failed = 0
+
+        # Use ThreadPoolExecutor for parallel processing
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_song_id = {
+                executor.submit(write_song_metadata_worker, song_id): song_id
+                for song_id in song_ids
+            }
+
+            # Process results as they complete
+            for future in as_completed(future_to_song_id):
+                result = future.result()
+                results.append(result)
+
+                if result["success"]:
+                    songs_succeeded += 1
+                    print(f"Successfully wrote metadata for song ID {result['song_id']}")
+                else:
+                    songs_failed += 1
+                    print(f"Failed to write metadata for song ID {result['song_id']}: {result['error']}")
+
+        return {
+            "success": True,
+            "message": f"Processed {len(song_ids)} songs for producer '{producer_name}'",
+            "producer_id": producer_id,
+            "producer_name": producer_name,
+            "songs_processed": songs_succeeded,
+            "songs_failed": songs_failed,
+            "results": results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error writing producer metadata: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error writing producer metadata: {str(e)}")
