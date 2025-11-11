@@ -3,6 +3,7 @@ import { renderComponent } from './ui/data-table';
 import DataTableActions from '$lib/components/ui/data-table/data-table-actions.svelte';
 import type { SongWithRelations } from '@/server/db/schema';
 import { invalidate, invalidateAll } from '$app/navigation';
+import SongHover from './table/song-hover.svelte';
 
 // This type mirrors the shape returned by getSongsReadable
 export type EditableSong = Omit<SongWithRelations, 'songProducers'> & {
@@ -24,7 +25,10 @@ async function onDelete(id: number) {
 export const columns: ColumnDef<EditableSong>[] = [
 	{
 		accessorKey: 'name',
-		header: 'Title'
+		header: 'Title',
+		cell: ({ row }) => {
+			return renderComponent(SongHover, { song: row.original });
+		}
 	},
 	{
 		accessorKey: 'artist',
