@@ -177,3 +177,11 @@ uvicorn main:app --reload # Alternative
 - Album artwork uploaded to `static/uploads/artwork/`
 - Files timestamped on server: `${Date.now()}-${file.name}`
 - Filepaths stored in database with `/uploads/...` prefix
+
+## Writing Functions
+
+- Always adhere to TypeScript
+- Never add jsdoc comments
+- Keep comments short and in all lowercase text (ex: // push users song update to db)
+- Do not add tons of logging
+- Unless explicitly prompted, never run things yourself

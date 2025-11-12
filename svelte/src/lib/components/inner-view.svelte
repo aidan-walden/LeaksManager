@@ -277,6 +277,7 @@ async function createSongs(
 	<SongsTab
 		songsPromise={data.songs}
 		songsPerPage={data.limits.songsPerPage}
+		songsCount={data.songsCount}
 		onUpload={(files) => handleUpload(files)}
 	/>
 {:else if tab === 'albums'}

@@ -6,20 +6,69 @@
 	import type { PageData } from '../../../routes/[tab]/$types';
 
 	type SongsPromise = PageData['songs'];
+	type Songs = Awaited<SongsPromise>;
 
-let { songsPromise, songsPerPage, onUpload }: {
-	songsPromise: SongsPromise;
-	songsPerPage: number;
-	onUpload: (files: File[]) => Promise<void>;
-} = $props();
+	let { songsPromise, songsPerPage, songsCount, onUpload }: {
+		songsPromise: SongsPromise;
+		songsPerPage: number;
+		songsCount: number;
+		onUpload: (files: File[]) => Promise<void>;
+	} = $props();
+
+	let currentPage = $state(0);
+	let songs = $state<Songs>([]);
+	let isLoading = $state(true);
+
+	// load initial songs
+	$effect(() => {
+		songsPromise.then((initialSongs) => {
+			songs = initialSongs;
+			isLoading = false;
+		});
+	});
+
+	async function fetchSongsForPage(page: number) {
+		isLoading = true;
+		const response = await fetch(`/api/songs?page=${page}&pageSize=${songsPerPage}`);
+		songs = await response.json();
+		isLoading = false;
+		currentPage = page;
+	}
+
+	function handleNextPage() {
+		const nextPage = currentPage + 1;
+		if (nextPage < Math.ceil(songsCount / songsPerPage)) {
+			fetchSongsForPage(nextPage);
+		}
+	}
+
+	function handlePreviousPage() {
+		const prevPage = currentPage - 1;
+		if (prevPage >= 0) {
+			fetchSongsForPage(prevPage);
+		}
+	}
+
+	const canNextPage = $derived(currentPage < Math.ceil(songsCount / songsPerPage) - 1);
+	const canPreviousPage = $derived(currentPage > 0);
 </script>
 
 {#snippet table()}
-	{#await songsPromise}
+	{#if isLoading}
 		<SongsTableSkeleton rowCount={songsPerPage} />
-	{:then songs}
-		<DataTable data={songs} {columns} />
-	{/await}
+	{:else}
+		<DataTable
+			data={songs}
+			{columns}
+			pageSize={songsPerPage}
+			manualPagination={true}
+			pageCount={Math.ceil(songsCount / songsPerPage)}
+			{canNextPage}
+			{canPreviousPage}
+			onNextPage={handleNextPage}
+			onPreviousPage={handlePreviousPage}
+		/>
+	{/if}
 {/snippet}
 
 <FileDropZone onUpload={onUpload} children={table} class="contents" clickable={false} />

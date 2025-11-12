@@ -1,22 +1,89 @@
 <script lang="ts" generics="TData, TValue">
-	import { type ColumnDef, getCoreRowModel } from '@tanstack/table-core';
+	import {
+		type ColumnDef,
+		type PaginationState,
+		getCoreRowModel,
+		getPaginationRowModel
+	} from '@tanstack/table-core';
 	import { createSvelteTable, FlexRender } from '$lib/components/ui/data-table/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 
 	type DataTableProps<TData, TValue> = {
 		columns: ColumnDef<TData, TValue>[];
 		data: TData[];
+		pageSize?: number;
+		manualPagination?: boolean;
+		pageCount?: number;
+		canNextPage?: boolean;
+		canPreviousPage?: boolean;
+		onNextPage?: () => void;
+		onPreviousPage?: () => void;
 	};
 
-	let { data, columns }: DataTableProps<TData, TValue> = $props();
+	let {
+		data,
+		columns,
+		pageSize = 10,
+		manualPagination = false,
+		pageCount,
+		canNextPage: externalCanNextPage,
+		canPreviousPage: externalCanPreviousPage,
+		onNextPage,
+		onPreviousPage
+	}: DataTableProps<TData, TValue> = $props();
+
+	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize });
 
 	const table = createSvelteTable({
 		get data() {
 			return data;
 		},
 		columns,
-		getCoreRowModel: getCoreRowModel()
+		...(manualPagination
+			? {
+					manualPagination: true,
+					pageCount: pageCount ?? -1
+				}
+			: {}),
+		state: {
+			get pagination() {
+				return pagination;
+			}
+		},
+		onPaginationChange: (updater) => {
+			if (typeof updater === 'function') {
+				pagination = updater(pagination);
+			} else {
+				pagination = updater;
+			}
+		},
+		getCoreRowModel: getCoreRowModel(),
+		getPaginationRowModel: getPaginationRowModel()
 	});
+
+	function handleNextPage() {
+		if (manualPagination && onNextPage) {
+			onNextPage();
+		} else {
+			table.nextPage();
+		}
+	}
+
+	function handlePreviousPage() {
+		if (manualPagination && onPreviousPage) {
+			onPreviousPage();
+		} else {
+			table.previousPage();
+		}
+	}
+
+	const canNext = $derived(
+		manualPagination ? externalCanNextPage ?? false : table.getCanNextPage()
+	);
+	const canPrevious = $derived(
+		manualPagination ? externalCanPreviousPage ?? false : table.getCanPreviousPage()
+	);
 </script>
 
 <div class="rounded-md border">
@@ -53,4 +120,12 @@
 			{/each}
 		</Table.Body>
 	</Table.Root>
+</div>
+<div class="flex items-center justify-end space-x-2 py-4">
+	<Button variant="outline" size="sm" onclick={handlePreviousPage} disabled={!canPrevious}>
+		Previous
+	</Button>
+	<Button variant="outline" size="sm" onclick={handleNextPage} disabled={!canNext}>
+		Next
+	</Button>
 </div>

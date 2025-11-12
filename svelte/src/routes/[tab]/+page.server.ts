@@ -1,7 +1,6 @@
 import {
 	createAlbum,
 	createArtist,
-	createProducer,
 	createProducerWithAliases,
 	createSong,
 	deleteSong,
@@ -13,11 +12,8 @@ import {
 	findAlbumByNameCaseInsensitive,
 	deleteAlbum,
 	setAlbumArtists,
-	getSongsFromAlbum,
 	getSettings,
-	updateProducerWithAliases,
-	getSongsByArtist,
-	getSongsByProducer
+	updateProducerWithAliases
 } from '@/server/db/helpers';
 import { fail } from '@sveltejs/kit';
 import { join } from 'node:path';
@@ -41,9 +37,7 @@ import {
 } from '@/schema';
 
 async function uploadAlbumArt(albumId: number, file: File) {
-	// Placeholder function to simulate file upload
 	console.log(`Uploading album art for album ID: ${albumId}`);
-	// Implement actual upload logic here
 
 	const filename = `${Date.now()}-${file.name}`;
 	const filepath = join('static', 'uploads', 'artwork', filename);

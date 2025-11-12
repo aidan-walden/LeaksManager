@@ -10,9 +10,26 @@
 			.filter((name): name is string => name !== undefined)
 			.join(', ') ?? ''
 	);
+
+	let open = $state(false);
+
+	// close on scroll
+	$effect(() => {
+		if (!open) return;
+
+		const handleScroll = () => {
+			open = false;
+		};
+
+		window.addEventListener('scroll', handleScroll, true);
+
+		return () => {
+			window.removeEventListener('scroll', handleScroll, true);
+		};
+	});
 </script>
 
-<HoverCard.Root>
+<HoverCard.Root bind:open>
 	<HoverCard.Trigger
 		target="_blank"
 		rel="noreferrer noopener"

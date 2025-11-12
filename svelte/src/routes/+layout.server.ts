@@ -1,4 +1,4 @@
-import { getAlbumsWithSongs, getArtists, getProducers, getSongsReadable, getSettings } from '$lib/server/db/helpers';
+import { getAlbumsWithSongs, getArtists, getProducers, getSongsReadable, getSongsCount, getSettings } from '$lib/server/db/helpers';
 
 export const load = async () => {
 	const SONGS_PER_PAGE = 25;
@@ -6,6 +6,7 @@ export const load = async () => {
 
 	return {
 		songs: getSongsReadable({ limit: SONGS_PER_PAGE, offset: 0 }),
+		songsCount: await getSongsCount(),
 		albums: getAlbumsWithSongs({ limit: ALBUMS_PER_PAGE, offset: 0 }),
 		artists: getArtists(),
 		producers: getProducers(),
