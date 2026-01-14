@@ -685,10 +685,13 @@ def _write_song_metadata_internal(song_id: int, db_cursor) -> Dict[str, Any]:
             # Explicitly delete track number to clear existing metadata
             del easy_file['tracknumber']
 
-        if producers:
-            easy_file['composer'] = producers  # Map producers to composer field
-
         easy_file.save()
+
+        # write composer (producer) using raw mp4 tags since easymp4 may not support it
+        if producers:
+            mp4_file = MP4(str(full_filepath))
+            mp4_file['\xa9wrt'] = producers
+            mp4_file.save()
 
         # Embed artwork after text metadata
         embed_artwork(audio_file, song_artwork_path, album_artwork_path, str(full_filepath))

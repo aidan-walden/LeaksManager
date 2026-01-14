@@ -6,6 +6,12 @@
 	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '@/contexts/artists-context';
 	import type { EditableAlbum } from '@/schema';
+	import {
+		CreateAlbum,
+		UpdateAlbum,
+		UploadAlbumArt,
+		WriteAlbumMetadata
+	} from '$lib/wails';
 
 	let {
 		open = $bindable(),
@@ -144,19 +150,51 @@
 		loading = true;
 
 		try {
-			const formData = new FormData();
-			formData.append('file', file);
-			formData.append('type', 'album');
-			formData.append('id', albumId.toString());
-			await fetch('?/uploadArt', {
-				method: 'POST',
-				body: formData
-			});
+			// convert file to base64
+			const arrayBuffer = await file.arrayBuffer();
+			const base64 = btoa(
+				new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+			);
+			await UploadAlbumArt(albumId, file.name, base64);
 			await invalidateAll();
 		} finally {
 			loading = false;
 		}
 	};
+
+	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+		const name = formData.get('name') as string;
+		const yearStr = formData.get('year') as string;
+		const genre = formData.get('genre') as string;
+
+		const year = yearStr ? parseInt(yearStr) : undefined;
+
+		if (album) {
+			// update existing album
+			await UpdateAlbum({
+				id: album.id,
+				name,
+				year,
+				genre: genre || undefined,
+				artistIds: selectedArtistIds
+			});
+
+			// write metadata to all songs in album
+			await WriteAlbumMetadata(album.id);
+
+			return { id: album.id };
+		} else {
+			// create new album
+			const newAlbum = await CreateAlbum({
+				name,
+				artistIds: selectedArtistIds,
+				year,
+				genre: genre || undefined
+			});
+
+			return { id: newAlbum.id };
+		}
+	}
 </script>
 
 {#snippet albumFields(formLoading: boolean)}
@@ -217,7 +255,6 @@
 	{callback}
 	title={album ? 'Edit Album' : 'Create Album'}
 	formId="create-album-form"
-	formAction={album ? '?/updateAlbum' : '?/createAlbum'}
 	uploadTabLabel="Album Art"
 	uploadPlaceholder="Upload Album Art"
 	onFileUpload={handleUpload}
@@ -225,4 +262,5 @@
 	formFields={albumFields}
 	submitLabel={album ? 'Save Changes' : 'Create'}
 	{beforeSubmit}
+	onSubmit={handleSubmit}
 />

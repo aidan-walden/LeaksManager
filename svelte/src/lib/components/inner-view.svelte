@@ -9,9 +9,15 @@
 	import { setProducersContext } from '$lib/contexts/producers-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
-	import { parse as devalueParse } from 'devalue';
-	import type { Artist } from '$lib/server/db/schema';
 	import type { PageData } from '../../routes/[tab]/$types';
+	import {
+		UploadAndExtractMetadata,
+		CreateSongsWithMetadata,
+		CleanupFiles,
+		type FileUpload,
+		type FileData,
+		type Artist
+	} from '$lib/wails';
 
 type ArtistsPromise = PageData['artists'];
 type RawArtists = Awaited<ArtistsPromise>;
@@ -69,78 +75,58 @@ let pendingUploadData: any = $state(null);
 let unmappedArtistsList = $state<string[]>([]);
 let filesWithArtworkCount = $state(0);
 
+// helper to convert File to FileUpload (base64)
+async function fileToUpload(file: File): Promise<FileUpload> {
+	const arrayBuffer = await file.arrayBuffer();
+	const base64 = btoa(
+		new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+	);
+	return {
+		filename: file.name,
+		base64Data: base64
+	};
+}
+
 async function handleUpload(files: File[], albumId?: number) {
 	try {
-		// Step 1: Upload files and extract metadata
-		const formData = new FormData();
-		for (const file of files) {
-			formData.append('files', file);
-		}
-		if (albumId) {
-			formData.append('albumId', albumId.toString());
-		}
+		// convert files to base64 for Wails
+		const fileUploads = await Promise.all(files.map(fileToUpload));
 
-		const uploadResponse = await fetch('?/uploadAndExtractMetadata', {
-			method: 'POST',
-			body: formData
-		});
+		// call Wails binding to upload and extract metadata
+		const result = await UploadAndExtractMetadata(fileUploads, albumId ?? null);
 
-		if (!uploadResponse.ok) {
-			console.error('Upload response not OK:', uploadResponse.status, uploadResponse.statusText);
-			const text = await uploadResponse.text();
-			console.error('Response body:', text);
-			alert(`Upload failed: ${uploadResponse.statusText}`);
-			return;
-		}
-
-		const uploadResult = await uploadResponse.json();
-
-		// Check if it's a SvelteKit ActionResult with type 'failure'
-		if (uploadResult.type === 'failure') {
-			alert(`Upload failed: ${uploadResult.data?.error || 'Unknown error'}`);
-			return;
-		}
-
-		// Extract data from SvelteKit action result
-		// SvelteKit serializes the data using devalue, so we need to parse it with devalue
-		let data = uploadResult.type === 'success' ? uploadResult.data : uploadResult;
-		if (typeof data === 'string') {
-			console.log('Parsing data string with devalue:', data.substring(0, 100));
-			data = devalueParse(data);
-		}
-
-		// Store the data for later use
+		// store the data for later use
 		pendingUploadData = {
-			filesData: data.filesData,
+			filesData: result.filesData,
 			albumId: albumId
 		};
 
-		// Store unmapped artists list if any
-		if (data.unmappedArtists && data.unmappedArtists.length > 0) {
-			unmappedArtistsList = data.unmappedArtists;
+		// store unmapped artists list if any
+		if (result.unmappedArtists && result.unmappedArtists.length > 0) {
+			unmappedArtistsList = result.unmappedArtists;
 		} else {
 			unmappedArtistsList = [];
 		}
 
-		// Step 2: Check if any files have embedded artwork
-		if (data.filesWithArtwork > 0) {
-			filesWithArtworkCount = data.filesWithArtwork;
+		// check if any files have embedded artwork
+		if (result.filesWithArtwork > 0) {
+			filesWithArtworkCount = result.filesWithArtwork;
 			showArtworkChoiceDialog = true;
-			return; // Wait for user choice
+			return; // wait for user choice
 		}
 
-		// Step 3: Check if any artists need mapping
+		// check if any artists need mapping
 		if (unmappedArtistsList.length > 0) {
-			pendingUploadData.useEmbeddedArtwork = false; // No artwork dialog shown, default to false
+			pendingUploadData.useEmbeddedArtwork = false;
 			showArtistMappingDialog = true;
-			return; // Wait for user mapping
+			return; // wait for user mapping
 		}
 
-		// No dialogs needed, proceed directly
+		// no dialogs needed, proceed directly
 		await createSongs({}, false);
 	} catch (error) {
 		console.error('Error uploading:', error);
-		alert('An error occurred while uploading files');
+		alert(`An error occurred while uploading files: ${error instanceof Error ? error.message : 'Unknown error'}`);
 	}
 }
 
@@ -171,23 +157,17 @@ async function handleArtistMapping(mapping: Record<string, number | 'CREATE_NEW'
 async function handleArtistMappingCancel() {
 	if (!pendingUploadData) return;
 
-	// Filter out files that have unmapped artists
-	const filesToKeep = pendingUploadData.filesData.filter((f: any) => !f.hasUnmappedArtists);
-	const filesToDelete = pendingUploadData.filesData.filter((f: any) => f.hasUnmappedArtists);
+	// filter out files that have unmapped artists
+	const filesToKeep = pendingUploadData.filesData.filter((f: FileData) => !f.hasUnmappedArtists);
+	const filesToDelete = pendingUploadData.filesData.filter((f: FileData) => f.hasUnmappedArtists);
 
-	// Cleanup files that won't be uploaded
+	// cleanup files that won't be uploaded
 	if (filesToDelete.length > 0) {
-		const filepaths = filesToDelete.map((f: any) => f.filepath);
-		const cleanupFormData = new FormData();
-		cleanupFormData.append('filepaths', JSON.stringify(filepaths));
-
-		await fetch('?/cleanupFiles', {
-			method: 'POST',
-			body: cleanupFormData
-		});
+		const filepaths = filesToDelete.map((f: FileData) => f.filepath);
+		await CleanupFiles(filepaths);
 	}
 
-	// If there are files to keep, create songs for those
+	// if there are files to keep, create songs for those
 	if (filesToKeep.length > 0) {
 		pendingUploadData.filesData = filesToKeep;
 		await createSongs(
@@ -195,7 +175,7 @@ async function handleArtistMappingCancel() {
 			pendingUploadData.useEmbeddedArtwork !== undefined ? pendingUploadData.useEmbeddedArtwork : false
 		);
 	} else {
-		// All files were skipped
+		// all files were skipped
 		pendingUploadData = null;
 		await invalidateAll();
 	}
@@ -208,65 +188,25 @@ async function createSongs(
 	if (!pendingUploadData) return;
 
 	try {
-		// Convert to FormData with JSON strings
-		const formData = new FormData();
-		formData.append('filesData', JSON.stringify(pendingUploadData.filesData));
-		formData.append('artistMapping', JSON.stringify(artistMapping));
-		if (pendingUploadData.albumId) {
-			formData.append('albumId', pendingUploadData.albumId.toString());
-		}
-		formData.append('useEmbeddedArtwork', useEmbeddedArtwork.toString());
-
-		const createResponse = await fetch('?/createSongsWithMetadata', {
-			method: 'POST',
-			body: formData
+		// call Wails binding to create songs
+		const songs = await CreateSongsWithMetadata({
+			filesData: pendingUploadData.filesData,
+			artistMapping,
+			albumId: pendingUploadData.albumId,
+			useEmbeddedArtwork
 		});
 
-		if (!createResponse.ok) {
-			console.error('Create response not OK:', createResponse.status, createResponse.statusText);
-			const text = await createResponse.text();
-			console.error('Response body:', text);
-			alert(`Failed to create songs: ${createResponse.statusText}`);
-			return;
-		}
+		console.log('Successfully created songs:', songs);
 
-		const createResult = await createResponse.json();
-
-		// Parse data if it's a string (using devalue)
-		let parsedData = createResult.data;
-		if (typeof parsedData === 'string') {
-			console.log('Parsing create result data string with devalue');
-			parsedData = devalueParse(parsedData);
-		}
-
-		// Check if it's a SvelteKit ActionResult with type 'failure'
-		if (createResult.type === 'failure') {
-			const errorMsg = parsedData?.error || parsedData?.[1] || 'Unknown error';
-			console.error('Song creation failed:', errorMsg);
-			alert(`Failed to create songs: ${errorMsg}`);
-			return;
-		}
-
-		// Extract data from SvelteKit action result
-		let resultData = createResult.type === 'success' ? parsedData : createResult;
-
-		console.log('Result data extracted:', resultData);
-		console.log('Result data songs:', resultData?.songs);
-		console.log('Successfully created songs:', resultData?.songs);
-
-		// Clear pending data
+		// clear pending data
 		pendingUploadData = null;
 		unmappedArtistsList = [];
 		filesWithArtworkCount = 0;
 
-		// Refresh the UI
+		// refresh the UI
 		await invalidateAll();
 	} catch (error) {
 		console.error('Error creating songs:', error);
-		if (error instanceof Error) {
-			console.error('Error message:', error.message);
-			console.error('Error stack:', error.stack);
-		}
 		alert(`An error occurred while creating songs: ${error instanceof Error ? error.message : 'Unknown error'}`);
 	}
 }

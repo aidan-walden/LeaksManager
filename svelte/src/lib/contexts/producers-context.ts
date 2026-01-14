@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte';
-import type { Producer } from '@/server/db/schema';
+import type { Producer } from '$lib/wails';
 
 const PRODUCERS_KEY = Symbol('producers');
 

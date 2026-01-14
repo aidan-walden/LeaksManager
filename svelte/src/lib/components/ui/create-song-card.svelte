@@ -9,7 +9,7 @@
 	import AlbumCombobox from '$lib/components/ui/album-combobox.svelte';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
-	import type { Album, Song } from '@/server/db/schema';
+	import { UpdateSong, WriteSongMetadata, type Album, type Song } from '$lib/wails';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -89,12 +89,10 @@
 			// Dialog opened - capture current state
 			if (song) {
 				// Edit mode: capture initial values for change detection
-				const artistIds = song.songArtists.map((sa) => sa.artistId);
-				const producerIds = song.songProducers?.map((sp) => sp.producerId);
+				const artistIds = song.artists?.map((a) => a.id) ?? [];
+				const producerIds = song.producers?.map((p) => p.id) ?? [];
 				selectedArtistIds = artistIds;
-				if (producerIds !== undefined) {
-					selectedProducerIds = producerIds;
-				}
+				selectedProducerIds = producerIds;
 
 				selectedAlbumId = song.album ? song.album.id : null;
 				trackNumber = song.trackNumber ?? null;
@@ -104,7 +102,7 @@
 					album: song.album?.name || '',
 					albumId: song.album ? song.album.id : null,
 					artistIds: [...artistIds],
-					producerIds: producerIds ? [...producerIds] : [],
+					producerIds: [...producerIds],
 					trackNumber: song.trackNumber ?? null,
 					hasFile: false
 				};
@@ -178,6 +176,29 @@
 			fileChanged
 		);
 	};
+
+	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+		const name = formData.get('name') as string;
+
+		if (!song) {
+			throw new Error('Song editing requires an existing song');
+		}
+
+		// update existing song
+		await UpdateSong({
+			id: song.id,
+			name,
+			albumId: selectedAlbumId ?? undefined,
+			artistIds: selectedArtistIds,
+			producerIds: selectedProducerIds,
+			trackNumber: trackNumber ?? undefined
+		});
+
+		// write metadata to disk
+		await WriteSongMetadata(song.id);
+
+		return { id: song.id };
+	}
 </script>
 
 {#snippet songFields(loading: boolean)}
@@ -234,17 +255,6 @@
 				<Input type="number" value={totalTracks} disabled class="w-20" readonly />
 			</div>
 		</div>
-		{#if song}
-			<input type="hidden" name="songId" value={song.id} />
-		{/if}
-		<input type="hidden" name="album" value={selectedAlbumName} />
-		<input
-			type="hidden"
-			name="albumId"
-			value={selectedAlbumId !== null ? String(selectedAlbumId) : ''}
-		/>
-		<input type="hidden" name="artistIds" value={selectedArtistIds.join(',')} />
-		<input type="hidden" name="producerIds" value={selectedProducerIds.join(',')} />
 	</div>
 {/snippet}
 
@@ -254,7 +264,6 @@
 	{callback}
 	title={song ? 'Edit Song' : 'Create Song'}
 	formId="create-song-form"
-	formAction={song ? '?/updateSong' : '?/createSong'}
 	uploadTabLabel="Song Art"
 	uploadPlaceholder="Upload Song Art"
 	formFields={songFields}
@@ -262,4 +271,5 @@
 	uploadFieldImage={blob}
 	submitLabel={song ? 'Save Changes' : 'Create'}
 	{beforeSubmit}
+	onSubmit={handleSubmit}
 />

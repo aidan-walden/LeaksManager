@@ -178,9 +178,9 @@ uvicorn main:app --reload # Alternative
 - Files timestamped on server: `${Date.now()}-${file.name}`
 - Filepaths stored in database with `/uploads/...` prefix
 
-## Writing Functions
+## Writing Functions and Other Code
 
-- Always adhere to TypeScript
+- Always adhere to TypeScript unless writing code in a Python file
 - Never add jsdoc comments
 - Keep comments short and in all lowercase text (ex: // push users song update to db)
 - Do not add tons of logging

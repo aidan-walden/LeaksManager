@@ -36,8 +36,8 @@ svelte/vite.config.ts.timestamp-*
 # SQLite
 *.db
 
-# User uploads
-svelte/static/uploads
+# User uploads (dev mode: svelte/uploads/, production: user data directory)
+svelte/uploads/
 
 # IDE
 .cursor
@@ -58,3 +58,10 @@ microservice/*.pywz
 
 # Chromaprint
 microservice/bin/fpcalc
+
+# Wails
+build/
+*.exe
+*.app
+wailsjs/
+frontend/dist/

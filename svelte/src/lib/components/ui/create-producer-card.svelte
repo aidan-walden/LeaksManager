@@ -9,6 +9,12 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import type { EditableProducer } from '@/schema';
+	import {
+		CreateProducerWithAliases,
+		UpdateProducerWithAliases,
+		WriteProducerMetadata
+	} from '$lib/wails';
+
 	type ArtistOption = { id: number; name: string };
 
 	let {
@@ -60,6 +66,40 @@
 			aliases = [];
 		}
 	});
+
+	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+		const producerName = formData.get('name') as string;
+
+		// filter out aliases with empty names
+		const validAliases = aliases
+			.filter((a) => a.name.trim() !== '')
+			.map((a) => ({
+				name: a.name.trim(),
+				artistIds: a.artistIds
+			}));
+
+		if (producer) {
+			// update existing producer
+			const updated = await UpdateProducerWithAliases({
+				id: producer.id,
+				name: producerName,
+				aliases: validAliases
+			});
+
+			// write metadata to all songs by this producer
+			await WriteProducerMetadata(producer.id);
+
+			return { id: updated.id };
+		} else {
+			// create new producer
+			const newProducer = await CreateProducerWithAliases({
+				name: producerName,
+				aliases: validAliases
+			});
+
+			return { id: newProducer.id };
+		}
+	}
 </script>
 
 {#snippet producerFields(loading: boolean)}
@@ -76,9 +116,6 @@
 				bind:value={name}
 			/>
 		</div>
-		{#if producer}
-			<input type="hidden" name="id" value={producer.id} />
-		{/if}
 		<Separator />
 
 		<!-- Aliases Section -->
@@ -150,11 +187,6 @@
 			{/if}
 		</div>
 
-		<!-- Hidden inputs to serialize aliases data -->
-		{#each aliases as alias, index}
-			<input type="hidden" name="aliases[{index}].name" value={alias.name} />
-			<input type="hidden" name="aliases[{index}].artistIds" value={alias.artistIds.join(',')} />
-		{/each}
 	</div>
 {/snippet}
 
@@ -164,7 +196,7 @@
 	{callback}
 	title={producer ? 'Edit Producer' : 'Create Producer'}
 	formId={producer ? 'update-producer-form' : 'create-producer-form'}
-	formAction={producer ? '?/updateProducer' : '?/createProducer'}
 	submitLabel={producer ? 'Save Changes' : 'Create'}
 	formFields={producerFields}
+	onSubmit={handleSubmit}
 />

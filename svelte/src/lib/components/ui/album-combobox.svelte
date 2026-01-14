@@ -7,7 +7,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils/utils.js';
-	import type { Album } from '@/server/db/schema';
+	import type { Album } from '$lib/wails';
 
 	let {
 		albums,

@@ -5,10 +5,7 @@
 	let { song }: { song: EditableSong } = $props();
 
 	let songProducersString = $derived(
-		song.songProducers
-			?.map((sp) => sp.producer?.name)
-			.filter((name): name is string => name !== undefined)
-			.join(', ') ?? ''
+		song.producers?.map((p) => p.name).join(', ') ?? ''
 	);
 
 	let open = $state(false);
@@ -37,19 +34,21 @@
 	>
 		{song.name}
 	</HoverCard.Trigger>
-	<HoverCard.Content class="w-80">
+	<HoverCard.Content class="max-w-100 min-w-80">
 		<div class="grid grid-cols-3 gap-4">
 			<div class="col-span-2 space-y-1">
-				<h4 class="text-sm font-semibold">{song.name}</h4>
-				<p class="text-sm text-muted-foreground italic">{song.artist}</p>
+				<h4 class="text-sm font-semibold wrap-break-word">{song.name}</h4>
+				<p class="text-sm wrap-break-word text-muted-foreground italic">{song.artist}</p>
 				{#if songProducersString}
 					<div class="flex items-center pt-2">
-						<span class="text-xs text-muted-foreground">Prod. {songProducersString}</span>
+						<span class="text-xs wrap-break-word text-muted-foreground"
+							>Prod. {songProducersString}</span
+						>
 					</div>
 				{/if}
 				{#if song.album?.name}
 					<div class="flex items-center pt-2">
-						<span class="text-xs text-muted-foreground">{song.album?.name}</span>
+						<span class="text-xs wrap-break-word text-muted-foreground">{song.album?.name}</span>
 					</div>
 				{/if}
 			</div>

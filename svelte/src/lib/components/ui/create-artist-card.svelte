@@ -2,6 +2,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import CreateCard from './create-card.svelte';
+	import { CreateArtist } from '$lib/wails';
 
 	let {
 		open = $bindable(),
@@ -18,6 +19,20 @@
 		if (files.length === 0) return;
 		file = files[0];
 	};
+
+	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+		const name = formData.get('name') as string;
+		const careerStartStr = formData.get('career-start') as string;
+		const careerEndStr = formData.get('career-end') as string;
+
+		const artist = await CreateArtist({
+			name,
+			careerStartYear: careerStartStr ? parseInt(careerStartStr) : undefined,
+			careerEndYear: careerEndStr ? parseInt(careerEndStr) : undefined
+		});
+
+		return { id: artist.id };
+	}
 </script>
 
 {#snippet artistFields(loading: boolean)}
@@ -62,10 +77,10 @@
 	{callback}
 	title="Create Artist"
 	formId="create-artist-form"
-	formAction="?/createArtist"
 	uploadTabLabel="Artist Art"
 	uploadPlaceholder="Upload Artist Art"
 	formFields={artistFields}
 	onFileUpload={handleUpload}
 	uploadFieldImage={blob}
+	onSubmit={handleSubmit}
 />

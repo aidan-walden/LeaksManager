@@ -4,6 +4,7 @@
 	import SongsTableSkeleton from '$lib/components/ui/data-table/songs-table-skeleton.svelte';
 	import { columns } from '../columns';
 	import type { PageData } from '../../../routes/[tab]/$types';
+	import { GetSongsReadable } from '$lib/wails';
 
 	type SongsPromise = PageData['songs'];
 	type Songs = Awaited<SongsPromise>;
@@ -29,8 +30,8 @@
 
 	async function fetchSongsForPage(page: number) {
 		isLoading = true;
-		const response = await fetch(`/api/songs?page=${page}&pageSize=${songsPerPage}`);
-		songs = await response.json();
+		const offset = page * songsPerPage;
+		songs = await GetSongsReadable(songsPerPage, offset);
 		isLoading = false;
 		currentPage = page;
 	}

@@ -2,7 +2,7 @@
 	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import type { Component } from 'svelte';
-	import type { Artist } from '$lib/server/db/schema';
+	import type { Artist } from '$lib/wails';
 
 	type EntityPromise = Promise<T[]>;
 	type ArtistsPromise = Promise<Artist[]>;

@@ -7,6 +7,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import type { PageData } from '../../../routes/[tab]/$types';
 	import type { EditableProducer } from '@/schema';
+	import { DeleteProducer } from '$lib/wails';
 
 	type ProducersPromise = PageData['producers'];
 	type ArtistsPromise = PageData['artists'];
@@ -41,13 +42,13 @@
 			id: producer.id,
 			name: producer.name,
 			producerAliases:
-				producer.producerAliases?.map((alias) => ({
+				producer.aliases?.map((alias) => ({
 					id: alias.id,
 					alias: alias.alias,
 					producerAliasArtists:
-						alias.producerAliasArtists?.map((link) => ({
-							artistId: link.artistId,
-							artist: link.artist ?? null
+						alias.artistIds?.map((artistId) => ({
+							artistId,
+							artist: null
 						})) ?? []
 				})) ?? []
 		};
@@ -59,20 +60,8 @@
 	}
 
 	async function onDelete(id: number) {
-		const formData = new FormData();
-		formData.append('id', id.toString());
-
 		try {
-			const response = await fetch('?/deleteProducer', {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!response.ok) {
-				console.error('Failed to delete producer');
-				return;
-			}
-
+			await DeleteProducer(id);
 			await invalidateAll();
 		} catch (error) {
 			console.error('Error deleting producer:', error);
@@ -125,11 +114,11 @@
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				</div>
-				{#if producer.producerAliases && producer.producerAliases.length > 0}
+				{#if producer.aliases && producer.aliases.length > 0}
 					<div class="mt-2 text-xs text-muted-foreground">
 						<p class="font-semibold">Aliases</p>
 						<ul class="mt-1 space-y-1">
-							{#each producer.producerAliases as alias (alias.id)}
+							{#each producer.aliases as alias (alias.id)}
 								<li>{alias.alias}</li>
 							{/each}
 						</ul>

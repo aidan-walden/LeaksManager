@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte';
-import type { Album } from '@/server/db/schema';
+import type { Album } from '$lib/wails';
 
 const ALBUMS_KEY = Symbol('albums');
 

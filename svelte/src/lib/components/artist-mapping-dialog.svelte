@@ -2,7 +2,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
-	import type { Artist } from '$lib/server/db/schema';
+	import type { Artist } from '$lib/wails';
 
 	let {
 		open = $bindable(),

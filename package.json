@@ -7,6 +7,11 @@
   "scripts": {
     "dev": "pnpm --filter svelte dev",
     "build": "pnpm --filter svelte build",
-    "check": "pnpm --filter svelte check"
+    "check": "pnpm --filter svelte check",
+    "wails:dev": "wails dev",
+    "wails:build": "wails build",
+    "wails:build:darwin": "wails build -platform darwin/universal",
+    "wails:build:windows": "wails build -platform windows/amd64",
+    "wails:doctor": "wails doctor"
   }
 }

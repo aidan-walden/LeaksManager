@@ -1,0 +1,31 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Leaks Manager",
+  "outputfilename": "leaks-manager",
+  "frontend:dir": "./svelte",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm build",
+  "frontend:dev:watcher": "pnpm dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./svelte/src/lib/wails",
+  "assetdir": "./svelte/build",
+  "reloaddirs": "svelte/src",
+  "debounceMS": 300,
+  "devServer": "localhost:5173",
+  "appargs": "",
+  "runNonNativeBuildScript": false,
+  "preBuildHooks": {
+    "command": "cd svelte && pnpm install && pnpm build"
+  },
+  "postBuildHooks": {},
+  "info": {
+    "companyName": "Leaks Manager",
+    "productName": "Leaks Manager",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2024",
+    "comments": "Music leak management application"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleargs": ""
+}

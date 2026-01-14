@@ -9,6 +9,7 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { invalidateAll } from '$app/navigation';
 	import type { EditableAlbum } from '@/schema';
+	import { DeleteAlbum } from '$lib/wails';
 
 	type AlbumsPromise = PageData['albums'];
 
@@ -16,13 +17,7 @@
 	let currentAlbum = $state<EditableAlbum | null>(null);
 
 	async function onDelete(id: number) {
-		const formData = new FormData();
-		formData.append('id', id.toString());
-		await fetch('?/deleteAlbum', {
-			method: 'POST',
-			body: formData
-		});
-
+		await DeleteAlbum(id);
 		await invalidateAll();
 	}
 
@@ -95,7 +90,7 @@
 								<DropdownMenu.Group>
 									<DropdownMenu.Label>Actions</DropdownMenu.Label>
 									<DropdownMenu.Separator />
-									<DropdownMenu.Item onclick={() => onClickEdit(album)}>Edit</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => onClickEdit(album as unknown as EditableAlbum)}>Edit</DropdownMenu.Item>
 									<DropdownMenu.Item style="color: red;" onclick={() => onDelete(album.id)}
 										>Delete</DropdownMenu.Item
 									>

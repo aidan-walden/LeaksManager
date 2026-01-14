@@ -2,7 +2,7 @@
 	import ArtistsLike from './artists-like.svelte';
 	import CreateArtistCard from '$lib/components/ui/create-artist-card.svelte';
 	import ArtistsSkeleton from '$lib/components/ui/artists-skeleton.svelte';
-	import type { Artist } from '$lib/server/db/schema';
+	import type { Artist } from '$lib/wails';
 	import type { PageData } from '../../../routes/[tab]/$types';
 
 	type ArtistsPromise = PageData['artists'];

@@ -3,7 +3,6 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { FileDropZone } from '@/components/ui/file-drop-zone';
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 
 	let {
@@ -12,7 +11,6 @@
 		callback,
 		title,
 		formId,
-		formAction,
 		submitLabel = 'Create',
 		metadataTabLabel = 'Metadata',
 		uploadTabLabel,
@@ -22,14 +20,14 @@
 		uploadMaxFiles = 1,
 		uploadFieldImage,
 		formFields,
-		beforeSubmit
+		beforeSubmit,
+		onSubmit
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
 		callback?: (recordId: number) => void;
 		title: string;
 		formId: string;
-		formAction: string;
 		submitLabel?: string;
 		metadataTabLabel?: string;
 		uploadTabLabel?: string;
@@ -40,43 +38,42 @@
 		uploadFieldImage?: Blob | null;
 		formFields: Snippet<[loading: boolean]>;
 		beforeSubmit?: () => boolean;
+		onSubmit: (formData: FormData) => Promise<{ id?: number }>;
 	} = $props();
 
 	let formElement: HTMLFormElement;
 	let loading = $state(false);
+
+	async function handleSubmit(event: SubmitEvent) {
+		event.preventDefault();
+
+		if (beforeSubmit && !beforeSubmit()) {
+			return;
+		}
+
+		loading = true;
+		try {
+			const formData = new FormData(formElement);
+			const result = await onSubmit(formData);
+
+			formElement.reset();
+			await invalidateAll();
+
+			if (callback && result?.id) {
+				callback(result.id);
+			}
+
+			open = false;
+		} catch (error) {
+			console.error('Form submission error:', error);
+		} finally {
+			loading = false;
+		}
+	}
 </script>
 
 {#snippet formContent()}
-	<form
-		id={formId}
-		method="POST"
-		action={formAction}
-		use:enhance={() => {
-			// Check if submission should proceed
-			if (beforeSubmit && !beforeSubmit()) {
-				return () => {}; // Cancel submission
-			}
-
-			loading = true;
-			return async ({ result, update }) => {
-				loading = false;
-
-				if (result.type === 'success') {
-					formElement.reset(); // Clear form on success
-					await invalidateAll(); // Refresh page data (e.g., song list)
-
-					// Call callback with the created record ID if available
-					if (callback && result.data?.id && typeof result.data.id === 'number') {
-						callback(result.data.id);
-					}
-				}
-
-				await update(); // Apply the action result
-				open = false;
-			};
-		}}
-		bind:this={formElement}
-	>
+	<form id={formId} onsubmit={handleSubmit} bind:this={formElement}>
 		{@render formFields(loading)}
 	</form>
 {/snippet}

@@ -1,24 +1,15 @@
 import type { ColumnDef } from '@tanstack/table-core';
 import { renderComponent } from './ui/data-table';
 import DataTableActions from '$lib/components/ui/data-table/data-table-actions.svelte';
-import type { SongWithRelations } from '@/server/db/schema';
-import { invalidate, invalidateAll } from '$app/navigation';
+import { invalidateAll } from '$app/navigation';
 import SongHover from './table/song-hover.svelte';
+import { DeleteSong, type SongReadable } from '$lib/wails';
 
-// This type mirrors the shape returned by getSongsReadable
-export type EditableSong = Omit<SongWithRelations, 'songProducers'> & {
-	songProducers?: SongWithRelations['songProducers'];
-	artist: string;
-};
+// EditableSong mirrors the shape returned by GetSongsReadable from Go
+export type EditableSong = SongReadable;
 
 async function onDelete(id: number) {
-	const formData = new FormData();
-	formData.append('id', id.toString());
-	await fetch('?/deleteSong', {
-		method: 'POST',
-		body: formData
-	});
-
+	await DeleteSong(id);
 	await invalidateAll();
 }
 
