@@ -3,7 +3,6 @@ module leaks-manager
 go 1.25.4
 
 require (
-	github.com/Sorrow446/go-mp4tag v0.0.0-20240130220823-68ce31d53e37
 	github.com/ambeloe/oggv v0.0.0-20240305005425-19d94b725a49
 	github.com/bogem/id3v2 v1.2.0
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8

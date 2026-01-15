@@ -4,12 +4,17 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import CreateSongCard from '../create-song-card.svelte';
 	import type { EditableSong } from '@/components/columns';
+	import { ShowInFileExplorer } from '$lib/wails';
 
 	let { song, onDelete }: { song: EditableSong; onDelete: (id: number) => void } = $props();
 	let editingSong = $state(false);
 
 	function onClickEdit() {
 		editingSong = true;
+	}
+
+	async function onClickShowInFileExplorer() {
+		await ShowInFileExplorer(song.filepath);
 	}
 </script>
 
@@ -27,6 +32,7 @@
 			<DropdownMenu.Label>Actions</DropdownMenu.Label>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={onClickEdit}>Edit</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={onClickShowInFileExplorer}>Show in File Explorer</DropdownMenu.Item>
 			<DropdownMenu.Item style="color: red;" onclick={() => onDelete(song.id)}
 				>Delete</DropdownMenu.Item
 			>

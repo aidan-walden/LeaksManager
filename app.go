@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -14,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sorrow446/go-mp4tag"
+	// "github.com/Sorrow446/go-mp4tag" // not used, using ffmpeg instead due to seek issues
 	"github.com/ambeloe/oggv/vorbiscomment"
 	"github.com/bogem/id3v2"
 	"github.com/dhowden/tag"
@@ -457,14 +458,42 @@ func (a *App) WriteAlbumMetadata(albumID int) (BatchResult, error) {
 
 // --- Internal Logic ---
 
+type songMetadataWrite struct {
+	Title          string
+	Artist         string
+	AlbumArtist    string
+	Album          string
+	Genre          string
+	Year           int32
+	TrackNumberStr string
+	TrackNumber    int32
+	TrackTotal     int32
+	Producers      string
+	SongArt        string
+	AlbumArt       string
+}
+
 func (a *App) writeSongMetadataInternal(songID int) error {
 	// 1. Query DB (Complex Join converted from Python)
 	query := `
     SELECT 
         s.name, s.filepath, s.genre, s.year, s.track_number,
-        s.artwork_path, a.name, a.artwork_path,
+        s.artwork_path, a.name, a.year, a.genre, a.artwork_path,
         GROUP_CONCAT(ar.name, ', '),
-        (SELECT GROUP_CONCAT(p.name, ', ') FROM song_producers sp LEFT JOIN producers p ON sp.producer_id = p.id WHERE sp.song_id = s.id)
+        (
+            SELECT GROUP_CONCAT(ar2.name, ', ')
+            FROM album_artists aa
+            LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
+            WHERE aa.album_id = s.album_id
+            ORDER BY aa."order"
+        ),
+        (
+            SELECT GROUP_CONCAT(p.name, ', ')
+            FROM song_producers sp
+            LEFT JOIN producers p ON sp.producer_id = p.id
+            WHERE sp.song_id = s.id
+            ORDER BY sp."order"
+        )
     FROM songs s
     LEFT JOIN albums a ON s.album_id = a.id
     LEFT JOIN song_artists sa ON s.id = sa.song_id
@@ -472,67 +501,201 @@ func (a *App) writeSongMetadataInternal(songID int) error {
     WHERE s.id = ?
     GROUP BY s.id`
 
-	var sName, sPath, sGenre, sArt, aName, aArt string
-	var artists, producers sql.NullString
-	var sYear, sTrack sql.NullInt32
+	var sName, sPath string
+	var sGenre, sArt, aName, aGenre, aArt, artists, albumArtists, producers sql.NullString
+	var sYear, sTrack, aYear sql.NullInt32
 	
 	err := a.db.QueryRow(query, songID).Scan(
 		&sName, &sPath, &sGenre, &sYear, &sTrack,
-		&sArt, &aName, &aArt, &artists, &producers,
+		&sArt, &aName, &aYear, &aGenre, &aArt, &artists, &albumArtists, &producers,
 	)
 	if err == sql.ErrNoRows {
+		fmt.Println("song not found")
 		return fmt.Errorf("song not found")
 	} else if err != nil {
+		fmt.Println("error scanning song:", err)
 		return err
 	}
+	_ = aYear
 
 	fullPath := filepath.Join(a.staticPath, sPath)
+
+	songGenre := ""
+	if sGenre.Valid {
+		songGenre = sGenre.String
+	}
+	albumGenre := ""
+	if aGenre.Valid {
+		albumGenre = aGenre.String
+	}
+	genreToWrite := songGenre
+	if genreToWrite == "" {
+		genreToWrite = albumGenre
+	}
+
+	albumName := ""
+	if aName.Valid {
+		albumName = aName.String
+	}
+
+	songArt := ""
+	if sArt.Valid {
+		songArt = sArt.String
+	}
+	albumArt := ""
+	if aArt.Valid {
+		albumArt = aArt.String
+	}
+
+	artistStr := ""
+	if artists.Valid {
+		artistStr = artists.String
+	}
+	albumArtistsStr := ""
+	if albumArtists.Valid {
+		albumArtistsStr = albumArtists.String
+	}
+	albumArtist := albumArtistsStr
+	if albumArtist == "" {
+		albumArtist = artistStr
+	}
+
+	producersStr := ""
+	if producers.Valid {
+		producersStr = producers.String
+	}
+
+	year := int32(0)
+	if sYear.Valid {
+		year = sYear.Int32
+	}
+
+	trackNumber := int32(0)
+	if sTrack.Valid {
+		trackNumber = sTrack.Int32
+	}
+
+	trackNumberStr := ""
+	trackTotal := int32(0)
+	settings, err := a.GetSettings()
+	if err != nil {
+		return err
+	}
+	if albumName == "" {
+		if settings.AutomaticallyMakeSingles {
+			albumName = fmt.Sprintf("%s - Single", sName)
+			trackNumberStr = "1/1"
+			trackNumber = 1
+			trackTotal = 1
+		} else {
+			trackNumber = 0
+		}
+	} else {
+		var totalTracks sql.NullInt32
+		countErr := a.db.QueryRow(`
+			SELECT COUNT(*)
+			FROM songs
+			WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)
+		`, songID).Scan(&totalTracks)
+		if countErr == nil && totalTracks.Valid {
+			trackTotal = totalTracks.Int32
+		} else if countErr != nil && countErr != sql.ErrNoRows {
+			return countErr
+		}
+
+		if trackNumber > 0 {
+			if trackTotal > 0 {
+				trackNumberStr = fmt.Sprintf("%d/%d", trackNumber, trackTotal)
+			} else {
+				trackNumberStr = fmt.Sprintf("%d", trackNumber)
+			}
+		}
+	}
+
+	meta := songMetadataWrite{
+		Title:          sName,
+		Artist:         artistStr,
+		AlbumArtist:    albumArtist,
+		Album:          albumName,
+		Genre:          genreToWrite,
+		Year:           year,
+		TrackNumberStr: trackNumberStr,
+		TrackNumber:    trackNumber,
+		TrackTotal:     trackTotal,
+		Producers:      producersStr,
+		SongArt:        songArt,
+		AlbumArt:       albumArt,
+	}
 	
 	// 2. Embed Metadata based on file extension
 	ext := strings.ToLower(filepath.Ext(fullPath))
 
 	switch ext {
 	case ".mp3":
-		return a.writeMP3Metadata(fullPath, sName, artists.String, aName, sYear.Int32, sTrack.Int32, sArt, aArt)
+		return a.writeMP3Metadata(fullPath, meta)
 	case ".flac":
-		return a.writeFLACMetadata(fullPath, sName, artists.String, aName, sYear.Int32, sTrack.Int32, sArt, aArt)
+		return a.writeFLACMetadata(fullPath, meta)
 	case ".m4a", ".mp4", ".m4b", ".m4p":
-		return a.writeM4AMetadata(fullPath, sName, artists.String, aName, sYear.Int32, sTrack.Int32, sArt, aArt)
+		return a.writeM4AMetadata(fullPath, meta)
 	case ".ogg", ".oga":
-		return a.writeOGGMetadata(fullPath, sName, artists.String, aName, sYear.Int32, sTrack.Int32, sArt, aArt)
+		return a.writeOGGMetadata(fullPath, meta)
 	default:
 		return fmt.Errorf("writing support for %s not yet implemented", ext)
 	}
 }
 
 // Logic for MP3s using bogem/id3v2
-func (a *App) writeMP3Metadata(path, title, artist, album string, year, track int32, songArt, albumArt string) error {
+func (a *App) writeMP3Metadata(path string, meta songMetadataWrite) error {
 	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
 	if err != nil {
 		return err
 	}
 	defer tag.Close()
 
-	tag.SetTitle(title)
-	tag.SetArtist(artist)
-	tag.SetAlbum(album)
-	if year > 0 {
-		tag.SetYear(fmt.Sprintf("%d", year))
+	tag.DeleteAllFrames()
+
+	if meta.Title != "" {
+		tag.SetTitle(meta.Title)
 	}
-	
+	if meta.Artist != "" {
+		tag.SetArtist(meta.Artist)
+	}
+	if meta.AlbumArtist != "" {
+		tag.AddTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"), tag.DefaultEncoding(), meta.AlbumArtist)
+	}
+	if meta.Album != "" {
+		tag.SetAlbum(meta.Album)
+	}
+	if meta.Genre != "" {
+		tag.SetGenre(meta.Genre)
+	}
+	if meta.Year > 0 {
+		tag.SetYear(fmt.Sprintf("%d", meta.Year))
+	}
+	if meta.TrackNumberStr != "" {
+		tag.AddTextFrame(tag.CommonID("Track number/Position in set"), tag.DefaultEncoding(), meta.TrackNumberStr)
+	}
+	if meta.Producers != "" {
+		tag.AddTextFrame(tag.CommonID("Composer"), tag.DefaultEncoding(), meta.Producers)
+	}
+
 	// Handle Artwork
-	artPathToUse := songArt
+	artPathToUse := meta.SongArt
 	if artPathToUse == "" {
-		artPathToUse = albumArt
+		artPathToUse = meta.AlbumArt
 	}
 
 	if artPathToUse != "" {
 		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
 		artData, err := os.ReadFile(fullArtPath)
 		if err == nil {
+			mimeType := "image/jpeg"
+			if strings.HasSuffix(strings.ToLower(artPathToUse), ".png") {
+				mimeType = "image/png"
+			}
 			pic := id3v2.PictureFrame{
 				Encoding:    id3v2.EncodingUTF8,
-				MimeType:    "image/jpeg", // Simplified detection
+				MimeType:    mimeType,
 				PictureType: id3v2.PTFrontCover,
 				Description: "Front Cover",
 				Picture:     artData,
@@ -545,7 +708,7 @@ func (a *App) writeMP3Metadata(path, title, artist, album string, year, track in
 }
 
 // logic for flac using go-flac/flacvorbis
-func (a *App) writeFLACMetadata(path, title, artist, album string, year, track int32, songArt, albumArt string) error {
+func (a *App) writeFLACMetadata(path string, meta songMetadataWrite) error {
 	// parse flac file
 	f, err := flac.ParseFile(path)
 	if err != nil {
@@ -573,14 +736,30 @@ func (a *App) writeFLACMetadata(path, title, artist, album string, year, track i
 	}
 
 	// set metadata tags
-	cmt.Add(flacvorbis.FIELD_TITLE, title)
-	cmt.Add(flacvorbis.FIELD_ARTIST, artist)
-	cmt.Add(flacvorbis.FIELD_ALBUM, album)
-	if year > 0 {
-		cmt.Add(flacvorbis.FIELD_DATE, fmt.Sprintf("%d", year))
+	cmt.Comments = []string{}
+	if meta.Title != "" {
+		cmt.Add(flacvorbis.FIELD_TITLE, meta.Title)
 	}
-	if track > 0 {
-		cmt.Add(flacvorbis.FIELD_TRACKNUMBER, fmt.Sprintf("%d", track))
+	if meta.Artist != "" {
+		cmt.Add(flacvorbis.FIELD_ARTIST, meta.Artist)
+	}
+	if meta.AlbumArtist != "" {
+		cmt.Add("ALBUMARTIST", meta.AlbumArtist)
+	}
+	if meta.Album != "" {
+		cmt.Add(flacvorbis.FIELD_ALBUM, meta.Album)
+	}
+	if meta.Genre != "" {
+		cmt.Add(flacvorbis.FIELD_GENRE, meta.Genre)
+	}
+	if meta.Year > 0 {
+		cmt.Add(flacvorbis.FIELD_DATE, fmt.Sprintf("%d", meta.Year))
+	}
+	if meta.TrackNumberStr != "" {
+		cmt.Add(flacvorbis.FIELD_TRACKNUMBER, meta.TrackNumberStr)
+	}
+	if meta.Producers != "" {
+		cmt.Add("PRODUCER", meta.Producers)
 	}
 
 	// marshal vorbis comments back to metadata block
@@ -595,9 +774,9 @@ func (a *App) writeFLACMetadata(path, title, artist, album string, year, track i
 	}
 
 	// handle artwork
-	artPathToUse := songArt
+	artPathToUse := meta.SongArt
 	if artPathToUse == "" {
-		artPathToUse = albumArt
+		artPathToUse = meta.AlbumArt
 	}
 
 	if artPathToUse != "" {
@@ -639,60 +818,168 @@ func (a *App) writeFLACMetadata(path, title, artist, album string, year, track i
 	return f.Save(path)
 }
 
-// logic for m4a using go-mp4tag
-func (a *App) writeM4AMetadata(path, title, artist, album string, year, track int32, songArt, albumArt string) error {
-	// open the m4a file
-	mp4File, err := mp4tag.Open(path)
+// logic for m4a using ffmpeg as workaround for go-mp4tag library issues
+func (a *App) writeM4AMetadata(path string, meta songMetadataWrite) error {
+	fmt.Printf("[M4A] Starting metadata write for: %s\n", path)
+	fmt.Printf("[M4A] Metadata to write: Title=%s, Artist=%s, Album=%s, AlbumArtist=%s, Genre=%s, Year=%d, Track=%s, Composer=%s\n",
+		meta.Title, meta.Artist, meta.Album, meta.AlbumArtist, meta.Genre, meta.Year, meta.TrackNumberStr, meta.Producers)
+
+	// check if ffmpeg is available
+	_, err := exec.LookPath("ffmpeg")
 	if err != nil {
-		return fmt.Errorf("failed to open m4a file: %w", err)
-	}
-	defer mp4File.Close()
-
-	// create tags struct
-	tags := &mp4tag.MP4Tags{
-		Title:  title,
-		Artist: artist,
-		Album:  album,
+		fmt.Printf("[M4A] ERROR: ffmpeg not found in PATH: %v\n", err)
+		return fmt.Errorf("ffmpeg not found: %w", err)
 	}
 
-	if year > 0 {
-		tags.Year = year
-	}
-
-	if track > 0 {
-		tags.TrackNumber = int16(track)
-	}
+	// use ffmpeg to write metadata since go-mp4tag has seek issues
+	tempPath := path + ".ffmpeg.m4a"
 
 	// handle artwork
-	artPathToUse := songArt
+	artPathToUse := meta.SongArt
 	if artPathToUse == "" {
-		artPathToUse = albumArt
+		artPathToUse = meta.AlbumArt
 	}
 
+	var fullArtPath string
 	if artPathToUse != "" {
-		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
-		artData, err := os.ReadFile(fullArtPath)
-		if err == nil {
-			// determine picture type
-			picType := mp4tag.ImageTypeJPEG
-			if strings.HasSuffix(strings.ToLower(artPathToUse), ".png") {
-				picType = mp4tag.ImageTypePNG
-			}
+		fullArtPath = filepath.Join(a.staticPath, artPathToUse)
+		fmt.Printf("[M4A] Will embed artwork from: %s\n", fullArtPath)
+	}
 
-			pic := &mp4tag.MP4Picture{
-				Format: picType,
-				Data:   artData,
-			}
-			tags.Pictures = []*mp4tag.MP4Picture{pic}
+	// build ffmpeg command with metadata
+	// for M4A files, ffmpeg requires -map_metadata -1 to clear old metadata first
+	args := []string{
+		"-i", path,
+	}
+
+	// add artwork as second input if available
+	if fullArtPath != "" {
+		args = append(args, "-i", fullArtPath)
+	}
+
+	args = append(args,
+		"-map_metadata", "-1", // clear existing metadata
+		"-map", "0:a",          // map audio from first input
+	)
+
+	// map artwork if present
+	if fullArtPath != "" {
+		args = append(args,
+			"-map", "1:0",              // map image from second input
+			"-c:a", "copy",             // copy audio without re-encoding
+			"-c:v", "copy",             // copy image without re-encoding
+			"-disposition:v:0", "attached_pic", // mark as album art
+		)
+	} else {
+		args = append(args, "-c", "copy") // copy streams without re-encoding
+	}
+
+	args = append(args, "-movflags", "+faststart")
+
+	// add metadata arguments
+	if meta.Title != "" {
+		args = append(args, "-metadata", fmt.Sprintf("title=%s", meta.Title))
+		fmt.Printf("[M4A] Adding title: %s\n", meta.Title)
+	}
+	if meta.Artist != "" {
+		args = append(args, "-metadata", fmt.Sprintf("artist=%s", meta.Artist))
+		fmt.Printf("[M4A] Adding artist: %s\n", meta.Artist)
+	}
+	if meta.Album != "" {
+		args = append(args, "-metadata", fmt.Sprintf("album=%s", meta.Album))
+		fmt.Printf("[M4A] Adding album: %s\n", meta.Album)
+	}
+	if meta.AlbumArtist != "" {
+		args = append(args, "-metadata", fmt.Sprintf("album_artist=%s", meta.AlbumArtist))
+		fmt.Printf("[M4A] Adding album_artist: %s\n", meta.AlbumArtist)
+	}
+	if meta.Genre != "" {
+		args = append(args, "-metadata", fmt.Sprintf("genre=%s", meta.Genre))
+		fmt.Printf("[M4A] Adding genre: %s\n", meta.Genre)
+	}
+	if meta.Year > 0 {
+		args = append(args, "-metadata", fmt.Sprintf("date=%d", meta.Year))
+		fmt.Printf("[M4A] Adding date: %d\n", meta.Year)
+	}
+	if meta.TrackNumberStr != "" {
+		args = append(args, "-metadata", fmt.Sprintf("track=%s", meta.TrackNumberStr))
+		fmt.Printf("[M4A] Adding track: %s\n", meta.TrackNumberStr)
+	}
+	if meta.Producers != "" {
+		args = append(args, "-metadata", fmt.Sprintf("composer=%s", meta.Producers))
+		fmt.Printf("[M4A] Adding composer: %s\n", meta.Producers)
+	}
+
+	args = append(args, "-y", tempPath) // overwrite output file
+
+	fmt.Printf("[M4A] Running: ffmpeg %s\n", strings.Join(args, " "))
+	cmd := exec.Command("ffmpeg", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("[M4A] ERROR: ffmpeg failed: %v\nOutput:\n%s\n", err, string(output))
+		os.Remove(tempPath)
+		return fmt.Errorf("ffmpeg failed: %w", err)
+	}
+
+	fmt.Printf("[M4A] ffmpeg output:\n%s\n", string(output))
+
+	// verify temp file was created
+	if _, err := os.Stat(tempPath); os.IsNotExist(err) {
+		fmt.Printf("[M4A] ERROR: temp file was not created\n")
+		return fmt.Errorf("temp file was not created")
+	}
+
+	fmt.Printf("[M4A] ffmpeg completed successfully, temp file created\n")
+
+	// get file sizes for verification
+	originalInfo, _ := os.Stat(path)
+	tempInfo, _ := os.Stat(tempPath)
+	fmt.Printf("[M4A] Original file size: %d bytes, Temp file size: %d bytes\n", originalInfo.Size(), tempInfo.Size())
+
+	// replace original file
+	fmt.Printf("[M4A] Replacing original file with temp file...\n")
+	err = os.Rename(tempPath, path)
+	if err != nil {
+		fmt.Printf("[M4A] ERROR: Failed to replace original file: %v\n", err)
+		os.Remove(tempPath)
+		return fmt.Errorf("failed to replace original file: %w", err)
+	}
+
+	// verify temp file is gone and original exists
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		fmt.Printf("[M4A] WARNING: Temp file still exists after rename\n")
+	} else {
+		fmt.Printf("[M4A] Temp file removed successfully\n")
+	}
+
+	newInfo, err := os.Stat(path)
+	if err != nil {
+		fmt.Printf("[M4A] ERROR: Cannot stat replaced file: %v\n", err)
+		return fmt.Errorf("cannot stat replaced file: %w", err)
+	}
+	fmt.Printf("[M4A] Replaced file size: %d bytes\n", newInfo.Size())
+
+	// verify metadata was written by reading it back
+	fmt.Printf("[M4A] Verifying metadata was written...\n")
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("[M4A] WARNING: Cannot open file to verify: %v\n", err)
+	} else {
+		defer f.Close()
+		m, err := tag.ReadFrom(f)
+		if err != nil {
+			fmt.Printf("[M4A] WARNING: Cannot read metadata to verify: %v\n", err)
+		} else {
+			fmt.Printf("[M4A] Verified metadata - Title: %s, Artist: %s, Album: %s\n", m.Title(), m.Artist(), m.Album())
 		}
 	}
 
-	// write tags to file
-	return mp4File.Write(tags, []string{})
+	fmt.Printf("[M4A] Metadata write completed successfully\n")
+	return nil
 }
 
 // logic for ogg vorbis using oggv/vorbiscomment
-func (a *App) writeOGGMetadata(path, title, artist, album string, year, track int32, songArt, albumArt string) error {
+func (a *App) writeOGGMetadata(path string, meta songMetadataWrite) error {
 	// open ogg file
 	file, err := os.Open(path)
 	if err != nil {
@@ -705,6 +992,7 @@ func (a *App) writeOGGMetadata(path, title, artist, album string, year, track in
 	if err != nil {
 		return fmt.Errorf("failed to read vorbis comments: %w", err)
 	}
+	comments.Comments = []string{}
 
 	// helper function to set a comment value
 	setComment := func(key, value string) {
@@ -719,33 +1007,61 @@ func (a *App) writeOGGMetadata(path, title, artist, album string, year, track in
 		newComments = append(newComments, key+"="+value)
 		comments.Comments = newComments
 	}
-
 	// set metadata tags
-	setComment("TITLE", title)
-	setComment("ARTIST", artist)
-	setComment("ALBUM", album)
-
-	if year > 0 {
-		setComment("DATE", strconv.Itoa(int(year)))
+	if meta.Title != "" {
+		setComment("TITLE", meta.Title)
+	}
+	if meta.Artist != "" {
+		setComment("ARTIST", meta.Artist)
+	}
+	if meta.AlbumArtist != "" {
+		setComment("ALBUMARTIST", meta.AlbumArtist)
+	}
+	if meta.Album != "" {
+		setComment("ALBUM", meta.Album)
 	}
 
-	if track > 0 {
-		setComment("TRACKNUMBER", strconv.Itoa(int(track)))
+	if meta.Genre != "" {
+		setComment("GENRE", meta.Genre)
+	}
+
+	if meta.Year > 0 {
+		setComment("DATE", strconv.Itoa(int(meta.Year)))
+	}
+
+	if meta.TrackNumberStr != "" {
+		setComment("TRACKNUMBER", meta.TrackNumberStr)
+	}
+
+	if meta.Producers != "" {
+		setComment("PRODUCER", meta.Producers)
 	}
 
 	// handle artwork (base64 encoded in vorbis comments)
-	artPathToUse := songArt
+	artPathToUse := meta.SongArt
 	if artPathToUse == "" {
-		artPathToUse = albumArt
+		artPathToUse = meta.AlbumArt
 	}
 
 	if artPathToUse != "" {
 		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
 		artData, err := os.ReadFile(fullArtPath)
 		if err == nil {
-			// encode artwork as base64
-			artBase64 := base64.StdEncoding.EncodeToString(artData)
-			setComment("METADATA_BLOCK_PICTURE", artBase64)
+			mimeType := "image/jpeg"
+			if strings.HasSuffix(strings.ToLower(artPathToUse), ".png") {
+				mimeType = "image/png"
+			}
+			picture, picErr := flacpicture.NewFromImageData(
+				flacpicture.PictureTypeFrontCover,
+				"Front Cover",
+				artData,
+				mimeType,
+			)
+			if picErr == nil {
+				pictureBlock := picture.Marshal()
+				artBase64 := base64.StdEncoding.EncodeToString(pictureBlock.Data)
+				setComment("METADATA_BLOCK_PICTURE", artBase64)
+			}
 		}
 	}
 
@@ -1783,6 +2099,25 @@ func (a *App) CleanupFiles(relPaths []string) int {
 		}
 	}
 	return deleted
+}
+
+func (a *App) ShowInFileExplorer(relPath string) error {
+	cleaned := filepath.Clean(relPath)
+	cleaned = strings.TrimPrefix(cleaned, string(os.PathSeparator))
+
+	fullPath := cleaned
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(a.staticPath, cleaned)
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", "-R", fullPath).Start()
+	case "windows":
+		return exec.Command("explorer", "/select,", fullPath).Start()
+	default:
+		return exec.Command("xdg-open", filepath.Dir(fullPath)).Start()
+	}
 }
 
 func (a *App) UploadAlbumArt(albumID int, filename string, base64Data string) error {

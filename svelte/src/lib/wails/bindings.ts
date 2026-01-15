@@ -47,7 +47,11 @@ function getApp() {
 	if (typeof window !== 'undefined' && window.go?.main?.App) {
 		return window.go.main.App;
 	}
-	throw new Error('Wails runtime not available - are you running outside of Wails?');
+	if (typeof window !== 'undefined') {
+		// fall back to stubs when running in a browser-only dev server
+		console.warn('Wails runtime not available - using stub bindings.');
+	}
+	return WailsBindings;
 }
 
 // --- Data Loading ---
@@ -171,6 +175,10 @@ export async function CleanupFiles(relPaths: string[]): Promise<number> {
 	return getApp().CleanupFiles(relPaths);
 }
 
+export async function ShowInFileExplorer(relPath: string): Promise<void> {
+	return getApp().ShowInFileExplorer(relPath);
+}
+
 export async function UploadAlbumArt(
 	albumId: number,
 	filename: string,
@@ -221,7 +229,26 @@ export async function UploadSongs(
 
 // type stub for wails bindings object
 const WailsBindings = {
-	GetInitialData: () => Promise.resolve({} as InitialData),
+	GetInitialData: () =>
+		Promise.resolve({
+			songs: [],
+			songsCount: 0,
+			albums: [],
+			artists: [],
+			producers: [],
+			settings: {
+				id: 0,
+				clearTrackNumberOnUpload: false,
+				importToAppleMusic: false,
+				automaticallyMakeSingles: false,
+				updatedAt: 0
+			},
+			isMac: false,
+			limits: {
+				songsPerPage: 50,
+				albumsPerPage: 50
+			}
+		} as InitialData),
 	CreateArtist: (_input: CreateArtistInput) => Promise.resolve({} as Artist),
 	GetArtists: () => Promise.resolve([] as Artist[]),
 	FindArtistByName: (_name: string) => Promise.resolve(null as Artist | null),
@@ -248,6 +275,7 @@ const WailsBindings = {
 	SaveArtwork: (_filename: string, _base64Data: string) => Promise.resolve(''),
 	DeleteFile: (_relPath: string) => Promise.resolve(),
 	CleanupFiles: (_relPaths: string[]) => Promise.resolve(0),
+	ShowInFileExplorer: (_relPath: string) => Promise.resolve(),
 	UploadAlbumArt: (_albumId: number, _filename: string, _base64Data: string) => Promise.resolve(),
 	ExtractMetadata: (_relPath: string) => Promise.resolve({} as ExtractedMetadata),
 	WriteSongMetadata: (_songId: number) => Promise.resolve({} as SongProcessingResult),

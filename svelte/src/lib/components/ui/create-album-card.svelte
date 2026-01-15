@@ -138,7 +138,8 @@
 	};
 
 	const callback = async (recordId?: number) => {
-		if (!file) {
+		const currentFile = file;
+		if (!currentFile) {
 			return;
 		}
 
@@ -151,11 +152,11 @@
 
 		try {
 			// convert file to base64
-			const arrayBuffer = await file.arrayBuffer();
+			const arrayBuffer = await currentFile.arrayBuffer();
 			const base64 = btoa(
 				new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
 			);
-			await UploadAlbumArt(albumId, file.name, base64);
+			await UploadAlbumArt(albumId, currentFile.name, base64);
 			await invalidateAll();
 		} finally {
 			loading = false;
