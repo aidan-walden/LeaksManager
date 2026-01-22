@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"leaks-manager/backend"
 	"log"
 
 	"github.com/wailsapp/wails/v2"
@@ -16,7 +17,7 @@ var assets embed.FS
 
 func main() {
 	// create application instance
-	app := NewApp()
+	app := backend.NewApp()
 
 	// create application with options
 	err := wails.Run(&options.App{
@@ -37,10 +38,10 @@ func main() {
 		Menu:             nil,
 		Logger:           nil,
 		LogLevel:         0,
-		OnStartup:        app.startup,
+		OnStartup:        app.Startup,
 		OnDomReady:       nil,
 		OnBeforeClose:    nil,
-		OnShutdown:       app.shutdown,
+		OnShutdown:       app.Shutdown,
 		WindowStartState: options.Normal,
 		Bind: []interface{}{
 			app,

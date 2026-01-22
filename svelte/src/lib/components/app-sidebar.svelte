@@ -41,6 +41,7 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
+	import SyncChangesCard from './ui/sync-changes-card.svelte';
 
 	let {
 		currentPath = '/',
@@ -81,5 +82,6 @@
 			</Sidebar.Group>
 		{/each}
 	</Sidebar.Content>
+	<SyncChangesCard />
 	<Sidebar.Rail />
 </Sidebar.Root>

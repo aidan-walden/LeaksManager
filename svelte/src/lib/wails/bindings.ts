@@ -32,7 +32,7 @@ import type {
 declare global {
 	interface Window {
 		go: {
-			main: {
+			backend: {
 				App: typeof WailsBindings;
 			};
 		};
@@ -44,8 +44,8 @@ declare global {
 // the actual implementation will be provided by wails
 
 function getApp() {
-	if (typeof window !== 'undefined' && window.go?.main?.App) {
-		return window.go.main.App;
+	if (typeof window !== 'undefined' && window.go?.backend?.App) {
+		return window.go.backend.App;
 	}
 	if (typeof window !== 'undefined') {
 		// fall back to stubs when running in a browser-only dev server

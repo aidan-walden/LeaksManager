@@ -40,6 +40,7 @@ export interface Artist {
 	careerEndYear: number | null;
 	createdAt: number;
 	updatedAt: number;
+	synced: boolean;
 }
 
 export interface ArtistWithRelations extends Artist {
@@ -55,6 +56,7 @@ export interface Album {
 	year: number | null;
 	createdAt: number;
 	updatedAt: number;
+	synced: boolean;
 }
 
 export interface AlbumWithArtists extends Album {
@@ -79,6 +81,7 @@ export interface Song {
 	fileType: string | null;
 	createdAt: number;
 	updatedAt: number;
+	synced: boolean;
 }
 
 export interface SongReadable extends Song {
@@ -133,6 +136,7 @@ export interface InitialData {
 	settings: Settings;
 	isMac: boolean;
 	limits: Limits;
+	hasUnsyncedChanges: boolean;
 }
 
 // input types
