@@ -22,8 +22,21 @@ import (
 	"github.com/go-flac/flacpicture"
 	"github.com/go-flac/flacvorbis"
 	"github.com/go-flac/go-flac"
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
+
+func init() {
+	sql.Register("sqlite3_custom", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			if err := conn.RegisterFunc("LOWER", func(s string) string {
+				return strings.ToLower(s)
+			}, true); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+}
 
 // --- Domain Models ---
 
@@ -330,7 +343,7 @@ func (a *App) startup(ctx context.Context) {
 	// initialize SQLite connection
 	// go's sql.DB handles connection pooling automatically (replaces python's thread_local)
 	var err error
-	a.db, err = sql.Open("sqlite3", a.dbPath)
+	a.db, err = sql.Open("sqlite3_custom", a.dbPath)
 	if err != nil {
 		panic("Failed to connect to database: " + err.Error())
 	}

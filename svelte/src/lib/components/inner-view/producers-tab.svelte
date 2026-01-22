@@ -24,11 +24,11 @@
 
 	let dialogOpen = $state(false);
 	let currentProducer = $state<EditableProducer | null>(null);
-	let resolvedArtists = $state<ArtistElement[]>([]);
+	let resolvedArtists = $state<Awaited<ArtistsPromise>>([]);
 
 	$effect(() => {
 		artistsPromise.then((artists) => {
-			resolvedArtists = artists as ArtistElement[];
+			resolvedArtists = artists;
 		});
 	});
 

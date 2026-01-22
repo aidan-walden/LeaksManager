@@ -8,8 +8,9 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { invalidateAll } from '$app/navigation';
-	import type { EditableAlbum } from '@/schema';
+	import { editableAlbumSchema, type EditableAlbum } from '@/schema';
 	import { DeleteAlbum } from '$lib/wails';
+	import type { AlbumWithSongs } from '$lib/wails';
 
 	type AlbumsPromise = PageData['albums'];
 
@@ -26,8 +27,28 @@
 		creatingAlbum = true;
 	}
 
-	function onClickEdit(album: EditableAlbum) {
-		currentAlbum = album;
+	function convertToEditableAlbum(album: AlbumWithSongs): EditableAlbum {
+		const albumArtists = album.artists.map((artist, index) => ({
+			artistId: artist.id,
+			order: index,
+			artist: {
+				id: artist.id,
+				name: artist.name
+			}
+		}));
+
+		return editableAlbumSchema.parse({
+			id: album.id,
+			name: album.name,
+			artworkPath: album.artworkPath,
+			genre: album.genre,
+			year: album.year,
+			albumArtists
+		});
+	}
+
+	function onClickEdit(album: AlbumWithSongs) {
+		currentAlbum = convertToEditableAlbum(album);
 		creatingAlbum = true;
 	}
 
@@ -76,7 +97,14 @@
 						/>
 					</AspectRatio>
 					<div class="flex flex-row justify-between">
-						<p class="mt-2 block text-sm font-medium">{album.name}</p>
+						<div class="mt-2 gap-2 flex flex-col">
+							<p class="block text-sm font-medium">{album.name}</p>
+							{#if album.artists && album.artists.length > 0}
+								<p class="block text-xs text-muted-foreground">
+									{album.artists.map((artist) => artist.name).join(', ')}
+								</p>
+							{/if}
+						</div>
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger>
 								{#snippet child({ props })}
@@ -90,7 +118,7 @@
 								<DropdownMenu.Group>
 									<DropdownMenu.Label>Actions</DropdownMenu.Label>
 									<DropdownMenu.Separator />
-									<DropdownMenu.Item onclick={() => onClickEdit(album as unknown as EditableAlbum)}>Edit</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => onClickEdit(album)}>Edit</DropdownMenu.Item>
 									<DropdownMenu.Item style="color: red;" onclick={() => onDelete(album.id)}
 										>Delete</DropdownMenu.Item
 									>

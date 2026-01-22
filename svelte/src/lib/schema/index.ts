@@ -34,12 +34,17 @@ export const updateAlbumSchema = z.object({
 	genre: z.preprocess((v) => v || undefined, z.string().min(1).optional())
 });
 
-const editableArtistSchema = z
+export const editableArtistSchema = z
 	.object({
 		id: z.number().int().positive(),
-		name: z.string().min(1)
+		name: z.string().min(1),
+		careerStartYear: z.number().int().nullable().optional(),
+		careerEndYear: z.number().int().nullable().optional(),
+		image: z.string().nullish()
 	})
 	.catchall(z.unknown());
+
+export type EditableArtist = z.infer<typeof editableArtistSchema>;
 
 const editableAlbumArtistSchema = z
 	.object({
