@@ -2,186 +2,162 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Note: `microservice-py/` is deprecated** - all metadata extraction/writing functionality has been migrated to Go.
+
 ## Project Overview
 
-This is a music/leak management application with a **monorepo structure** containing:
-- **svelte/**: SvelteKit frontend application with integrated SQLite database (Drizzle ORM)
-- **microservice/**: FastAPI Python service for audio file metadata management
-
-The application manages songs, albums, and artists with many-to-many relationships, file uploads, and audio metadata editing capabilities.
+Leaks Manager is a desktop application for managing music leaks and audio metadata, built with **Wails v2** (Go backend + SvelteKit frontend).
 
 ## Architecture
 
-### Monorepo Structure
-Work in the appropriate directory based on your task:
-- Frontend changes, database schema, or UI: Work in `svelte/`
-- Audio file metadata operations: Work in `microservice/`
+### Backend (Go)
+- **Entry Point**: `main.go` initializes Wails app, embeds `svelte/build` assets
+- **Core App**: `backend/app.go` contains the main application logic with SQLite database access
+- **Domain Layer**: Organized into separate files by domain:
+  - `models.go` - All type definitions and structs
+  - `songs.go` - Song CRUD operations
+  - `albums.go` - Album CRUD operations
+  - `artists.go` - Artist CRUD operations
+  - `producers.go` - Producer CRUD and alias matching
+  - `metadata.go` - Audio metadata extraction/writing (ID3, Vorbis, MP4)
+  - `workflows.go` - Complex multi-step operations (upload & extract, create with metadata)
+  - `files.go` - File upload and storage
+  - `data.go` - Initial data loading for frontend
+  - `settings.go` - Application settings
+  - `apple_music.go` - Apple Music library integration (macOS only)
+  - `utils.go` - Helper functions (artist parsing, etc.)
 
-### Frontend (SvelteKit in `svelte/`)
+### Database Migrations
+- **Tool**: golang-migrate (embedded in Go binary)
+- **Location**: `backend/migrations/*.sql`
+- **Execution**: Migrations run automatically on app startup
+- **Format**: Versioned SQL files (up/down pairs)
+- **Tracking**: golang-migrate creates `schema_migrations` table to track version
 
-**Validation Layer (`src/lib/schema/`)**:
-- `index.ts`: Zod schemas for all form validation and API contracts
-- Used throughout form actions with `.safeParse()` pattern
-- Schemas include: album/artist/song creation, file uploads, metadata extraction
-- Microservice API request/response validation
+**Adding new migrations:**
+1. Create numbered migration files: `backend/migrations/000002_description.up.sql` and `.down.sql`
+2. Write SQL in up file (forward migration)
+3. Write SQL in down file (rollback migration)
+4. Restart app - migration runs automatically
 
-**Database Layer (`src/lib/server/db/`)**:
-- `schema.ts`: Drizzle ORM schema defining tables (songs, albums, artists, producers, junction tables)
-- `helpers.ts`: Query helpers with relationship loading (e.g., `getSongWithArtists`, `getAlbumWithArtists`)
-  - Producer management: `addProducersToSong`, `setSongProducers`
-  - Case-insensitive lookups: `findArtistByNameCaseInsensitive`, `findAlbumByNameCaseInsensitive`, `findProducerByNameCaseInsensitive`
-  - Pagination helpers: `getSongsCount`, `getAlbumsCount`, `getArtistsCount`
-- `index.ts`: Database client initialization using libsql
-- Uses junction tables (`album_artists`, `song_artists`, `song_producers`) for many-to-many relationships with ordering
+### Frontend (SvelteKit)
+- **Location**: `svelte/` directory
+- **Framework**: Svelte 5 with Runes (SPA mode, `ssr = false`)
+- **UI**: shadcn-svelte components (TailwindCSS) via jsrepo
+- **Wails Integration**: Auto-generated bindings in `src/lib/wails/` provide TypeScript access to Go methods
+- **Routes**: Main interface at `src/routes/[tab]/` with dynamic tab routing
 
-**Routing**:
-- `[tab]/+page.svelte`: Dynamic tab-based routing for songs/albums/artists views
-- `+layout.server.ts`: Root loader fetches all data (songs, albums, artists) upfront
-- Form actions in `[tab]/+page.server.ts` handle:
-  - Basic CRUD operations (create/update/delete for songs, albums, artists)
-  - File uploads (songs, artwork)
-  - Complex metadata workflows (`uploadAndExtractMetadata`, `createSongsWithMetadata`)
-  - File cleanup operations
+### Data Model
+- Songs belong to one album (nullable)
+- Songs/Albums have many-to-many with Artists (ordered via junction tables)
+- Songs have many-to-many with Producers (ordered via junction table)
+- Artwork inheritance: Songs inherit album artwork if none specified
+- Producer aliases support artist-specific matching (e.g., "Metro" → "Metro Boomin" only for certain artists)
 
-**Utilities (`src/lib/utils/`)**:
-- `artist-parser.ts`: `parseArtists()` function splits metadata artist strings
-  - Handles delimiters: commas, ampersands, "feat.", "ft.", "featuring", semicolons
-  - Returns deduplicated array of artist names
-  - Used during metadata extraction to parse embedded artist tags
+### Legacy
+- **`microservice-py/`**: DEPRECATED Python/FastAPI service - do not use or modify
 
-**Key Relationships**:
-- Songs can belong to one album (nullable)
-- Songs and albums have many-to-many with artists (ordered via junction tables)
-- Songs have many-to-many with producers (ordered via `song_producers` junction table)
-- Artwork inheritance: Songs inherit album artwork if they don't have their own
+## Key Commands
 
-**Component Structure**:
-- Uses shadcn-svelte UI components (via jsrepo)
-- `app-sidebar.svelte`: Main navigation
-- `inner-view.svelte`: Renders appropriate view based on active tab
-- Data tables use TanStack Table Core
-
-### Microservice (FastAPI in `microservice/`)
-
-**Purpose**: Audio file metadata management using mutagen library
-- `POST /extract-metadata`: Extracts metadata from uploaded audio files (artists, album, title, artwork, etc.)
-- `POST /write-metadata/{song_id}`: Queries SQLite database, reads song with all metadata, writes ID3 tags (MP3) or Vorbis comments to the audio file
-- Connects directly to `svelte/local.db` SQLite database
-- Handles both ID3 (MP3) and other audio formats
-- Returns structured metadata validated against Zod schemas
-
-## Development Commands
-
-### Frontend (run from `svelte/` directory)
+### Development
 ```bash
-pnpm dev              # Start dev server
-pnpm build            # Production build
-pnpm preview          # Preview production build
-pnpm check            # Type-check
-pnpm check:watch      # Type-check in watch mode
-pnpm format           # Format with Prettier
-pnpm lint             # Check formatting
-```
-
-### Database (run from `svelte/` directory)
-```bash
-pnpm db:push          # Push schema changes to database
-pnpm db:generate      # Generate migrations
-pnpm db:migrate       # Run migrations
-pnpm db:studio        # Open Drizzle Studio GUI
-```
-
-### Microservice (run from `microservice/` directory)
-```bash
-# Activate virtual environment first
-source venv/bin/activate  # On Unix/Mac
+# Start Wails dev server (Go backend + SvelteKit frontend with hot-reload)
+pnpm wails:dev
 # or
-venv\Scripts\activate     # On Windows
+wails dev
 
-# Then run the service
-fastapi dev main.py       # Development server with auto-reload
-uvicorn main:app --reload # Alternative
+# Frontend only (for UI work without rebuilding Go)
+cd svelte && pnpm dev
+
+# Type checking
+cd svelte && pnpm check
 ```
 
-## Important Configuration
+### Building
+```bash
+# Build for current platform (output: build/bin/)
+pnpm wails:build
 
-**Environment Variables** (`svelte/.env`):
-- `DATABASE_URL`: SQLite database path (default: `file:local.db`)
+# Platform-specific builds
+pnpm wails:build:darwin     # macOS universal binary
+pnpm wails:build:windows    # Windows amd64
 
-**jsrepo Integration**:
-- UI components fetched from `@ieedan/shadcn-svelte-extras`
-- Path aliases defined in `jsrepo.json`: `ui`, `actions`, `hooks`, `utils`
-- Check `.cursor/rules/shadcn-svelte-extras.mdc` before creating new components
+# Check Wails setup
+pnpm wails:doctor
+```
 
-**Import Aliases**:
-- `@/*` maps to `./src/lib/*` (configured in svelte.config.js)
-- Use `$lib/` for SvelteKit aliasing
+### Frontend
+```bash
+cd svelte
+pnpm format        # Format with Prettier
+pnpm lint          # Check formatting
+```
 
-## Data Flow Patterns
+## Development Patterns
 
-**Metadata Extraction Workflow**:
-1. **Upload & Extract**: `uploadAndExtractMetadata` form action
-   - User uploads audio files
-   - Files saved to `static/uploads/songs/`
-   - Microservice `/extract-metadata` endpoint called to parse embedded metadata
-   - Returns: artists, album, title, artwork, year, track numbers
-   - Identifies unmapped artists/albums (not yet in database)
-2. **Artist/Album Mapping**:
-   - Frontend presents unmapped artists to user
-   - User chooses: map to existing artist OR create new
-   - Artist mapping object: `Record<string, number | 'CREATE_NEW'>`
-   - Case-insensitive lookups used for album matching
-3. **Song Creation**: `createSongsWithMetadata` form action
-   - Creates new artists for any marked 'CREATE_NEW'
-   - Maps parsed artists to database IDs
-   - Associates songs with albums (if metadata contains album)
-   - Saves embedded artwork or inherits from album
-   - Creates songs with full metadata
-   - Calls microservice `/write-metadata` to sync metadata back to files
+### Frontend-Backend Communication
+- Frontend calls Go methods defined in `backend/app.go`
+- Methods automatically exposed via Wails bindings at `window.go.backend.App.*`
+- TypeScript types generated in `svelte/src/lib/wails/wailsjs/go/backend/App.d.ts`
+- Models auto-generated in `svelte/src/lib/wails/wailsjs/go/models.ts`
 
-**Form Validation Pattern**:
-- All form actions use Zod schemas via `.safeParse(formData)`
-- Check `validated.success` before proceeding
-- Return validation errors with 400 status
-- Schemas defined in `src/lib/schema/index.ts`
+### Metadata Extraction Workflow
+1. **Upload & Extract**: `UploadAndExtractMetadata(files, albumID?)`
+   - Saves files to `uploads/songs/`
+   - Extracts metadata using native Go libraries (ID3v2, Vorbis, MP4 atoms)
+   - Parses artist strings using `ParseArtists()` (handles feat., ft., &, commas)
+   - Returns unmapped artists/albums and extracted metadata
+2. **Artist/Album Mapping**: Frontend presents choices
+   - User maps unmapped artists to existing or "CREATE_NEW"
+   - Mapping: `map[string]any` where value is artist ID or "CREATE_NEW"
+3. **Song Creation**: `CreateSongsWithMetadata(input)`
+   - Creates new artists as needed
+   - Associates songs with albums
+   - Handles artwork (embedded or inherited from album)
+   - Matches producers from filename via `MatchProducersFromFilename()`
+   - Writes metadata back to files via `WriteSongMetadata(songID)`
 
-**Creating Songs with Album Context**:
-1. If song belongs to album, inherit album's artwork and artists
-2. Artists and artwork can be overridden at song level
-3. Junction tables maintain artist order for display
-4. Producers can be added via `producerIds` parameter
+### Database Paths
+- **Development**: `svelte/local.db` (relative path)
+- **Production**: User data directory
+  - macOS: `~/Library/Application Support/leaks-manager/`
+  - Windows: `%APPDATA%/leaks-manager/`
+  - Linux: `~/.local/share/leaks-manager/`
 
-**Updating Relationships**:
-- Use `setSongArtists` / `setAlbumArtists` / `setSongProducers` helpers (delete + recreate for simplicity)
-- Order field in junction tables determines display order
+### File Storage
+- Songs: `uploads/songs/` (relative to database path)
+- Artwork: `uploads/artwork/` (relative to database path)
 
-**Querying with Relations**:
-- Always use Drizzle's relational queries with `with` for nested data
-- Helper functions in `helpers.ts` encapsulate common query patterns
-- Use case-insensitive lookups when searching by name
-- Avoid raw SQL unless necessary
+### Artist Parsing
+- `ParseArtists()` in `backend/utils.go` splits artist strings
+- Handles: commas, `&`, `feat.`, `ft.`, `featuring`, semicolons
+- Returns deduplicated array of trimmed artist names
 
-## Tech Stack Notes
+### Producer Alias Matching
+- Producers can have multiple aliases with optional artist restrictions
+- `MatchProducersFromFilename()` finds producers in filename using aliases
+- Case-insensitive matching
+- Returns producer IDs for song association
 
-- **Svelte 5**: Uses runes (`$derived`, `$props`, `$state`) - not Svelte 4 syntax
-- **Zod 4**: Used for all form validation and API contract validation
-- **Drizzle ORM**: Relational query API preferred over raw SQL
-- **SQLite**: Single `local.db` file, shared between frontend and microservice
-- **TailwindCSS 4**: Configured via Vite plugin
-- **TypeScript**: Strict mode enabled
-- **FastAPI + Mutagen**: Python microservice for audio metadata operations
+## Code Conventions
 
-## File Uploads
+### Go Backend
+- Use direct SQL queries with `database/sql` package
+- Custom SQLite driver registered with `LOWER()` function for case-insensitive comparisons supporting unicode
+- All methods on `*App` struct can be called from frontend
+- Return `(result, error)` - Wails handles error serialization
 
-- Songs uploaded to `static/uploads/songs/`
-- Album artwork uploaded to `static/uploads/artwork/`
-- Files timestamped on server: `${Date.now()}-${file.name}`
-- Filepaths stored in database with `/uploads/...` prefix
+### Svelte Frontend
+- **Import Alias**: `$lib/` for SvelteKit imports
+- **Validation**: Zod schemas in `src/lib/schema/` (validate before sending to backend)
+- **jsrepo**: Check `.cursor/rules/shadcn-svelte-extras.mdc` before creating UI components
+  - Prefer existing components from `@ieedan/shadcn-svelte-extras`
+  - Use pinned version from `jsrepo.json` when fetching
+- **Styling**: TailwindCSS v4, use shadcn-svelte patterns
+- **State**: Contexts in `src/lib/contexts/` for global state
+- **Comments**: Lowercase, no JSDoc, keep concise
 
-## Writing Functions and Other Code
-
-- Always adhere to TypeScript unless writing code in a Python file
-- Never add jsdoc comments
-- Keep comments short and in all lowercase text (ex: // push users song update to db)
-- Do not add tons of logging
-- Unless explicitly prompted, never run things yourself
+### General
+- TypeScript only (no untyped JavaScript)
+- Minimize logging
+- Keep comments short and lowercase

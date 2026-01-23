@@ -141,7 +141,7 @@ rows, err := a.db.Query(`SELECT id, name, created_at, updated_at FROM producers`
 	}
 	defer rows.Close()
 
-	var producers []ProducerWithAliases
+	producers := []ProducerWithAliases{}
 	for rows.Next() {
 		var prod Producer
 		var createdAt, updatedAt sql.NullInt64
@@ -174,7 +174,7 @@ rows, err := a.db.Query(`
 	}
 	defer rows.Close()
 
-	var aliases []ProducerAliasWithArtists
+	aliases := []ProducerAliasWithArtists{}
 	for rows.Next() {
 		var alias ProducerAlias
 		var createdAt sql.NullInt64
@@ -186,7 +186,7 @@ rows, err := a.db.Query(`
 
 		// Get artist IDs for this alias
 		artistRows, _ := a.db.Query(`SELECT artist_id FROM producer_alias_artists WHERE alias_id = ?`, alias.ID)
-		var artistIDs []int
+		artistIDs := []int{}
 		for artistRows.Next() {
 			var artistID int
 			artistRows.Scan(&artistID)
@@ -215,7 +215,7 @@ rows, err := a.db.Query(`
 	}
 	defer rows.Close()
 
-	var songs []Song
+	songs := []Song{}
 	for rows.Next() {
 		var song Song
 		var createdAt, updatedAt sql.NullInt64
@@ -239,7 +239,7 @@ rows, err := a.db.Query(`SELECT song_id FROM song_producers WHERE producer_id = 
 	}
 	defer rows.Close()
 
-	var songIDs []int
+	songIDs := []int{}
 	for rows.Next() {
 		var id int
 		rows.Scan(&id)
@@ -307,7 +307,7 @@ func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) (
 		isAlias       bool
 		aliasArtistIDs []int
 	}
-	var searchableTerms []searchTerm
+	searchableTerms := []searchTerm{}
 
 	for _, prod := range producers {
 		// Add producer name
@@ -401,7 +401,7 @@ func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) (
 		}
 	}
 
-	var result []int
+	result := []int{}
 	for id := range matchedIDs {
 		result = append(result, id)
 	}

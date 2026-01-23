@@ -12,15 +12,10 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
-		"lint": "prettier --check .",
-		"db:push": "drizzle-kit push",
-		"db:generate": "drizzle-kit generate",
-		"db:migrate": "drizzle-kit migrate",
-		"db:studio": "drizzle-kit studio"
+		"lint": "prettier --check ."
 	},
 	"devDependencies": {
 		"@internationalized/date": "^3.10.0",
-		"@libsql/client": "^0.15.15",
 		"@lucide/svelte": "^0.544.0",
 		"@sveltejs/adapter-auto": "^6.1.0",
 		"@sveltejs/adapter-static": "^3.0.10",
@@ -32,8 +27,6 @@
 		"@types/node": "^22",
 		"bits-ui": "^2.14.0",
 		"clsx": "^2.1.1",
-		"drizzle-kit": "^0.31.4",
-		"drizzle-orm": "^0.44.5",
 		"prettier": "^3.6.2",
 		"prettier-plugin-svelte": "^3.4.0",
 		"prettier-plugin-tailwindcss": "^0.6.14",

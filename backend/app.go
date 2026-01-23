@@ -3,17 +3,26 @@ package backend
 import (
 	"context"
 	"database/sql"
+	"embed"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	sqlite3 "github.com/mattn/go-sqlite3"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	sqlite3driver "github.com/mattn/go-sqlite3"
 )
 
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
 func init() {
-	sql.Register("sqlite3_custom", &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+	sql.Register("sqlite3_custom", &sqlite3driver.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3driver.SQLiteConn) error {
 			if err := conn.RegisterFunc("LOWER", func(s string) string {
 				return strings.ToLower(s)
 			}, true); err != nil {
@@ -35,6 +44,34 @@ type App struct {
 
 func NewApp() *App {
 	return &App{}
+}
+
+func (a *App) runMigrations() error {
+	// create migration source from embedded files
+	source, err := iofs.New(migrationsFS, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to create migration source: %w", err)
+	}
+
+	// create database driver instance
+	driver, err := sqlite3.WithInstance(a.db, &sqlite3.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create database driver: %w", err)
+	}
+
+	// create migrate instance
+	m, err := migrate.NewWithInstance("iofs", source, "sqlite3", driver)
+	if err != nil {
+		return fmt.Errorf("failed to create migrate instance: %w", err)
+	}
+
+	// run migrations
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	log.Println("Database migrations completed successfully")
+	return nil
 }
 
 func (a *App) Startup(ctx context.Context) {
@@ -86,6 +123,11 @@ func (a *App) Startup(ctx context.Context) {
 	a.db, err = sql.Open("sqlite3_custom", a.dbPath)
 	if err != nil {
 		panic("Failed to connect to database: " + err.Error())
+	}
+
+	// run migrations
+	if err := a.runMigrations(); err != nil {
+		panic("Failed to run database migrations: " + err.Error())
 	}
 }
 

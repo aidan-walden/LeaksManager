@@ -101,7 +101,7 @@ func (a *App) GetAlbumsWithSongs(limit, offset int) ([]AlbumWithSongs, error) {
 	}
 	defer rows.Close()
 
-	var albums []AlbumWithSongs
+	albums := []AlbumWithSongs{}
 	for rows.Next() {
 		var alb Album
 		var createdAt, updatedAt sql.NullInt64
@@ -159,7 +159,7 @@ func (a *App) getArtistsForAlbum(albumID int) ([]Artist, error) {
 	}
 	defer rows.Close()
 
-	var artists []Artist
+	artists := []Artist{}
 	for rows.Next() {
 		var art Artist
 		var createdAt, updatedAt sql.NullInt64
@@ -185,7 +185,7 @@ func (a *App) getSongsForAlbum(albumID int) ([]Song, error) {
 	}
 	defer rows.Close()
 
-	var songs []Song
+	songs := []Song{}
 	for rows.Next() {
 		var song Song
 		var createdAt, updatedAt sql.NullInt64

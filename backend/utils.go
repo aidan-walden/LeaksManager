@@ -17,7 +17,7 @@ func ParseArtists(artistString string) []string {
 
 	// Deduplicate while preserving order
 	seen := make(map[string]bool)
-	var result []string
+	result := []string{}
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed != "" && !seen[trimmed] {

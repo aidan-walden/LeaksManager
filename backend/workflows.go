@@ -64,7 +64,7 @@ func (a *App) UploadAndExtractMetadata(files []struct {
 	}
 
 	// Identify unmapped artists
-	var unmappedArtists []string
+	unmappedArtists := []string{}
 	for name := range allArtistNames {
 		if _, exists := existingArtists[strings.ToLower(name)]; !exists {
 			unmappedArtists = append(unmappedArtists, name)
@@ -138,10 +138,10 @@ func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Son
 		album, _ = a.GetAlbumWithArtists(*input.AlbumID)
 	}
 
-	var createdSongs []Song
+	createdSongs := []Song{}
 	for _, fileData := range input.FilesData {
 		// Resolve artist IDs
-		var songArtistIDs []int
+		songArtistIDs := []int{}
 		for _, artistName := range fileData.ParsedArtists {
 			if id, exists := artistIDMap[artistName]; exists {
 				songArtistIDs = append(songArtistIDs, id)
@@ -251,7 +251,7 @@ func (a *App) UploadSongs(files []struct {
 	// Get album data for inheritance
 	var album *AlbumWithArtists
 	var artworkPath *string
-	var artistIDs []int
+	artistIDs := []int{}
 
 	if albumID != nil {
 		album, _ = a.GetAlbumWithArtists(*albumID)
@@ -263,7 +263,7 @@ func (a *App) UploadSongs(files []struct {
 		}
 	}
 
-	var createdSongs []Song
+	createdSongs := []Song{}
 	for _, file := range files {
 		// Save file
 		relPath, err := a.SaveUploadedFile(file.Filename, file.Base64Data)

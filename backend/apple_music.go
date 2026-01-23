@@ -57,8 +57,8 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 		return []AppleMusicTrack{}, nil
 	}
 
-	var tracks []AppleMusicTrack
-	
+	tracks := []AppleMusicTrack{}
+
 	// Split by track delimiter
 	trackStrings := strings.Split(outputStr, "&&&")
 	

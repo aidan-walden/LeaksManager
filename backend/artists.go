@@ -35,7 +35,7 @@ func (a *App) GetArtists() ([]Artist, error) {
 	}
 	defer rows.Close()
 
-	var artists []Artist
+	artists := []Artist{}
 	for rows.Next() {
 		var art Artist
 		var createdAt, updatedAt sql.NullInt64
@@ -56,7 +56,7 @@ func (a *App) GetArtistsWithRelations() ([]ArtistWithRelations, error) {
 		return nil, err
 	}
 
-	var result []ArtistWithRelations
+	result := []ArtistWithRelations{}
 	for _, art := range artists {
 		albums, _ := a.getAlbumsByArtist(art.ID)
 		songs, _ := a.getSongsByArtist(art.ID)
@@ -100,7 +100,7 @@ func (a *App) getAlbumsByArtist(artistID int) ([]Album, error) {
 	}
 	defer rows.Close()
 
-	var albums []Album
+	albums := []Album{}
 	for rows.Next() {
 		var alb Album
 		var createdAt, updatedAt sql.NullInt64
@@ -128,7 +128,7 @@ func (a *App) getSongsByArtist(artistID int) ([]Song, error) {
 	}
 	defer rows.Close()
 
-	var songs []Song
+	songs := []Song{}
 	for rows.Next() {
 		var song Song
 		var createdAt, updatedAt sql.NullInt64

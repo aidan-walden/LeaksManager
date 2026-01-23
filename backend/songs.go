@@ -126,7 +126,7 @@ func (a *App) GetSongsReadable(limit, offset int) ([]SongReadable, error) {
 	}
 	defer rows.Close()
 
-	var songs []SongReadable
+	songs := []SongReadable{}
 	for rows.Next() {
 		var song Song
 		var createdAt, updatedAt sql.NullInt64
@@ -183,7 +183,7 @@ func (a *App) getArtistsForSong(songID int) ([]Artist, error) {
 	}
 	defer rows.Close()
 
-	var artists []Artist
+	artists := []Artist{}
 	for rows.Next() {
 		var art Artist
 		var createdAt, updatedAt sql.NullInt64
@@ -211,7 +211,7 @@ func (a *App) getProducersForSong(songID int) ([]Producer, error) {
 	}
 	defer rows.Close()
 
-	var producers []Producer
+	producers := []Producer{}
 	for rows.Next() {
 		var prod Producer
 		var createdAt, updatedAt sql.NullInt64

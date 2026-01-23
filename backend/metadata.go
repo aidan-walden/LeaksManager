@@ -96,7 +96,7 @@ rows, err := a.db.Query("SELECT id FROM songs WHERE album_id = ?", albumID)
 	}
 	defer rows.Close()
 
-	var songIDs []int
+	songIDs := []int{}
 	for rows.Next() {
 		var id int
 		rows.Scan(&id)
