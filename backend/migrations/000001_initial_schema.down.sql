@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS "producer_alias_artists";
+DROP TABLE IF EXISTS "song_producers";
+DROP TABLE IF EXISTS "song_artists";
+DROP TABLE IF EXISTS "album_artists";
+DROP TABLE IF EXISTS "producer_aliases";
+DROP TABLE IF EXISTS "producers";
+DROP TABLE IF EXISTS "songs";
+DROP TABLE IF EXISTS "albums";
+DROP TABLE IF EXISTS "artists";
+DROP TABLE IF EXISTS "settings";

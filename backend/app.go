@@ -87,6 +87,9 @@ func (a *App) Startup(ctx context.Context) {
 		// development mode - database exists in svelte directory
 		a.dbPath = "svelte/local.db"
 		a.staticPath = "svelte"
+		// ensure uploads directories exist in dev mode too
+		os.MkdirAll("svelte/uploads/songs", 0755)
+		os.MkdirAll("svelte/uploads/artwork", 0755)
 	} else {
 		// production mode - use user data directory
 		// on macOS: ~/Library/Application Support/leaks-manager

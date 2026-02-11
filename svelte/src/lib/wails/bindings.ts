@@ -25,7 +25,8 @@ import type {
 	BatchResult,
 	UploadAndExtractResult,
 	FileUpload,
-	CreateSongsWithMetadataInput
+	CreateSongsWithMetadataInput,
+	SyncResult
 } from './types';
 
 // declare the wails runtime - this gets injected by wails at runtime
@@ -227,6 +228,12 @@ export async function UploadSongs(
 	return getApp().UploadSongs(files, albumId);
 }
 
+// --- Apple Music Sync ---
+
+export async function SyncSongsToAppleMusic(): Promise<SyncResult> {
+	return getApp().SyncSongsToAppleMusic();
+}
+
 // type stub for wails bindings object
 const WailsBindings = {
 	GetInitialData: () =>
@@ -247,7 +254,8 @@ const WailsBindings = {
 			limits: {
 				songsPerPage: 50,
 				albumsPerPage: 50
-			}
+			},
+			hasUnsyncedChanges: false
 		} as InitialData),
 	CreateArtist: (_input: CreateArtistInput) => Promise.resolve({} as Artist),
 	GetArtists: () => Promise.resolve([] as Artist[]),
@@ -284,5 +292,15 @@ const WailsBindings = {
 	UploadAndExtractMetadata: (_files: FileUpload[], _albumId: number | null) =>
 		Promise.resolve({} as UploadAndExtractResult),
 	CreateSongsWithMetadata: (_input: CreateSongsWithMetadataInput) => Promise.resolve([] as Song[]),
-	UploadSongs: (_files: FileUpload[], _albumId: number | null) => Promise.resolve([] as Song[])
+	UploadSongs: (_files: FileUpload[], _albumId: number | null) => Promise.resolve([] as Song[]),
+	SyncSongsToAppleMusic: () =>
+		Promise.resolve({
+			totalSongs: 0,
+			successCount: 0,
+			failureCount: 0,
+			addedCount: 0,
+			updatedCount: 0,
+			results: [],
+			completedAt: Date.now()
+		} as SyncResult)
 };

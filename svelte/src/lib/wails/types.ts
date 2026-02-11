@@ -32,6 +32,24 @@ export interface SongProcessingResult {
 	error?: string;
 }
 
+export interface SyncResult {
+	totalSongs: number;
+	successCount: number;
+	failureCount: number;
+	addedCount: number;
+	updatedCount: number;
+	results: SyncItemResult[];
+	completedAt: number;
+}
+
+export interface SyncItemResult {
+	songId: number;
+	songName: string;
+	status: string;
+	appleMusicId?: string;
+	errorMessage?: string;
+}
+
 export interface Artist {
 	id: number;
 	name: string;

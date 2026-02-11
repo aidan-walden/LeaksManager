@@ -26,7 +26,8 @@ export const {
 	MatchProducersFromFilename,
 	GetSettings,
 	ShowInFileExplorer,
-	ExtractMetadata
+	ExtractMetadata,
+	SyncSongsToAppleMusic
 } = bindings;
 
 // --- Mutating exports ---

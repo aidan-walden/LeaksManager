@@ -267,3 +267,32 @@ type CreateSongsWithMetadataInput struct {
 	AlbumID            *int              `json:"albumId"`
 	UseEmbeddedArtwork bool              `json:"useEmbeddedArtwork"`
 }
+
+// SyncResult contains the results of a sync operation
+type SyncResult struct {
+	TotalSongs   int              `json:"totalSongs"`
+	SuccessCount int              `json:"successCount"`
+	FailureCount int              `json:"failureCount"`
+	AddedCount   int              `json:"addedCount"`   // Tracks added to Apple Music
+	UpdatedCount int              `json:"updatedCount"` // Tracks updated in Apple Music
+	Results      []SyncItemResult `json:"results"`
+	CompletedAt  int64            `json:"completedAt"`
+}
+
+// SyncItemResult contains the result for a single song
+type SyncItemResult struct {
+	SongID       int     `json:"songId"`
+	SongName     string  `json:"songName"`
+	Status       string  `json:"status"` // "success", "failed", "added", "updated"
+	AppleMusicID *string `json:"appleMusicId"`
+	ErrorMessage string  `json:"errorMessage,omitempty"`
+}
+
+// SyncError tracks sync errors for future error card display
+type SyncError struct {
+	ID           int    `json:"id"`
+	SongID       int    `json:"songId"`
+	ErrorMessage string `json:"errorMessage"`
+	ErrorType    string `json:"errorType"` // "not_found", "applescript_error", "timeout", etc.
+	OccurredAt   int64  `json:"occurredAt"`
+}
