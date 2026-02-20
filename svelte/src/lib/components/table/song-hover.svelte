@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { EditableSong } from '@/components/columns';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
+	import { toAssetUrl } from '$lib/utils';
 
 	let { song }: { song: EditableSong } = $props();
 
@@ -53,7 +54,7 @@
 				{/if}
 			</div>
 			{#if song.album?.artworkPath}
-				<img class="col-start-3" src={song.album.artworkPath} alt="Album Art" />
+				<img class="col-start-3" src={toAssetUrl(song.album.artworkPath)} alt="Album Art" />
 			{/if}
 		</div>
 	</HoverCard.Content>

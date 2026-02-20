@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -20,8 +19,11 @@ func (a *App) SaveUploadedFile(filename string, base64Data string) (string, erro
 	}
 
 	timestampedName := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), filename)
-	relPath := fmt.Sprintf("/uploads/songs/%s", timestampedName)
-	fullPath := filepath.Join(a.staticPath, relPath)
+	relPath := filepath.ToSlash(filepath.Join("uploads", "songs", timestampedName))
+	fullPath, err := a.staticFilePath(relPath)
+	if err != nil {
+		return "", err
+	}
 
 	err = os.WriteFile(fullPath, data, 0644)
 	if err != nil {
@@ -38,8 +40,11 @@ func (a *App) SaveArtwork(filename string, base64Data string) (string, error) {
 	}
 
 	timestampedName := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), filename)
-	relPath := fmt.Sprintf("/uploads/artwork/%s", timestampedName)
-	fullPath := filepath.Join(a.staticPath, relPath)
+	relPath := filepath.ToSlash(filepath.Join("uploads", "artwork", timestampedName))
+	fullPath, err := a.staticFilePath(relPath)
+	if err != nil {
+		return "", err
+	}
 
 	err = os.WriteFile(fullPath, data, 0644)
 	if err != nil {
@@ -50,7 +55,10 @@ func (a *App) SaveArtwork(filename string, base64Data string) (string, error) {
 }
 
 func (a *App) DeleteFile(relPath string) error {
-	fullPath := filepath.Join(a.staticPath, relPath)
+	fullPath, err := a.staticFilePath(relPath)
+	if err != nil {
+		return err
+	}
 	return os.Remove(fullPath)
 }
 
@@ -65,12 +73,9 @@ func (a *App) CleanupFiles(relPaths []string) int {
 }
 
 func (a *App) ShowInFileExplorer(relPath string) error {
-	cleaned := filepath.Clean(relPath)
-	cleaned = strings.TrimPrefix(cleaned, string(os.PathSeparator))
-
-	fullPath := cleaned
-	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(a.staticPath, cleaned)
+	fullPath, err := a.staticFilePath(relPath)
+	if err != nil {
+		return err
 	}
 
 	switch runtime.GOOS {

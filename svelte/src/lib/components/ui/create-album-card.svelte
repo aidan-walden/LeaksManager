@@ -12,6 +12,7 @@
 		UploadAlbumArt,
 		WriteAlbumMetadata
 	} from '$lib/wails';
+	import { toAssetUrl } from '$lib/utils';
 
 	let {
 		open = $bindable(),
@@ -82,7 +83,7 @@
 
 		(async () => {
 			try {
-				const response = await fetch(artworkPath);
+				const response = await fetch(toAssetUrl(artworkPath) ?? '');
 				if (!response.ok) return;
 				const artworkBlob = await response.blob();
 

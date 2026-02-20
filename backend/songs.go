@@ -3,7 +3,6 @@ package backend
 import (
 	"database/sql"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -107,8 +106,9 @@ func (a *App) DeleteSong(songID int) error {
 
 	// Delete file from disk
 	if songFilepath != "" {
-		fullPath := filepath.Join(a.staticPath, songFilepath)
-		os.Remove(fullPath)
+		if fullPath, pathErr := a.staticFilePath(songFilepath); pathErr == nil {
+			os.Remove(fullPath)
+		}
 	}
 
 	return nil

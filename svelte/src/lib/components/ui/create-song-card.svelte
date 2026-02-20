@@ -10,6 +10,7 @@
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
 	import { UpdateSong, WriteSongMetadata, type Album, type Song } from '$lib/wails';
+	import { toAssetUrl } from '$lib/utils';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -37,7 +38,7 @@
 	onMount(async () => {
 		if (song && song.artworkPath) {
 			try {
-				const response = await fetch(song.artworkPath);
+				const response = await fetch(toAssetUrl(song.artworkPath) ?? '');
 				const artworkBlob = await response.blob();
 				blob = artworkBlob;
 			} catch (error) {

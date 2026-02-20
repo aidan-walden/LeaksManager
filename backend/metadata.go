@@ -39,9 +39,12 @@ type songMetadataWrite struct {
 // ExtractMetadata replaces POST /extract-metadata
 func (a *App) ExtractMetadata(relPath string) (*ExtractedMetadata, error) {
 	// 1. Resolve Path
-	fullPath := filepath.Join(a.staticPath, relPath)
-	
-f, err := os.Open(fullPath)
+	fullPath, err := a.staticFilePath(relPath)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %s", fullPath)
 	}
@@ -90,7 +93,7 @@ func (a *App) WriteSongMetadata(songID int) (SongProcessingResult, error) {
 func (a *App) WriteAlbumMetadata(albumID int) (BatchResult, error) {
 	// 1. Get Songs in Album
 
-rows, err := a.db.Query("SELECT id FROM songs WHERE album_id = ?", albumID)
+	rows, err := a.db.Query("SELECT id FROM songs WHERE album_id = ?", albumID)
 	if err != nil {
 		return BatchResult{}, err
 	}
@@ -117,7 +120,7 @@ rows, err := a.db.Query("SELECT id FROM songs WHERE album_id = ?", albumID)
 
 			// Process
 			err := a.writeSongMetadataInternal(sID)
-			
+
 			res := SongProcessingResult{SongID: sID, Success: true}
 			if err != nil {
 				res.Success = false
@@ -180,7 +183,7 @@ func (a *App) writeSongMetadataInternal(songID int) error {
 	var sName, sPath string
 	var sGenre, sArt, aName, aGenre, aArt, artists, albumArtists, producers sql.NullString
 	var sYear, sTrack, aYear sql.NullInt32
-	
+
 	err := a.db.QueryRow(query, songID).Scan(
 		&sName, &sPath, &sGenre, &sYear, &sTrack,
 		&sArt, &aName, &aYear, &aGenre, &aArt, &artists, &albumArtists, &producers,
@@ -194,7 +197,10 @@ func (a *App) writeSongMetadataInternal(songID int) error {
 	}
 	_ = aYear
 
-	fullPath := filepath.Join(a.staticPath, sPath)
+	fullPath, err := a.staticFilePath(sPath)
+	if err != nil {
+		return err
+	}
 
 	songGenre := ""
 	if sGenre.Valid {
@@ -227,11 +233,11 @@ func (a *App) writeSongMetadataInternal(songID int) error {
 	if artists.Valid {
 		artistStr = artists.String
 	}
-albumArtistsStr := ""
+	albumArtistsStr := ""
 	if albumArtists.Valid {
 		albumArtistsStr = albumArtists.String
 	}
-albumArtist := albumArtistsStr
+	albumArtist := albumArtistsStr
 	if albumArtist == "" {
 		albumArtist = artistStr
 	}
@@ -252,8 +258,8 @@ albumArtist := albumArtistsStr
 	}
 
 	trackNumberStr := ""
-trackTotal := int32(0)
-settings, err := a.GetSettings()
+	trackTotal := int32(0)
+	settings, err := a.GetSettings()
 	if err != nil {
 		return err
 	}
@@ -302,7 +308,7 @@ settings, err := a.GetSettings()
 		SongArt:        songArt,
 		AlbumArt:       albumArt,
 	}
-	
+
 	// 2. Embed Metadata based on file extension
 	ext := strings.ToLower(filepath.Ext(fullPath))
 
@@ -362,7 +368,10 @@ func (a *App) writeMP3Metadata(path string, meta songMetadataWrite) error {
 	}
 
 	if artPathToUse != "" {
-		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
+		fullArtPath, pathErr := a.staticFilePath(artPathToUse)
+		if pathErr != nil {
+			return pathErr
+		}
 		artData, err := os.ReadFile(fullArtPath)
 		if err == nil {
 			mimeType := "image/jpeg"
@@ -456,7 +465,10 @@ func (a *App) writeFLACMetadata(path string, meta songMetadataWrite) error {
 	}
 
 	if artPathToUse != "" {
-		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
+		fullArtPath, pathErr := a.staticFilePath(artPathToUse)
+		if pathErr != nil {
+			return pathErr
+		}
 		artData, err := os.ReadFile(fullArtPath)
 		if err == nil {
 			// determine mime type
@@ -518,7 +530,10 @@ func (a *App) writeM4AMetadata(path string, meta songMetadataWrite) error {
 
 	var fullArtPath string
 	if artPathToUse != "" {
-		fullArtPath = filepath.Join(a.staticPath, artPathToUse)
+		fullArtPath, err = a.staticFilePath(artPathToUse)
+		if err != nil {
+			return err
+		}
 		fmt.Printf("[M4A] Will embed artwork from: %s\n", fullArtPath)
 	}
 
@@ -535,15 +550,15 @@ func (a *App) writeM4AMetadata(path string, meta songMetadataWrite) error {
 
 	args = append(args,
 		"-map_metadata", "-1", // clear existing metadata
-		"-map", "0:a",          // map audio from first input
+		"-map", "0:a", // map audio from first input
 	)
 
 	// map artwork if present
 	if fullArtPath != "" {
 		args = append(args,
-			"-map", "1:0",              // map image from second input
-			"-c:a", "copy",             // copy audio without re-encoding
-			"-c:v", "copy",             // copy image without re-encoding
+			"-map", "1:0", // map image from second input
+			"-c:a", "copy", // copy audio without re-encoding
+			"-c:v", "copy", // copy image without re-encoding
 			"-disposition:v:0", "attached_pic", // mark as album art
 		)
 	} else {
@@ -720,7 +735,10 @@ func (a *App) writeOGGMetadata(path string, meta songMetadataWrite) error {
 	}
 
 	if artPathToUse != "" {
-		fullArtPath := filepath.Join(a.staticPath, artPathToUse)
+		fullArtPath, pathErr := a.staticFilePath(artPathToUse)
+		if pathErr != nil {
+			return pathErr
+		}
 		artData, err := os.ReadFile(fullArtPath)
 		if err == nil {
 			mimeType := "image/jpeg"
