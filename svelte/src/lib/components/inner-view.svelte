@@ -126,7 +126,6 @@ async function handleUpload(files: File[], albumId?: number) {
 		await createSongs({}, false);
 	} catch (error) {
 		console.error('Error uploading:', error);
-		alert(`An error occurred while uploading files: ${error instanceof Error ? error.message : 'Unknown error'}`);
 	}
 }
 
@@ -207,7 +206,6 @@ async function createSongs(
 		await invalidateAll();
 	} catch (error) {
 		console.error('Error creating songs:', error);
-		alert(`An error occurred while creating songs: ${error instanceof Error ? error.message : 'Unknown error'}`);
 	}
 }
 

@@ -3,6 +3,7 @@ package backend
 import (
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -36,9 +37,35 @@ func CreateUploadsHandler() http.Handler {
 			}
 		}
 
-		// construct the full file path
-		// r.URL.Path is like "/uploads/artwork/filename.jpg"
-		filePath := filepath.Join(staticPath, r.URL.Path)
+		uploadsRoot := filepath.Join(staticPath, "uploads")
+
+		// normalize URL path and keep it relative to uploads root
+		relURLPath := strings.TrimPrefix(r.URL.Path, "/uploads/")
+		cleanURLPath := path.Clean("/" + relURLPath)
+		if cleanURLPath == "/" {
+			http.NotFound(w, r)
+			return
+		}
+
+		relPath := strings.TrimPrefix(cleanURLPath, "/")
+		filePath := filepath.Join(uploadsRoot, filepath.FromSlash(relPath))
+
+		// enforce containment within uploads root
+		uploadsRootAbs, err := filepath.Abs(uploadsRoot)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		filePathAbs, err := filepath.Abs(filePath)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		relToRoot, err := filepath.Rel(uploadsRootAbs, filePathAbs)
+		if err != nil || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+			http.NotFound(w, r)
+			return
+		}
 
 		// serve the file
 		http.ServeFile(w, r, filePath)

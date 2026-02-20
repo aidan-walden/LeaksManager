@@ -44,8 +44,7 @@
 			toast.success('Settings saved successfully');
 			editingSettings = false;
 		} catch (error) {
-			const errorMsg = error instanceof Error ? error.message : 'Failed to save settings';
-			toast.error(errorMsg);
+			console.error('Failed to save settings:', error);
 		} finally {
 			isSubmitting = false;
 		}

@@ -45,14 +45,13 @@
 				);
 			}
 		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error';
 			syncState.finishSync(false, {
-				message: error.message || 'Unknown error',
+				message,
 				failedCount: 0,
 				totalCount: 0,
 				timestamp: Date.now()
 			});
-
-			toast.error(`Sync failed: ${error.message}`);
 		}
 	}
 </script>

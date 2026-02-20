@@ -104,7 +104,10 @@ func (a *App) UploadAndExtractMetadata(files []struct {
 
 // CreateSongsWithMetadata creates songs from extracted metadata
 func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Song, error) {
-	settings, _ := a.GetSettings()
+	settings, err := a.GetSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
 
 	// Build artist ID map
 	artistIDMap := make(map[string]int)
@@ -246,7 +249,10 @@ func (a *App) UploadSongs(files []struct {
 	Filename   string `json:"filename"`
 	Base64Data string `json:"base64Data"`
 }, albumID *int) ([]Song, error) {
-	settings, _ := a.GetSettings()
+	settings, err := a.GetSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
 
 	// Get album data for inheritance
 	var album *AlbumWithArtists

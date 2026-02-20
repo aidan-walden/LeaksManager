@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 **Note: `microservice-py/` is deprecated** - all metadata extraction/writing functionality has been migrated to Go.
 
 ## Project Overview
