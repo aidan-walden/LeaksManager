@@ -231,6 +231,9 @@ func (a *App) GetProducersWithAliases() ([]ProducerWithAliases, error) {
 			Songs:    songs,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return producers, nil
 }
 
@@ -255,12 +258,22 @@ func (a *App) getAliasesForProducer(producerID int) ([]ProducerAliasWithArtists,
 		alias.CreatedAt = createdAt.Int64
 
 		// Get artist IDs for this alias
-		artistRows, _ := a.db.Query(`SELECT artist_id FROM producer_alias_artists WHERE alias_id = ?`, alias.ID)
+		artistRows, err := a.db.Query(`SELECT artist_id FROM producer_alias_artists WHERE alias_id = ?`, alias.ID)
+		if err != nil {
+			return nil, err
+		}
 		artistIDs := []int{}
 		for artistRows.Next() {
 			var artistID int
-			artistRows.Scan(&artistID)
+			if err := artistRows.Scan(&artistID); err != nil {
+				artistRows.Close()
+				return nil, err
+			}
 			artistIDs = append(artistIDs, artistID)
+		}
+		if err := artistRows.Err(); err != nil {
+			artistRows.Close()
+			return nil, err
 		}
 		artistRows.Close()
 
@@ -268,6 +281,9 @@ func (a *App) getAliasesForProducer(producerID int) ([]ProducerAliasWithArtists,
 			ProducerAlias: alias,
 			ArtistIDs:     artistIDs,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return aliases, nil
 }
@@ -297,6 +313,9 @@ func (a *App) getSongsForProducer(producerID int) ([]Song, error) {
 		song.UpdatedAt = updatedAt.Int64
 		songs = append(songs, song)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return songs, nil
 }
 
@@ -312,8 +331,13 @@ func (a *App) WriteProducerMetadata(producerID int) (BatchResult, error) {
 	songIDs := []int{}
 	for rows.Next() {
 		var id int
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return BatchResult{}, err
+		}
 		songIDs = append(songIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return BatchResult{}, err
 	}
 
 	// Parallel processing

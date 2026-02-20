@@ -47,6 +47,9 @@ func (a *App) GetArtists() ([]Artist, error) {
 		art.UpdatedAt = updatedAt.Int64
 		artists = append(artists, art)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return artists, nil
 }
 
@@ -112,6 +115,9 @@ func (a *App) getAlbumsByArtist(artistID int) ([]Album, error) {
 		alb.UpdatedAt = updatedAt.Int64
 		albums = append(albums, alb)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return albums, nil
 }
 
@@ -139,6 +145,9 @@ func (a *App) getSongsByArtist(artistID int) ([]Song, error) {
 		song.CreatedAt = createdAt.Int64
 		song.UpdatedAt = updatedAt.Int64
 		songs = append(songs, song)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return songs, nil
 }

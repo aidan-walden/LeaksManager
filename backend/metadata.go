@@ -102,8 +102,13 @@ func (a *App) WriteAlbumMetadata(albumID int) (BatchResult, error) {
 	songIDs := []int{}
 	for rows.Next() {
 		var id int
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return BatchResult{}, err
+		}
 		songIDs = append(songIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return BatchResult{}, err
 	}
 
 	// 2. Parallel Processing

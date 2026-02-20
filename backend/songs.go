@@ -209,6 +209,9 @@ func (a *App) GetSongsReadable(limit, offset int) ([]SongReadable, error) {
 			Album:     album,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return songs, nil
 }
 
@@ -243,6 +246,9 @@ func (a *App) getArtistsForSong(songID int) ([]Artist, error) {
 		art.UpdatedAt = updatedAt.Int64
 		artists = append(artists, art)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return artists, nil
 }
 
@@ -270,6 +276,9 @@ func (a *App) getProducersForSong(songID int) ([]Producer, error) {
 		prod.CreatedAt = createdAt.Int64
 		prod.UpdatedAt = updatedAt.Int64
 		producers = append(producers, prod)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return producers, nil
 }

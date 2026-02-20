@@ -62,25 +62,25 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 
 	// Split by track delimiter
 	trackStrings := strings.Split(outputStr, "&&&")
-	
+
 	for _, ts := range trackStrings {
 		if strings.TrimSpace(ts) == "" {
 			continue
 		}
-		
+
 		// Split by property delimiter
 		props := strings.Split(ts, "|||")
 		if len(props) < 12 {
 			continue
 		}
-		
+
 		year, _ := strconv.Atoi(props[6])
 		duration, _ := strconv.ParseFloat(props[7], 64)
 		trackNumber, _ := strconv.Atoi(props[8])
 		trackCount, _ := strconv.Atoi(props[9])
 		discNumber, _ := strconv.Atoi(props[10])
 		discCount, _ := strconv.Atoi(props[11])
-		
+
 		track := AppleMusicTrack{
 			ID:          props[0],
 			Name:        props[1],
@@ -95,7 +95,7 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 			DiscNumber:  discNumber,
 			DiscCount:   discCount,
 		}
-		
+
 		tracks = append(tracks, track)
 	}
 
@@ -126,6 +126,9 @@ func (a *App) SyncSongsToAppleMusic() (*SyncResult, error) {
 			return nil, err
 		}
 		songIDs = append(songIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	result := &SyncResult{

@@ -77,10 +77,23 @@ let filesWithArtworkCount = $state(0);
 
 // helper to convert File to FileUpload (base64)
 async function fileToUpload(file: File): Promise<FileUpload> {
-	const arrayBuffer = await file.arrayBuffer();
-	const base64 = btoa(
-		new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-	);
+	const base64 = await new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			if (typeof reader.result !== 'string') {
+				reject(new Error('failed to read file as data URL'));
+				return;
+			}
+			const base64Data = reader.result.split(',', 2)[1];
+			if (!base64Data) {
+				reject(new Error('failed to parse base64 data from file'));
+				return;
+			}
+			resolve(base64Data);
+		};
+		reader.onerror = () => reject(reader.error ?? new Error('failed to read file'));
+		reader.readAsDataURL(file);
+	});
 	return {
 		filename: file.name,
 		base64Data: base64

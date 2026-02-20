@@ -88,14 +88,21 @@ func (a *App) Startup(ctx context.Context) {
 		a.dbPath = "svelte/local.db"
 		a.staticPath = "svelte"
 		// ensure uploads directories exist in dev mode too
-		os.MkdirAll("svelte/uploads/songs", 0755)
-		os.MkdirAll("svelte/uploads/artwork", 0755)
+		if err := os.MkdirAll("svelte/uploads/songs", 0755); err != nil {
+			panic("Failed to create uploads songs directory: " + err.Error())
+		}
+		if err := os.MkdirAll("svelte/uploads/artwork", 0755); err != nil {
+			panic("Failed to create uploads artwork directory: " + err.Error())
+		}
 	} else {
 		// production mode - use user data directory
 		// on macOS: ~/Library/Application Support/leaks-manager
 		// on Windows: %APPDATA%/leaks-manager
 		// on Linux: ~/.local/share/leaks-manager
-		homeDir, _ := os.UserHomeDir()
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			panic("Failed to determine user home directory: " + err.Error())
+		}
 		var dataDir string
 		if runtime.GOOS == "darwin" {
 			dataDir = filepath.Join(homeDir, "Library", "Application Support", "leaks-manager")
@@ -106,9 +113,15 @@ func (a *App) Startup(ctx context.Context) {
 		}
 
 		// create data directory if it doesn't exist
-		os.MkdirAll(dataDir, 0755)
-		os.MkdirAll(filepath.Join(dataDir, "uploads", "songs"), 0755)
-		os.MkdirAll(filepath.Join(dataDir, "uploads", "artwork"), 0755)
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			panic("Failed to create app data directory: " + err.Error())
+		}
+		if err := os.MkdirAll(filepath.Join(dataDir, "uploads", "songs"), 0755); err != nil {
+			panic("Failed to create uploads songs directory: " + err.Error())
+		}
+		if err := os.MkdirAll(filepath.Join(dataDir, "uploads", "artwork"), 0755); err != nil {
+			panic("Failed to create uploads artwork directory: " + err.Error())
+		}
 
 		a.dbPath = filepath.Join(dataDir, "local.db")
 		a.staticPath = dataDir
