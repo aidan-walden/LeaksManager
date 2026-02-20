@@ -8,10 +8,7 @@ import (
 // --- Complex Workflows ---
 
 // UploadAndExtractMetadata handles the first step of the metadata extraction workflow
-func (a *App) UploadAndExtractMetadata(files []struct {
-	Filename   string `json:"filename"`
-	Base64Data string `json:"base64Data"`
-}, albumID *int) (*UploadAndExtractResult, error) {
+func (a *App) UploadAndExtractMetadata(files []FileUpload, albumID *int) (*UploadAndExtractResult, error) {
 	var filesData []FileData
 	allArtistNames := make(map[string]bool)
 	allAlbumNames := make(map[string]bool)
@@ -245,10 +242,7 @@ func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Son
 }
 
 // UploadSongs handles simple song upload without metadata preview
-func (a *App) UploadSongs(files []struct {
-	Filename   string `json:"filename"`
-	Base64Data string `json:"base64Data"`
-}, albumID *int) ([]Song, error) {
+func (a *App) UploadSongs(files []FileUpload, albumID *int) ([]Song, error) {
 	settings, err := a.GetSettings()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load settings: %w", err)

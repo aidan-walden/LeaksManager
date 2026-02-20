@@ -11,31 +11,51 @@ import (
 
 func (a *App) CreateSong(input CreateSongInput) (*Song, error) {
 	now := time.Now().Unix()
-	result, err := a.db.Exec(
+	tx, err := a.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := tx.Exec(
 		`INSERT INTO songs (name, filepath, album_id, artwork_path, genre, year, track_number, duration, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		input.Name, input.Filepath, input.AlbumID, input.ArtworkPath, input.Genre, input.Year, input.TrackNumber, input.Duration, now, now,
 	)
 	if err != nil {
+		tx.Rollback()
 		return nil, err
 	}
 
-	songID, _ := result.LastInsertId()
+	songID, err := result.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	// Link artists
 	for i, artistID := range input.ArtistIDs {
-		a.db.Exec(
+		if _, err := tx.Exec(
 			`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 			songID, artistID, i, now,
-		)
+		); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 	}
 
 	// Link producers
 	for i, producerID := range input.ProducerIDs {
-		a.db.Exec(
+		if _, err := tx.Exec(
 			`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 			songID, producerID, i, now,
-		)
+		); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return &Song{
@@ -55,52 +75,80 @@ func (a *App) CreateSong(input CreateSongInput) (*Song, error) {
 
 func (a *App) UpdateSong(input UpdateSongInput) error {
 	now := time.Now().Unix()
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
 
 	// Update song
-	_, err := a.db.Exec(
+	_, err = tx.Exec(
 		`UPDATE songs SET name = COALESCE(?, name), album_id = ?, track_number = ?, updated_at = ? WHERE id = ?`,
 		input.Name, input.AlbumID, input.TrackNumber, now, input.ID,
 	)
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
 
 	// Update artist links
 	if input.ArtistIDs != nil {
-		a.db.Exec(`DELETE FROM song_artists WHERE song_id = ?`, input.ID)
+		if _, err := tx.Exec(`DELETE FROM song_artists WHERE song_id = ?`, input.ID); err != nil {
+			tx.Rollback()
+			return err
+		}
 		for i, artistID := range input.ArtistIDs {
-			a.db.Exec(
+			if _, err := tx.Exec(
 				`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 				input.ID, artistID, i, now,
-			)
+			); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 
 	// Update producer links
 	if input.ProducerIDs != nil {
-		a.db.Exec(`DELETE FROM song_producers WHERE song_id = ?`, input.ID)
+		if _, err := tx.Exec(`DELETE FROM song_producers WHERE song_id = ?`, input.ID); err != nil {
+			tx.Rollback()
+			return err
+		}
 		for i, producerID := range input.ProducerIDs {
-			a.db.Exec(
+			if _, err := tx.Exec(
 				`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 				input.ID, producerID, i, now,
-			)
+			); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func (a *App) DeleteSong(songID int) error {
-	// Get filepath first
-	var songFilepath string
-	err := a.db.QueryRow(`SELECT filepath FROM songs WHERE id = ?`, songID).Scan(&songFilepath)
+	tx, err := a.db.Begin()
 	if err != nil {
 		return err
 	}
 
-	// Delete song from DB
-	_, err = a.db.Exec(`DELETE FROM songs WHERE id = ?`, songID)
+	// Get filepath first
+	var songFilepath string
+	err = tx.QueryRow(`SELECT filepath FROM songs WHERE id = ?`, songID).Scan(&songFilepath)
 	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete song from DB
+	_, err = tx.Exec(`DELETE FROM songs WHERE id = ?`, songID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 

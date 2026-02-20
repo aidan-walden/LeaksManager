@@ -13,45 +13,70 @@ import (
 
 func (a *App) CreateProducerWithAliases(input CreateProducerInput) (*Producer, error) {
 	now := time.Now().Unix()
-
-	// Check alias uniqueness
-	for _, alias := range input.Aliases {
-		var exists int
-		a.db.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`, alias.Name).Scan(&exists)
-		if exists > 0 {
-			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
-		}
-	}
-
-	result, err := a.db.Exec(
-		`INSERT INTO producers (name, created_at, updated_at) VALUES (?, ?, ?)`, 
-		input.Name, now, now,
-	)
+	tx, err := a.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 
-	producerID, _ := result.LastInsertId()
+	// Check alias uniqueness
+	for _, alias := range input.Aliases {
+		var exists int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`, alias.Name).Scan(&exists); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		if exists > 0 {
+			tx.Rollback()
+			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
+		}
+	}
+
+	result, err := tx.Exec(
+		`INSERT INTO producers (name, created_at, updated_at) VALUES (?, ?, ?)`,
+		input.Name, now, now,
+	)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	producerID, err := result.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	// Create aliases
 	for _, alias := range input.Aliases {
-		aliasResult, err := a.db.Exec(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`, 
+		aliasResult, err := tx.Exec(
+			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
 			producerID, alias.Name, now,
 		)
 		if err != nil {
+			tx.Rollback()
 			return nil, err
 		}
 
-		aliasID, _ := aliasResult.LastInsertId()
+		aliasID, err := aliasResult.LastInsertId()
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 
 		// Create artist restrictions
 		for _, artistID := range alias.ArtistIDs {
-			a.db.Exec(
-				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`, 
+			if _, err := tx.Exec(
+				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
 				aliasID, artistID, now,
-			)
+			); err != nil {
+				tx.Rollback()
+				return nil, err
+			}
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return &Producer{
@@ -64,66 +89,111 @@ func (a *App) CreateProducerWithAliases(input CreateProducerInput) (*Producer, e
 
 func (a *App) UpdateProducerWithAliases(input UpdateProducerInput) (*Producer, error) {
 	now := time.Now().Unix()
-
-	// Check alias uniqueness (excluding current producer)
-	for _, alias := range input.Aliases {
-		var conflictID int
-		err := a.db.QueryRow(`
-			SELECT pa.producer_id FROM producer_aliases pa
-			WHERE LOWER(pa.alias) = LOWER(?) AND pa.producer_id != ?
-		`, alias.Name, input.ID).Scan(&conflictID)
-		if err == nil {
-			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
-		}
-	}
-
-	// Update producer name
-	_, err := a.db.Exec(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`, input.Name, now, input.ID)
+	tx, err := a.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 
-	// Delete existing aliases and their artist restrictions
+	var createdAt int64
+	if err := tx.QueryRow(`SELECT created_at FROM producers WHERE id = ?`, input.ID).Scan(&createdAt); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
-rows, _ := a.db.Query(`SELECT id FROM producer_aliases WHERE producer_id = ?`, input.ID)
-	var aliasIDs []int
+	// Check alias uniqueness (excluding current producer)
+	for _, alias := range input.Aliases {
+		var conflictID int
+		err := tx.QueryRow(`
+			SELECT pa.producer_id FROM producer_aliases pa
+			WHERE LOWER(pa.alias) = LOWER(?) AND pa.producer_id != ?
+		`, alias.Name, input.ID).Scan(&conflictID)
+		if err == nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
+		}
+		if err != nil && err != sql.ErrNoRows {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
+	// Update producer name
+	_, err = tx.Exec(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`, input.Name, now, input.ID)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	// Delete existing aliases and their artist restrictions
+	rows, err := tx.Query(`SELECT id FROM producer_aliases WHERE producer_id = ?`, input.ID)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	aliasIDs := []int{}
 	for rows.Next() {
 		var id int
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			tx.Rollback()
+			return nil, err
+		}
 		aliasIDs = append(aliasIDs, id)
 	}
-
-rows.Close()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		tx.Rollback()
+		return nil, err
+	}
+	rows.Close()
 
 	for _, aliasID := range aliasIDs {
-		a.db.Exec(`DELETE FROM producer_alias_artists WHERE alias_id = ?`, aliasID)
+		if _, err := tx.Exec(`DELETE FROM producer_alias_artists WHERE alias_id = ?`, aliasID); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 	}
-	a.db.Exec(`DELETE FROM producer_aliases WHERE producer_id = ?`, input.ID)
+	if _, err := tx.Exec(`DELETE FROM producer_aliases WHERE producer_id = ?`, input.ID); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	// Create new aliases
 	for _, alias := range input.Aliases {
-		aliasResult, err := a.db.Exec(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`, 
+		aliasResult, err := tx.Exec(
+			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
 			input.ID, alias.Name, now,
 		)
 		if err != nil {
+			tx.Rollback()
 			return nil, err
 		}
 
-		aliasID, _ := aliasResult.LastInsertId()
+		aliasID, err := aliasResult.LastInsertId()
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 
 		for _, artistID := range alias.ArtistIDs {
-			a.db.Exec(
-				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`, 
+			if _, err := tx.Exec(
+				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
 				aliasID, artistID, now,
-			)
+			); err != nil {
+				tx.Rollback()
+				return nil, err
+			}
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return &Producer{
 		ID:        input.ID,
 		Name:      input.Name,
-		CreatedAt: now, // Note: This is not accurate, but we don't query for original
+		CreatedAt: createdAt,
 		UpdatedAt: now,
 	}, nil
 }
@@ -135,7 +205,7 @@ func (a *App) DeleteProducer(producerID int) error {
 
 func (a *App) GetProducersWithAliases() ([]ProducerWithAliases, error) {
 
-rows, err := a.db.Query(`SELECT id, name, created_at, updated_at FROM producers`)
+	rows, err := a.db.Query(`SELECT id, name, created_at, updated_at FROM producers`)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +236,7 @@ rows, err := a.db.Query(`SELECT id, name, created_at, updated_at FROM producers`
 
 func (a *App) getAliasesForProducer(producerID int) ([]ProducerAliasWithArtists, error) {
 
-rows, err := a.db.Query(`
+	rows, err := a.db.Query(`
 		SELECT id, producer_id, alias, created_at FROM producer_aliases WHERE producer_id = ?
 	`, producerID)
 	if err != nil {
@@ -204,7 +274,7 @@ rows, err := a.db.Query(`
 
 func (a *App) getSongsForProducer(producerID int) ([]Song, error) {
 
-rows, err := a.db.Query(`
+	rows, err := a.db.Query(`
 		SELECT s.id, s.name, s.album_id, s.artwork_path, s.genre, s.year, s.track_number, s.duration, s.filepath, s.file_type, s.created_at, s.updated_at, s.synced, s.apple_music_id
 		FROM songs s
 		JOIN song_producers sp ON s.id = sp.song_id
@@ -233,7 +303,7 @@ rows, err := a.db.Query(`
 // WriteProducerMetadata writes metadata to all songs by a producer
 func (a *App) WriteProducerMetadata(producerID int) (BatchResult, error) {
 
-rows, err := a.db.Query(`SELECT song_id FROM song_producers WHERE producer_id = ?`, producerID)
+	rows, err := a.db.Query(`SELECT song_id FROM song_producers WHERE producer_id = ?`, producerID)
 	if err != nil {
 		return BatchResult{}, err
 	}
@@ -302,9 +372,9 @@ func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) (
 
 	// Build searchable terms
 	type searchTerm struct {
-		term          string
-		producerID    int
-		isAlias       bool
+		term           string
+		producerID     int
+		isAlias        bool
 		aliasArtistIDs []int
 	}
 	searchableTerms := []searchTerm{}

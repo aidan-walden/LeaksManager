@@ -80,20 +80,20 @@ type AlbumWithSongs struct {
 
 // Song represents a music track
 type Song struct {
-	ID          int      `json:"id"`
-	Name        string   `json:"name"`
-	AlbumID     *int     `json:"albumId"`
-	ArtworkPath *string  `json:"artworkPath"`
-	Genre       *string  `json:"genre"`
-	Year        *int     `json:"year"`
-	TrackNumber *int     `json:"trackNumber"`
-	Duration    *float64 `json:"duration"`
-	Filepath    string   `json:"filepath"`
-	FileType    *string  `json:"fileType"`
-	CreatedAt   int64    `json:"createdAt"`
-	UpdatedAt   int64    `json:"updatedAt"`
-	Synced      bool     `json:"synced"`
-	AppleMusicID *string `json:"appleMusicId"`
+	ID           int      `json:"id"`
+	Name         string   `json:"name"`
+	AlbumID      *int     `json:"albumId"`
+	ArtworkPath  *string  `json:"artworkPath"`
+	Genre        *string  `json:"genre"`
+	Year         *int     `json:"year"`
+	TrackNumber  *int     `json:"trackNumber"`
+	Duration     *float64 `json:"duration"`
+	Filepath     string   `json:"filepath"`
+	FileType     *string  `json:"fileType"`
+	CreatedAt    int64    `json:"createdAt"`
+	UpdatedAt    int64    `json:"updatedAt"`
+	Synced       bool     `json:"synced"`
+	AppleMusicID *string  `json:"appleMusicId"`
 }
 
 // SongReadable includes formatted artist string for display
@@ -187,9 +187,9 @@ type CreateArtistInput struct {
 }
 
 type CreateAlbumInput struct {
-	Name      string `json:"name"`
-	ArtistIDs []int  `json:"artistIds"`
-	Year      *int   `json:"year"`
+	Name      string  `json:"name"`
+	ArtistIDs []int   `json:"artistIds"`
+	Year      *int    `json:"year"`
 	Genre     *string `json:"genre"`
 }
 
@@ -215,7 +215,7 @@ type CreateSongInput struct {
 }
 
 type UpdateSongInput struct {
-	ID          int    `json:"id"`
+	ID          int     `json:"id"`
 	Name        *string `json:"name"`
 	AlbumID     *int    `json:"albumId"`
 	ArtistIDs   []int   `json:"artistIds"`
@@ -262,10 +262,15 @@ type UploadAndExtractResult struct {
 }
 
 type CreateSongsWithMetadataInput struct {
-	FilesData          []FileData        `json:"filesData"`
-	ArtistMapping      map[string]any    `json:"artistMapping"` // string -> int or "CREATE_NEW"
-	AlbumID            *int              `json:"albumId"`
-	UseEmbeddedArtwork bool              `json:"useEmbeddedArtwork"`
+	FilesData          []FileData     `json:"filesData"`
+	ArtistMapping      map[string]any `json:"artistMapping"` // string -> int or "CREATE_NEW"
+	AlbumID            *int           `json:"albumId"`
+	UseEmbeddedArtwork bool           `json:"useEmbeddedArtwork"`
+}
+
+type FileUpload struct {
+	Filename   string `json:"filename"`
+	Base64Data string `json:"base64Data"`
 }
 
 // SyncResult contains the results of a sync operation

@@ -14,25 +14,40 @@ func (a *App) CreateAlbum(input CreateAlbumInput) (*Album, error) {
 	}
 
 	now := time.Now().Unix()
-	result, err := a.db.Exec(
-		`INSERT INTO albums (name, genre, year, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		input.Name, input.Genre, input.Year, now, now,
-	)
+	tx, err := a.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 
-	albumID, _ := result.LastInsertId()
+	result, err := tx.Exec(
+		`INSERT INTO albums (name, genre, year, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		input.Name, input.Genre, input.Year, now, now,
+	)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	albumID, err := result.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	// Link artists
 	for i, artistID := range input.ArtistIDs {
-		_, err := a.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 			albumID, artistID, i, now,
 		)
 		if err != nil {
+			tx.Rollback()
 			return nil, err
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return &Album{
@@ -47,46 +62,69 @@ func (a *App) CreateAlbum(input CreateAlbumInput) (*Album, error) {
 
 func (a *App) UpdateAlbum(input UpdateAlbumInput) error {
 	now := time.Now().Unix()
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
 
 	// Update album
-	_, err := a.db.Exec(
+	_, err = tx.Exec(
 		`UPDATE albums SET name = COALESCE(?, name), genre = ?, year = ?, updated_at = ? WHERE id = ?`,
 		input.Name, input.Genre, input.Year, now, input.ID,
 	)
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
 
 	// Update artist links
 	if len(input.ArtistIDs) > 0 {
-		a.db.Exec(`DELETE FROM album_artists WHERE album_id = ?`, input.ID)
+		if _, err := tx.Exec(`DELETE FROM album_artists WHERE album_id = ?`, input.ID); err != nil {
+			tx.Rollback()
+			return err
+		}
 		for i, artistID := range input.ArtistIDs {
-			a.db.Exec(
+			if _, err := tx.Exec(
 				`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`,
 				input.ID, artistID, i, now,
-			)
+			); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func (a *App) DeleteAlbum(albumID int) error {
-	// Unlink songs
-	_, err := a.db.Exec(`UPDATE songs SET album_id = NULL WHERE album_id = ?`, albumID)
+	tx, err := a.db.Begin()
 	if err != nil {
+		return err
+	}
+
+	// Unlink songs
+	_, err = tx.Exec(`UPDATE songs SET album_id = NULL WHERE album_id = ?`, albumID)
+	if err != nil {
+		tx.Rollback()
 		return err
 	}
 
 	// Delete album artist links
-	_, err = a.db.Exec(`DELETE FROM album_artists WHERE album_id = ?`, albumID)
+	_, err = tx.Exec(`DELETE FROM album_artists WHERE album_id = ?`, albumID)
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
 
 	// Delete album
-	_, err = a.db.Exec(`DELETE FROM albums WHERE id = ?`, albumID)
-	return err
+	_, err = tx.Exec(`DELETE FROM albums WHERE id = ?`, albumID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (a *App) GetAlbumsWithSongs(limit, offset int) ([]AlbumWithSongs, error) {
