@@ -19,6 +19,17 @@ const wrapRead = <T extends (...args: any[]) => Promise<any>>(name: string, fn: 
 const wrapMutating = <T extends (...args: any[]) => Promise<any>>(name: string, fn: T) => {
 	return async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
 		try {
+			return await fn(...args);
+		} catch (error) {
+			notifyRuntimeError(error, name);
+			throw error;
+		}
+	};
+};
+
+const wrapSyncMutating = <T extends (...args: any[]) => Promise<any>>(name: string, fn: T) => {
+	return async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
+		try {
 			const result = await fn(...args);
 			syncState.markChanged();
 			return result;
@@ -59,9 +70,9 @@ export const CreateArtist = wrapMutating('CreateArtist', bindings.CreateArtist);
 export const CreateAlbum = wrapMutating('CreateAlbum', bindings.CreateAlbum);
 export const UpdateAlbum = wrapMutating('UpdateAlbum', bindings.UpdateAlbum);
 export const DeleteAlbum = wrapMutating('DeleteAlbum', bindings.DeleteAlbum);
-export const CreateSong = wrapMutating('CreateSong', bindings.CreateSong);
-export const UpdateSong = wrapMutating('UpdateSong', bindings.UpdateSong);
-export const DeleteSong = wrapMutating('DeleteSong', bindings.DeleteSong);
+export const CreateSong = wrapSyncMutating('CreateSong', bindings.CreateSong);
+export const UpdateSong = wrapSyncMutating('UpdateSong', bindings.UpdateSong);
+export const DeleteSong = wrapSyncMutating('DeleteSong', bindings.DeleteSong);
 export const CreateProducerWithAliases = wrapMutating(
 	'CreateProducerWithAliases',
 	bindings.CreateProducerWithAliases
@@ -77,7 +88,10 @@ export const SaveArtwork = wrapMutating('SaveArtwork', bindings.SaveArtwork);
 export const DeleteFile = wrapMutating('DeleteFile', bindings.DeleteFile);
 export const CleanupFiles = wrapMutating('CleanupFiles', bindings.CleanupFiles);
 export const UploadAlbumArt = wrapMutating('UploadAlbumArt', bindings.UploadAlbumArt);
-export const WriteSongMetadata = wrapMutating('WriteSongMetadata', bindings.WriteSongMetadata);
+export const WriteSongMetadata = wrapSyncMutating(
+	'WriteSongMetadata',
+	bindings.WriteSongMetadata
+);
 export const WriteAlbumMetadata = wrapMutating('WriteAlbumMetadata', bindings.WriteAlbumMetadata);
 export const WriteProducerMetadata = wrapMutating(
 	'WriteProducerMetadata',
@@ -87,8 +101,8 @@ export const UploadAndExtractMetadata = wrapMutating(
 	'UploadAndExtractMetadata',
 	bindings.UploadAndExtractMetadata
 );
-export const CreateSongsWithMetadata = wrapMutating(
+export const CreateSongsWithMetadata = wrapSyncMutating(
 	'CreateSongsWithMetadata',
 	bindings.CreateSongsWithMetadata
 );
-export const UploadSongs = wrapMutating('UploadSongs', bindings.UploadSongs);
+export const UploadSongs = wrapSyncMutating('UploadSongs', bindings.UploadSongs);

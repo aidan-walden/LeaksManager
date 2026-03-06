@@ -44,13 +44,13 @@ func (a *App) GetInitialData() (*InitialData, error) {
 	hasUnsyncedChanges, _ := a.checkUnsyncedChanges()
 
 	return &InitialData{
-		Songs:              songs,
-		SongsCount:         songsCount,
-		Albums:             albums,
-		Artists:            artists,
-		Producers:          producers,
-		Settings:           *settings,
-		IsMac:              runtime.GOOS == "darwin",
+		Songs:      songs,
+		SongsCount: songsCount,
+		Albums:     albums,
+		Artists:    artists,
+		Producers:  producers,
+		Settings:   *settings,
+		IsMac:      runtime.GOOS == "darwin",
 		Limits: Limits{
 			SongsPerPage:  songsPerPage,
 			AlbumsPerPage: albumsPerPage,
@@ -61,32 +61,10 @@ func (a *App) GetInitialData() (*InitialData, error) {
 
 func (a *App) checkUnsyncedChanges() (bool, error) {
 	var count int
-	// Check songs
+
 	err := a.db.QueryRow("SELECT COUNT(*) FROM songs WHERE synced = 0").Scan(&count)
 	if err != nil {
 		return false, err
 	}
-	if count > 0 {
-		return true, nil
-	}
-
-	// Check albums
-	err = a.db.QueryRow("SELECT COUNT(*) FROM albums WHERE synced = 0").Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	if count > 0 {
-		return true, nil
-	}
-
-	// Check artists
-	err = a.db.QueryRow("SELECT COUNT(*) FROM artists WHERE synced = 0").Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	if count > 0 {
-		return true, nil
-	}
-
-	return false, nil
+	return count > 0, nil
 }

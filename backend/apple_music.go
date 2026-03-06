@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // GetAppleMusicLibrary fetches all user-saved tracks from Apple Music via AppleScript
@@ -47,8 +49,7 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 		end tell
 	`
 
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := a.runAppleScriptOutput(script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute AppleScript: %w", err)
 	}
@@ -108,6 +109,10 @@ func (a *App) SyncSongsToAppleMusic() (*SyncResult, error) {
 	// Platform check
 	if runtime.GOOS != "darwin" {
 		return nil, fmt.Errorf("Apple Music sync is only available on macOS")
+	}
+
+	if err := a.ensureAppleMusicRunning(); err != nil {
+		return nil, err
 	}
 
 	// Query all unsynced songs
@@ -291,6 +296,70 @@ func escapeAppleScript(s string) string {
 	return s
 }
 
+func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
+	if err := a.ensureAppleMusicRunning(); err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command("osascript", "-e", script)
+	return cmd.Output()
+}
+
+func (a *App) runAppleScript(script string) error {
+	if err := a.ensureAppleMusicRunning(); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("osascript", "-e", script)
+	return cmd.Run()
+}
+
+func (a *App) ensureAppleMusicRunning() error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("Apple Music integration is only available on macOS")
+	}
+
+	if a.isAppleMusicRunning() {
+		return nil
+	}
+
+	if a.ctx == nil {
+		return fmt.Errorf("Apple Music is not running")
+	}
+
+	choice, err := wailsruntime.MessageDialog(a.ctx, wailsruntime.MessageDialogOptions{
+		Type:          wailsruntime.QuestionDialog,
+		Title:         "Apple Music Closed",
+		Message:       "Apple Music needs to be open before continuing. Open Apple Music now?",
+		Buttons:       []string{"Open Apple Music", "Cancel"},
+		DefaultButton: "Open Apple Music",
+		CancelButton:  "Cancel",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to prompt to open Apple Music: %w", err)
+	}
+	if choice != "Open Apple Music" {
+		return fmt.Errorf("Apple Music must be open to continue")
+	}
+
+	if err := exec.Command("open", "-a", "Music").Run(); err != nil {
+		return fmt.Errorf("failed to open Apple Music: %w", err)
+	}
+
+	for range 20 {
+		if a.isAppleMusicRunning() {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	return fmt.Errorf("Apple Music did not finish opening")
+}
+
+func (a *App) isAppleMusicRunning() bool {
+	return exec.Command("pgrep", "-x", "Music").Run() == nil
+}
+
 // verifyAppleMusicTrack checks if a track with the given persistent ID exists
 func (a *App) verifyAppleMusicTrack(persistentID string) (bool, error) {
 	script := fmt.Sprintf(`
@@ -304,8 +373,7 @@ func (a *App) verifyAppleMusicTrack(persistentID string) (bool, error) {
 		end tell
 	`, escapeAppleScript(persistentID))
 
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := a.runAppleScriptOutput(script)
 	if err != nil {
 		return false, fmt.Errorf("failed to verify track: %w", err)
 	}
@@ -327,8 +395,7 @@ func (a *App) findAppleMusicTrack(song SongReadable) (string, error) {
 		end tell
 	`, escapeAppleScript(song.Name), escapeAppleScript(song.Artist))
 
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := a.runAppleScriptOutput(script)
 	if err != nil {
 		return "", fmt.Errorf("failed to search for track: %w", err)
 	}
@@ -368,8 +435,7 @@ func (a *App) updateAppleMusicTrack(persistentID string, song SongReadable) erro
 		end tell
 	`, escapeAppleScript(persistentID), metadataLines)
 
-	cmd := exec.Command("osascript", "-e", script)
-	if err := cmd.Run(); err != nil {
+	if err := a.runAppleScript(script); err != nil {
 		return fmt.Errorf("failed to update track: %w", err)
 	}
 	return nil
@@ -396,8 +462,7 @@ func (a *App) addTrackToAppleMusic(song SongReadable) (string, error) {
 		end tell
 	`, escapeAppleScript(absPath), metadataLines)
 
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
+	out, err := a.runAppleScriptOutput(script)
 	if err != nil {
 		return "", fmt.Errorf("failed to add track: %w", err)
 	}
