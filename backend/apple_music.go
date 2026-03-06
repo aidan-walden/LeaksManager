@@ -16,6 +16,9 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, fmt.Errorf("Apple Music integration is only available on macOS")
 	}
+	if !a.isAppleMusicImportEnabled() {
+		return []AppleMusicTrack{}, nil
+	}
 
 	// AppleScript to get all tracks with relevant properties
 	// We use "user" playlist to get everything the user has added to their library
@@ -109,6 +112,12 @@ func (a *App) SyncSongsToAppleMusic() (*SyncResult, error) {
 	// Platform check
 	if runtime.GOOS != "darwin" {
 		return nil, fmt.Errorf("Apple Music sync is only available on macOS")
+	}
+	if !a.isAppleMusicImportEnabled() {
+		return &SyncResult{
+			Results:     []SyncItemResult{},
+			CompletedAt: time.Now().Unix(),
+		}, nil
 	}
 
 	if err := a.ensureAppleMusicRunning(); err != nil {
@@ -297,6 +306,9 @@ func escapeAppleScript(s string) string {
 }
 
 func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
+	if !a.isAppleMusicImportEnabled() {
+		return nil, nil
+	}
 	if err := a.ensureAppleMusicRunning(); err != nil {
 		return nil, err
 	}
@@ -306,6 +318,9 @@ func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
 }
 
 func (a *App) runAppleScript(script string) error {
+	if !a.isAppleMusicImportEnabled() {
+		return nil
+	}
 	if err := a.ensureAppleMusicRunning(); err != nil {
 		return err
 	}
@@ -317,6 +332,9 @@ func (a *App) runAppleScript(script string) error {
 func (a *App) ensureAppleMusicRunning() error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("Apple Music integration is only available on macOS")
+	}
+	if !a.isAppleMusicImportEnabled() {
+		return nil
 	}
 
 	if a.isAppleMusicRunning() {
@@ -358,6 +376,19 @@ func (a *App) ensureAppleMusicRunning() error {
 
 func (a *App) isAppleMusicRunning() bool {
 	return exec.Command("pgrep", "-x", "Music").Run() == nil
+}
+
+func (a *App) isAppleMusicImportEnabled() bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+
+	settings, err := a.GetSettings()
+	if err != nil {
+		return false
+	}
+
+	return settings.ImportToAppleMusic
 }
 
 // verifyAppleMusicTrack checks if a track with the given persistent ID exists
@@ -425,17 +456,57 @@ func buildMetadataScript(trackVar string, song SongReadable) string {
 	return strings.Join(lines, "\n\t\t")
 }
 
+func (a *App) resolveAppleMusicArtworkPath(song SongReadable) (string, error) {
+	if song.ArtworkPath != nil && *song.ArtworkPath != "" {
+		return a.staticFilePath(*song.ArtworkPath)
+	}
+	if song.Album != nil && song.Album.ArtworkPath != nil && *song.Album.ArtworkPath != "" {
+		return a.staticFilePath(*song.Album.ArtworkPath)
+	}
+
+	return "", nil
+}
+
+func (a *App) buildArtworkScript(trackVar string, song SongReadable) (string, error) {
+	artworkPath, err := a.resolveAppleMusicArtworkPath(song)
+	if err != nil {
+		return "", err
+	}
+	if artworkPath == "" {
+		return fmt.Sprintf(`if (count of artworks of %s) > 0 then delete every artwork of %s`, trackVar, trackVar), nil
+	}
+
+	return fmt.Sprintf(`
+		set artworkFile to POSIX file "%s"
+		set artworkData to read artworkFile as picture
+		if (count of artworks of %s) = 0 then
+			make new artwork at end of artworks of %s with properties {data:artworkData}
+		else
+			set data of artwork 1 of %s to artworkData
+		end if
+	`, escapeAppleScript(artworkPath), trackVar, trackVar, trackVar), nil
+}
+
 // updateAppleMusicTrack updates an existing track's metadata via AppleScript
 func (a *App) updateAppleMusicTrack(persistentID string, song SongReadable) error {
+	if err := a.writeSongMetadataInternal(song.ID); err != nil {
+		return fmt.Errorf("failed to write source metadata before Apple Music sync: %w", err)
+	}
+
 	metadataLines := buildMetadataScript("t", song)
+	artworkLines, err := a.buildArtworkScript("t", song)
+	if err != nil {
+		return fmt.Errorf("failed to prepare artwork update: %w", err)
+	}
 	script := fmt.Sprintf(`
 		tell application "Music"
 			set t to first track whose persistent ID is "%s"
 			%s
+			%s
 		end tell
-	`, escapeAppleScript(persistentID), metadataLines)
+	`, escapeAppleScript(persistentID), metadataLines, artworkLines)
 
-	if err := a.runAppleScript(script); err != nil {
+	if err = a.runAppleScript(script); err != nil {
 		return fmt.Errorf("failed to update track: %w", err)
 	}
 	return nil
@@ -446,6 +517,9 @@ func (a *App) updateAppleMusicTrack(persistentID string, song SongReadable) erro
 func (a *App) addTrackToAppleMusic(song SongReadable) (string, error) {
 	if song.Filepath == "" {
 		return "", fmt.Errorf("song has no filepath")
+	}
+	if err := a.writeSongMetadataInternal(song.ID); err != nil {
+		return "", fmt.Errorf("failed to write source metadata before adding to Apple Music: %w", err)
 	}
 
 	absPath, err := a.staticFilePath(song.Filepath)

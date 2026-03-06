@@ -2,6 +2,7 @@ package backend
 
 import (
 	"database/sql"
+	"runtime"
 	"time"
 )
 
@@ -18,13 +19,22 @@ func (a *App) GetSettings() (*Settings, error) {
 	if err == sql.ErrNoRows {
 		// Initialize default settings
 		now := time.Now().Unix()
-		if _, err := a.db.Exec(`INSERT INTO settings (id, clear_track_number_on_upload, import_to_apple_music, automatically_make_singles, updated_at) VALUES (1, 0, 0, 0, ?)`, now); err != nil {
+		importToAppleMusic := runtime.GOOS == "darwin"
+		if _, err := a.db.Exec(`INSERT INTO settings (id, clear_track_number_on_upload, import_to_apple_music, automatically_make_singles, updated_at) VALUES (1, 0, ?, 0, ?)`, importToAppleMusic, now); err != nil {
 			return nil, err
 		}
-		return &Settings{ID: 1, UpdatedAt: now}, nil
+		return &Settings{
+			ID:                 1,
+			ImportToAppleMusic: importToAppleMusic,
+			UpdatedAt:          now,
+		}, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if runtime.GOOS != "darwin" {
+		s.ImportToAppleMusic = false
 	}
 	s.UpdatedAt = updatedAt.Int64
 	return &s, nil
@@ -45,7 +55,8 @@ func (a *App) UpdateSettings(input UpdateSettingsInput) (*Settings, error) {
 		}
 	}
 	if input.ImportToAppleMusic != nil {
-		if _, err := tx.Exec(`UPDATE settings SET import_to_apple_music = ? WHERE id = 1`, *input.ImportToAppleMusic); err != nil {
+		importToAppleMusic := runtime.GOOS == "darwin" && *input.ImportToAppleMusic
+		if _, err := tx.Exec(`UPDATE settings SET import_to_apple_music = ? WHERE id = 1`, importToAppleMusic); err != nil {
 			tx.Rollback()
 			return nil, err
 		}

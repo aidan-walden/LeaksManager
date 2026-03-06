@@ -60,9 +60,16 @@ func (a *App) GetInitialData() (*InitialData, error) {
 }
 
 func (a *App) checkUnsyncedChanges() (bool, error) {
-	var count int
+	settings, err := a.GetSettings()
+	if err != nil {
+		return false, err
+	}
+	if !settings.ImportToAppleMusic {
+		return false, nil
+	}
 
-	err := a.db.QueryRow("SELECT COUNT(*) FROM songs WHERE synced = 0").Scan(&count)
+	var count int
+	err = a.db.QueryRow("SELECT COUNT(*) FROM songs WHERE synced = 0").Scan(&count)
 	if err != nil {
 		return false, err
 	}

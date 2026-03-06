@@ -82,7 +82,6 @@ export const UpdateProducerWithAliases = wrapMutating(
 	bindings.UpdateProducerWithAliases
 );
 export const DeleteProducer = wrapMutating('DeleteProducer', bindings.DeleteProducer);
-export const UpdateSettings = wrapMutating('UpdateSettings', bindings.UpdateSettings);
 export const SaveUploadedFile = wrapMutating('SaveUploadedFile', bindings.SaveUploadedFile);
 export const SaveArtwork = wrapMutating('SaveArtwork', bindings.SaveArtwork);
 export const DeleteFile = wrapMutating('DeleteFile', bindings.DeleteFile);
@@ -106,3 +105,14 @@ export const CreateSongsWithMetadata = wrapSyncMutating(
 	bindings.CreateSongsWithMetadata
 );
 export const UploadSongs = wrapSyncMutating('UploadSongs', bindings.UploadSongs);
+
+export const UpdateSettings = async (...args: Parameters<typeof bindings.UpdateSettings>) => {
+	try {
+		const result = await bindings.UpdateSettings(...args);
+		syncState.configure(result.importToAppleMusic);
+		return result;
+	} catch (error) {
+		notifyRuntimeError(error, 'UpdateSettings');
+		throw error;
+	}
+};

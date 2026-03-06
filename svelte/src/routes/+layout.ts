@@ -8,9 +8,7 @@ export const trailingSlash = 'always';
 export const load = async () => {
 	const data = await GetInitialData();
 
-	if (data.hasUnsyncedChanges) {
-		syncState.markChanged();
-	}
+	syncState.configure(data.settings.importToAppleMusic, data.hasUnsyncedChanges);
 
 	return {
 		// wrap in Promise.resolve for component compatibility

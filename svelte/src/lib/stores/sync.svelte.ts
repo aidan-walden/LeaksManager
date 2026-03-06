@@ -1,61 +1,75 @@
 export class SyncState {
-    hasChanges = $state(false);
-    isDismissed = $state(false);
-    isSyncing = $state(false);
-    syncProgress = $state<SyncProgress | null>(null);
-    lastSyncError = $state<SyncErrorState | null>(null);
+	hasChanges = $state(false);
+	isDismissed = $state(false);
+	isSyncing = $state(false);
+	isAppleMusicEnabled = $state(false);
+	syncProgress = $state<SyncProgress | null>(null);
+	lastSyncError = $state<SyncErrorState | null>(null);
 
-    markChanged() {
-        this.hasChanges = true;
-    }
+	configure(isEnabled: boolean, hasChanges = this.hasChanges) {
+		this.isAppleMusicEnabled = isEnabled;
+		this.hasChanges = isEnabled && hasChanges;
+		if (!isEnabled) {
+			this.isDismissed = false;
+			this.isSyncing = false;
+			this.syncProgress = null;
+			this.lastSyncError = null;
+		}
+	}
 
-    dismiss() {
-        this.isDismissed = true;
-    }
+	markChanged() {
+		if (!this.isAppleMusicEnabled) return;
+		this.hasChanges = true;
+	}
 
-    startSync() {
-        this.isSyncing = true;
-        this.syncProgress = { current: 0, total: 0 };
-        this.lastSyncError = null;
-    }
+	dismiss() {
+		this.isDismissed = true;
+	}
 
-    updateProgress(current: number, total: number) {
-        if (this.syncProgress) {
-            this.syncProgress.current = current;
-            this.syncProgress.total = total;
-        }
-    }
+	startSync() {
+		if (!this.isAppleMusicEnabled) return;
+		this.isSyncing = true;
+		this.syncProgress = { current: 0, total: 0 };
+		this.lastSyncError = null;
+	}
 
-    finishSync(success: boolean, error?: SyncErrorState) {
-        this.isSyncing = false;
-        this.syncProgress = null;
+	updateProgress(current: number, total: number) {
+		if (this.syncProgress) {
+			this.syncProgress.current = current;
+			this.syncProgress.total = total;
+		}
+	}
 
-        if (success) {
-            this.hasChanges = false;
-            this.isDismissed = false;
-            this.lastSyncError = null;
-        } else if (error) {
-            this.lastSyncError = error;
-            // keep hasChanges true so card remains visible
-        }
-    }
+	finishSync(success: boolean, error?: SyncErrorState) {
+		this.isSyncing = false;
+		this.syncProgress = null;
 
-    clearError() {
-        this.lastSyncError = null;
-    }
+		if (success) {
+			this.hasChanges = false;
+			this.isDismissed = false;
+			this.lastSyncError = null;
+		} else if (error) {
+			this.lastSyncError = error;
+			// keep hasChanges true so card remains visible
+		}
+	}
 
-    get shouldShow() {
-        return this.hasChanges && !this.isDismissed;
-    }
+	clearError() {
+		this.lastSyncError = null;
+	}
 
-    get progressPercent() {
-        if (!this.syncProgress || this.syncProgress.total === 0) return 0;
-        return Math.round((this.syncProgress.current / this.syncProgress.total) * 100);
-    }
+	get shouldShow() {
+		return this.isAppleMusicEnabled && this.hasChanges && !this.isDismissed;
+	}
 
-    get hasError() {
-        return this.lastSyncError !== null;
-    }
+	get progressPercent() {
+		if (!this.syncProgress || this.syncProgress.total === 0) return 0;
+		return Math.round((this.syncProgress.current / this.syncProgress.total) * 100);
+	}
+
+	get hasError() {
+		return this.lastSyncError !== null;
+	}
 }
 
 type SyncProgress = {

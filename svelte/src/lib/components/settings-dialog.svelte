@@ -3,6 +3,7 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { toast } from 'svelte-sonner';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { UpdateSettings, type Settings } from '$lib/wails';
@@ -77,18 +78,35 @@
 					Automatically make songs with no album into singles
 				</Label>
 			</div>
-			{#if isServerMac}
-				<div class="flex items-center gap-4">
-					<Checkbox
-						id="import-to-apple-music"
-						checked={importToAppleMusic}
-						onCheckedChange={(checked) => (importToAppleMusic = checked === true)}
-					/>
-					<Label for="import-to-apple-music" class="text-left">
-						Import songs to Apple Music via AppleScript
-					</Label>
-				</div>
-			{/if}
+			<Tooltip.Provider>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<div class="flex items-start gap-4" {...props}>
+								<Checkbox
+									id="import-to-apple-music"
+									checked={importToAppleMusic}
+									disabled={!isServerMac}
+									onCheckedChange={(checked) => (importToAppleMusic = checked === true)}
+								/>
+								<div class="space-y-1">
+									<Label for="import-to-apple-music" class="text-left">
+										Import songs to Apple Music via AppleScript
+									</Label>
+									{#if !isServerMac}
+										<p class="text-sm text-muted-foreground">
+											This setting is only available on macOS.
+										</p>
+									{/if}
+								</div>
+							</div>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content side="top">
+						Requires executing commands automatically in the terminal
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		</div>
 		<Dialog.Footer>
 			<Button onclick={handleSave} disabled={isSubmitting}>
