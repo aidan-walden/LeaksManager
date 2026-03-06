@@ -284,57 +284,125 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 	}
 }
 
+// escapeAppleScript escapes backslashes and double quotes for AppleScript string interpolation
+func escapeAppleScript(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
 // verifyAppleMusicTrack checks if a track with the given persistent ID exists
 func (a *App) verifyAppleMusicTrack(persistentID string) (bool, error) {
-	// TODO: Implement AppleScript to check if track exists
-	// tell application "Music"
-	//     exists (first track whose persistent ID is "{persistentID}")
-	// end tell
-	return false, fmt.Errorf("TODO: Implement verifyAppleMusicTrack")
+	script := fmt.Sprintf(`
+		tell application "Music"
+			try
+				first track whose persistent ID is "%s"
+				return "true"
+			on error
+				return "false"
+			end try
+		end tell
+	`, escapeAppleScript(persistentID))
+
+	cmd := exec.Command("osascript", "-e", script)
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to verify track: %w", err)
+	}
+
+	return strings.TrimSpace(string(out)) == "true", nil
 }
 
 // findAppleMusicTrack searches for a track in Apple Music library
 // Returns persistent ID if found, empty string if not found
 func (a *App) findAppleMusicTrack(song SongReadable) (string, error) {
-	// TODO: Implement AppleScript search logic
-	// Search by: name, artist, album
-	// tell application "Music"
-	//     set matches to (every track whose name is "{name}" and artist is "{artist}")
-	//     if (count of matches) > 0 then
-	//         return persistent ID of first item of matches
-	//     end if
-	// end tell
-	return "", fmt.Errorf("TODO: Implement findAppleMusicTrack")
+	script := fmt.Sprintf(`
+		tell application "Music"
+			set matches to (every track of playlist "Library" whose name is "%s" and artist is "%s")
+			if (count of matches) > 0 then
+				return persistent ID of first item of matches
+			else
+				return ""
+			end if
+		end tell
+	`, escapeAppleScript(song.Name), escapeAppleScript(song.Artist))
+
+	cmd := exec.Command("osascript", "-e", script)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to search for track: %w", err)
+	}
+
+	return strings.TrimSpace(string(out)), nil
+}
+
+// buildMetadataScript builds AppleScript lines to set metadata on a track variable
+func buildMetadataScript(trackVar string, song SongReadable) string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf(`set name of %s to "%s"`, trackVar, escapeAppleScript(song.Name)))
+	lines = append(lines, fmt.Sprintf(`set artist of %s to "%s"`, trackVar, escapeAppleScript(song.Artist)))
+
+	if song.Album != nil {
+		lines = append(lines, fmt.Sprintf(`set album of %s to "%s"`, trackVar, escapeAppleScript(song.Album.Name)))
+	}
+	if song.Genre != nil {
+		lines = append(lines, fmt.Sprintf(`set genre of %s to "%s"`, trackVar, escapeAppleScript(*song.Genre)))
+	}
+	if song.Year != nil {
+		lines = append(lines, fmt.Sprintf(`set year of %s to %d`, trackVar, *song.Year))
+	}
+	if song.TrackNumber != nil {
+		lines = append(lines, fmt.Sprintf(`set track number of %s to %d`, trackVar, *song.TrackNumber))
+	}
+
+	return strings.Join(lines, "\n\t\t")
 }
 
 // updateAppleMusicTrack updates an existing track's metadata via AppleScript
 func (a *App) updateAppleMusicTrack(persistentID string, song SongReadable) error {
-	// TODO: Implement AppleScript metadata update
-	// tell application "Music"
-	//     set t to (first track whose persistent ID is "{persistentID}")
-	//     set name of t to "{song.Name}"
-	//     set artist of t to "{artistNames}"
-	//     set album of t to "{song.Album.Name}"
-	//     set genre of t to "{song.Genre}"
-	//     set year of t to {song.Year}
-	//     set track number of t to {song.TrackNumber}
-	// end tell
-	return fmt.Errorf("TODO: Implement updateAppleMusicTrack")
+	metadataLines := buildMetadataScript("t", song)
+	script := fmt.Sprintf(`
+		tell application "Music"
+			set t to first track whose persistent ID is "%s"
+			%s
+		end tell
+	`, escapeAppleScript(persistentID), metadataLines)
+
+	cmd := exec.Command("osascript", "-e", script)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to update track: %w", err)
+	}
+	return nil
 }
 
 // addTrackToAppleMusic adds a new track file to Apple Music library
 // Returns the persistent ID of the newly added track
 func (a *App) addTrackToAppleMusic(song SongReadable) (string, error) {
-	// TODO: Implement AppleScript to add track file
-	// tell application "Music"
-	//     set newTrack to add POSIX file "{song.Filepath}"
-	//     -- Update metadata after adding
-	//     set name of newTrack to "{song.Name}"
-	//     set artist of newTrack to "{artistNames}"
-	//     -- etc.
-	//     return persistent ID of newTrack
-	// end tell
-	return "", fmt.Errorf("TODO: Implement addTrackToAppleMusic")
+	if song.Filepath == "" {
+		return "", fmt.Errorf("song has no filepath")
+	}
+
+	absPath, err := a.staticFilePath(song.Filepath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve filepath: %w", err)
+	}
+
+	metadataLines := buildMetadataScript("newTrack", song)
+	script := fmt.Sprintf(`
+		tell application "Music"
+			set newTrack to add POSIX file "%s"
+			%s
+			return persistent ID of newTrack
+		end tell
+	`, escapeAppleScript(absPath), metadataLines)
+
+	cmd := exec.Command("osascript", "-e", script)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to add track: %w", err)
+	}
+
+	return strings.TrimSpace(string(out)), nil
 }
 
 // markSongSynced updates a song to synced=1 and saves Apple Music ID
