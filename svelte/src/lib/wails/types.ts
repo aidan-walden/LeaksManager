@@ -197,6 +197,7 @@ export interface UpdateSongInput {
 	id: number;
 	name?: string;
 	albumId?: number;
+	albumName?: string;
 	artistIds: number[];
 	producerIds: number[];
 	trackNumber?: number;

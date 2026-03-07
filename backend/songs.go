@@ -2,6 +2,7 @@ package backend
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -80,10 +81,20 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 		return err
 	}
 
+	albumID := input.AlbumID
+	if input.AlbumName != nil {
+		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, *input.AlbumName, input.ArtistIDs, now)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		albumID = resolvedAlbumID
+	}
+
 	// Update song
 	_, err = tx.Exec(
 		`UPDATE songs SET name = COALESCE(?, name), album_id = ?, track_number = ?, updated_at = ? WHERE id = ?`,
-		input.Name, input.AlbumID, input.TrackNumber, now, input.ID,
+		input.Name, albumID, input.TrackNumber, now, input.ID,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -125,6 +136,59 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 	}
 
 	return tx.Commit()
+}
+
+func (a *App) resolveAlbumIDForSongUpdate(
+	tx *sql.Tx,
+	albumName string,
+	artistIDs []int,
+	now int64,
+) (*int, error) {
+	trimmedName := strings.TrimSpace(albumName)
+	if trimmedName == "" {
+		return nil, nil
+	}
+
+	var existingAlbumID int
+	err := tx.QueryRow(
+		`SELECT id FROM albums WHERE LOWER(name) = LOWER(?)`,
+		trimmedName,
+	).Scan(&existingAlbumID)
+	if err == nil {
+		return &existingAlbumID, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	if len(artistIDs) == 0 {
+		return nil, fmt.Errorf("album must have at least one artist")
+	}
+
+	result, err := tx.Exec(
+		`INSERT INTO albums (name, created_at, updated_at) VALUES (?, ?, ?)`,
+		trimmedName, now, now,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	albumID64, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	albumID := int(albumID64)
+	for i, artistID := range artistIDs {
+		if _, err := tx.Exec(
+			`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`,
+			albumID, artistID, i, now,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	return &albumID, nil
 }
 
 func (a *App) DeleteSong(songID int) error {

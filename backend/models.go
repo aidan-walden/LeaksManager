@@ -218,6 +218,7 @@ type UpdateSongInput struct {
 	ID          int     `json:"id"`
 	Name        *string `json:"name"`
 	AlbumID     *int    `json:"albumId"`
+	AlbumName   *string `json:"albumName"`
 	ArtistIDs   []int   `json:"artistIds"`
 	ProducerIDs []int   `json:"producerIds"`
 	TrackNumber *int    `json:"trackNumber"`

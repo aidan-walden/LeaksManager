@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import CreateCard from './create-card.svelte';
 	import type { EditableSong } from '../columns';
 	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
-	import AlbumCombobox from '$lib/components/ui/album-combobox.svelte';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import { onMount } from 'svelte';
 	import { UpdateSong, WriteSongMetadata, type Album, type Song } from '$lib/wails';
@@ -57,17 +57,34 @@
 	// Store selected artist IDs
 	let selectedArtistIds = $state<number[]>([]);
 	let selectedProducerIds = $state<number[]>([]);
-	let selectedAlbumId = $state<number | null>(null);
 	let trackNumber = $state<number | null>(null);
+	let songName = $state('');
+	let albumName = $state('');
+	let manualAlbumName = $state('');
+	let isSingle = $state(false);
 
-	const selectedAlbum = $derived(albums.find((album) => album.id === selectedAlbumId) ?? null);
-	const selectedAlbumName = $derived(selectedAlbum?.name ?? '');
+	function normalizeAlbumName(value: string) {
+		return value.trim().toLocaleLowerCase();
+	}
+
+	function makeSingleAlbumName(title: string) {
+		return `${title.trim()} - Single`;
+	}
+
+	function isSingleAlbum(title: string, album: string) {
+		return normalizeAlbumName(album) === normalizeAlbumName(makeSingleAlbumName(title));
+	}
+
+	const matchedAlbum = $derived(
+		albums.find((album) => normalizeAlbumName(album.name) === normalizeAlbumName(albumName)) ?? null
+	);
 
 	// Calculate total tracks in the selected album (including this song if editing)
 	const totalTracks = $derived.by(() => {
-		if (!selectedAlbum) return 0;
+		if (isSingle) return 1;
+		if (!matchedAlbum) return 0;
 		// Count songs in the album
-		const songsInAlbum = selectedAlbum.songs?.length ?? 0;
+		const songsInAlbum = matchedAlbum.songs?.length ?? 0;
 		// If we're creating a new song and an album is selected, it will be added
 		// If we're editing, the song is already counted
 		return song ? songsInAlbum : songsInAlbum + 1;
@@ -77,10 +94,10 @@
 	let initialValues = $state<{
 		name: string;
 		album: string;
-		albumId: number | null;
 		artistIds: number[];
 		producerIds: number[];
 		trackNumber: number | null;
+		isSingle: boolean;
 		hasFile: boolean;
 	} | null>(null);
 
@@ -95,24 +112,30 @@
 				selectedArtistIds = artistIds;
 				selectedProducerIds = producerIds;
 
-				selectedAlbumId = song.album ? song.album.id : null;
 				trackNumber = song.trackNumber ?? null;
+				songName = song.name;
+				albumName = song.album?.name ?? '';
+				isSingle = isSingleAlbum(song.name, song.album?.name ?? '');
+				manualAlbumName = isSingle ? '' : song.album?.name ?? '';
 
 				initialValues = {
 					name: song.name,
 					album: song.album?.name || '',
-					albumId: song.album ? song.album.id : null,
 					artistIds: [...artistIds],
 					producerIds: [...producerIds],
 					trackNumber: song.trackNumber ?? null,
+					isSingle,
 					hasFile: false
 				};
 			} else {
 				// Create mode: reset to empty state
 				selectedArtistIds = [];
 				selectedProducerIds = [];
-				selectedAlbumId = null;
 				trackNumber = null;
+				songName = '';
+				albumName = '';
+				manualAlbumName = '';
+				isSingle = false;
 				initialValues = null;
 			}
 			file = null;
@@ -120,10 +143,25 @@
 			// Dialog closed - reset state
 			selectedArtistIds = [];
 			selectedProducerIds = [];
-			selectedAlbumId = null;
 			trackNumber = null;
+			songName = '';
+			albumName = '';
+			manualAlbumName = '';
+			isSingle = false;
 			initialValues = null;
 			file = null;
+		}
+	});
+
+	$effect(() => {
+		if (!open) return;
+		if (isSingle) {
+			albumName = makeSingleAlbumName(songName);
+			return;
+		}
+
+		if (albumName !== manualAlbumName) {
+			manualAlbumName = albumName;
 		}
 	});
 
@@ -146,17 +184,12 @@
 		const initial = initialValues;
 
 		// Get current form values
-		const formElement = document.getElementById('create-song-form') as HTMLFormElement;
-		if (!formElement) return true;
-
-		const formData = new FormData(formElement);
-		const currentName = formData.get('name') as string;
-		const currentAlbum = formData.get('album') as string;
+		const currentName = songName;
+		const currentAlbum = albumName;
 
 		// Check if any values changed
 		const nameChanged = currentName !== initial.name;
-		const albumChanged =
-			currentAlbum !== initial.album || (selectedAlbumId ?? null) !== initial.albumId;
+		const albumChanged = currentAlbum !== initial.album;
 		const artistsChanged =
 			selectedArtistIds.length !== initial.artistIds.length ||
 			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
@@ -164,6 +197,7 @@
 		const producersChanged =
 			selectedProducerIds.length !== initial.producerIds.length ||
 			selectedProducerIds.some((id, index) => id !== initial.producerIds[index]);
+		const singleChanged = isSingle !== initial.isSingle;
 
 		const fileChanged = initial.hasFile;
 
@@ -174,13 +208,12 @@
 			artistsChanged ||
 			trackNumberChanged ||
 			producersChanged ||
+			singleChanged ||
 			fileChanged
 		);
 	};
 
 	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
-		const name = formData.get('name') as string;
-
 		if (!song) {
 			throw new Error('Song editing requires an existing song');
 		}
@@ -188,8 +221,8 @@
 		// update existing song
 		await UpdateSong({
 			id: song.id,
-			name,
-			albumId: selectedAlbumId ?? undefined,
+			name: songName,
+			albumName: albumName.trim() || undefined,
 			artistIds: selectedArtistIds,
 			producerIds: selectedProducerIds,
 			trackNumber: trackNumber ?? undefined
@@ -211,7 +244,7 @@
 				name="name"
 				type="text"
 				placeholder="Song Name"
-				value={song ? song.name : ''}
+				bind:value={songName}
 				required
 				disabled={loading}
 			/>
@@ -236,7 +269,41 @@
 		</div>
 		<div class="grid gap-2">
 			<Label>Album</Label>
-			<AlbumCombobox {albums} bind:value={selectedAlbumId} disabled={loading} />
+			<Input
+				id="album"
+				name="album"
+				type="text"
+				list="song-album-suggestions"
+				placeholder="Album Name"
+				bind:value={albumName}
+				disabled={loading || isSingle}
+			/>
+			<datalist id="song-album-suggestions">
+				{#each albums as album (album.id)}
+					<option value={album.name}></option>
+				{/each}
+			</datalist>
+		</div>
+		<div class="flex items-center gap-3">
+			<Checkbox
+				id="song-is-single"
+				checked={isSingle}
+				disabled={loading}
+				onCheckedChange={(checked) => {
+					const nextChecked = checked === true;
+					if (nextChecked === isSingle) return;
+
+					if (nextChecked) {
+						manualAlbumName = albumName;
+						albumName = makeSingleAlbumName(songName);
+					} else {
+						albumName = manualAlbumName;
+					}
+
+					isSingle = nextChecked;
+				}}
+			/>
+			<Label for="song-is-single">Song is a single</Label>
 		</div>
 		<div class="grid gap-2">
 			<Label for="track-number">Track Number</Label>
@@ -249,7 +316,7 @@
 					min="1"
 					placeholder={song?.trackNumber?.toString() ?? ''}
 					bind:value={trackNumber}
-					disabled={loading || !selectedAlbumId}
+					disabled={loading || (!albumName.trim() && !isSingle)}
 					class="w-20"
 				/>
 				<span class="text-sm text-muted-foreground">of</span>
