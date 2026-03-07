@@ -8,7 +8,6 @@
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import { onMount } from 'svelte';
 	import { UpdateSong, WriteSongMetadata, type Album, type Song } from '$lib/wails';
 	import { toAssetUrl } from '$lib/utils';
 
@@ -34,24 +33,44 @@
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
 
-	// Fetch artwork blob on mount if song has artwork
-	onMount(async () => {
-		if (song && song.artworkPath) {
-			try {
-				const response = await fetch(toAssetUrl(song.artworkPath) ?? '');
-				const artworkBlob = await response.blob();
-				blob = artworkBlob;
-			} catch (error) {
-				console.error('Failed to fetch artwork:', error);
-			}
-		}
-	});
-
 	// Update blob when file changes
 	$effect(() => {
 		if (file) {
 			blob = new Blob([file], { type: file.type });
 		}
+	});
+
+	$effect(() => {
+		if (file || !song?.artworkPath) {
+			if (!file) {
+				blob = null;
+			}
+			return;
+		}
+
+		let cancelled = false;
+
+		(async () => {
+			try {
+				const response = await fetch(toAssetUrl(song.artworkPath) ?? '');
+				if (!response.ok) {
+					throw new Error(`failed to fetch artwork: ${response.status}`);
+				}
+				const artworkBlob = await response.blob();
+				if (!cancelled) {
+					blob = artworkBlob;
+				}
+			} catch (error) {
+				if (!cancelled) {
+					blob = null;
+				}
+				console.error('Failed to fetch artwork:', error);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	// Store selected artist IDs

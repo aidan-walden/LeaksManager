@@ -75,6 +75,14 @@ let pendingUploadData: any = $state(null);
 let unmappedArtistsList = $state<string[]>([]);
 let filesWithArtworkCount = $state(0);
 
+function canInheritArtwork(filesData: FileData[], albumId?: number) {
+	if (albumId != null) {
+		return true;
+	}
+
+	return filesData.some((file) => file.metadata.artwork && file.albumId != null);
+}
+
 // helper to convert File to FileUpload (base64)
 async function fileToUpload(file: File): Promise<FileUpload> {
 	const base64 = await new Promise<string>((resolve, reject) => {
@@ -121,8 +129,12 @@ async function handleUpload(files: File[], albumId?: number) {
 			unmappedArtistsList = [];
 		}
 
-		// check if any files have embedded artwork
-		if (result.filesWithArtwork > 0) {
+		const shouldUseEmbeddedArtworkByDefault =
+			result.filesWithArtwork > 0 && !canInheritArtwork(result.filesData, albumId);
+		pendingUploadData.useEmbeddedArtwork = shouldUseEmbeddedArtworkByDefault;
+
+		// only prompt when embedded artwork exists and album inheritance is possible
+		if (result.filesWithArtwork > 0 && canInheritArtwork(result.filesData, albumId)) {
 			filesWithArtworkCount = result.filesWithArtwork;
 			showArtworkChoiceDialog = true;
 			return; // wait for user choice
@@ -130,13 +142,12 @@ async function handleUpload(files: File[], albumId?: number) {
 
 		// check if any artists need mapping
 		if (unmappedArtistsList.length > 0) {
-			pendingUploadData.useEmbeddedArtwork = false;
 			showArtistMappingDialog = true;
 			return; // wait for user mapping
 		}
 
 		// no dialogs needed, proceed directly
-		await createSongs({}, false);
+		await createSongs({}, shouldUseEmbeddedArtworkByDefault);
 	} catch (error) {
 		console.error('Error uploading:', error);
 	}
