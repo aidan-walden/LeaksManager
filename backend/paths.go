@@ -33,7 +33,13 @@ func (a *App) staticFilePath(relPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(a.staticPath, cleaned), nil
+
+	fullPath, err := filepath.Abs(filepath.Join(a.staticPath, cleaned))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path for %s: %w", relPath, err)
+	}
+
+	return fullPath, nil
 }
 
 func isDevMode(ctx context.Context) bool {

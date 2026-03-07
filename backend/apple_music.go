@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"log"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -220,6 +221,7 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 	// Get full song details
 	song, err := a.getSongReadableByID(songID)
 	if err != nil {
+		log.Printf("[AppleMusicSync] song_id=%d step=load_song error=%v", songID, err)
 		return SyncItemResult{
 			SongID:       songID,
 			Status:       "failed",
@@ -234,7 +236,10 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 	if song.AppleMusicID != nil && *song.AppleMusicID != "" {
 		// Verify track still exists
 		exists, err := a.verifyAppleMusicTrack(*song.AppleMusicID)
-		if err != nil || !exists {
+		if err != nil {
+			log.Printf("[AppleMusicSync] song_id=%d song=%q step=verify_existing_track apple_music_id=%q error=%v", song.ID, song.Name, *song.AppleMusicID, err)
+			appleMusicID = ""
+		} else if !exists {
 			// Track not found, need to search or add
 			appleMusicID = ""
 		} else {
@@ -245,7 +250,9 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 	// If no valid Apple Music ID, search for track
 	if appleMusicID == "" {
 		foundID, err := a.findAppleMusicTrack(song)
-		if err == nil && foundID != "" {
+		if err != nil {
+			log.Printf("[AppleMusicSync] song_id=%d song=%q step=find_track error=%v", song.ID, song.Name, err)
+		} else if foundID != "" {
 			appleMusicID = foundID
 		}
 	}
@@ -255,6 +262,7 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 		// Update existing track
 		err := a.updateAppleMusicTrack(appleMusicID, song)
 		if err != nil {
+			log.Printf("[AppleMusicSync] song_id=%d song=%q step=update_track apple_music_id=%q error=%v", song.ID, song.Name, appleMusicID, err)
 			return SyncItemResult{
 				SongID:       songID,
 				SongName:     song.Name,
@@ -267,6 +275,7 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 		// Add new track to Apple Music
 		newID, err := a.addTrackToAppleMusic(song)
 		if err != nil {
+			log.Printf("[AppleMusicSync] song_id=%d song=%q step=add_track filepath=%q error=%v", song.ID, song.Name, song.Filepath, err)
 			return SyncItemResult{
 				SongID:       songID,
 				SongName:     song.Name,
@@ -281,6 +290,7 @@ func (a *App) syncSingleSong(songID int) SyncItemResult {
 	// Save Apple Music ID and mark as synced
 	err = a.markSongSynced(songID, appleMusicID)
 	if err != nil {
+		log.Printf("[AppleMusicSync] song_id=%d song=%q step=mark_synced apple_music_id=%q error=%v", song.ID, song.Name, appleMusicID, err)
 		return SyncItemResult{
 			SongID:       songID,
 			SongName:     song.Name,
@@ -306,6 +316,15 @@ func escapeAppleScript(s string) string {
 }
 
 func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
+	return a.runAppleScriptCommand(script)
+}
+
+func (a *App) runAppleScript(script string) error {
+	_, err := a.runAppleScriptCommand(script)
+	return err
+}
+
+func (a *App) runAppleScriptCommand(script string) ([]byte, error) {
 	if !a.isAppleMusicImportEnabled() {
 		return nil, nil
 	}
@@ -314,19 +333,23 @@ func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
 	}
 
 	cmd := exec.Command("osascript", "-e", script)
-	return cmd.Output()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[AppleScript] osascript failed: %v\n[AppleScript] output:\n%s\n[AppleScript] script:\n%s", err, strings.TrimSpace(string(output)), formatAppleScriptForLog(script))
+		if len(output) > 0 {
+			return output, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return output, err
+	}
+	return output, nil
 }
 
-func (a *App) runAppleScript(script string) error {
-	if !a.isAppleMusicImportEnabled() {
-		return nil
+func formatAppleScriptForLog(script string) string {
+	lines := strings.Split(script, "\n")
+	for i, line := range lines {
+		lines[i] = fmt.Sprintf("%02d: %s", i+1, line)
 	}
-	if err := a.ensureAppleMusicRunning(); err != nil {
-		return err
-	}
-
-	cmd := exec.Command("osascript", "-e", script)
-	return cmd.Run()
+	return strings.Join(lines, "\n")
 }
 
 func (a *App) ensureAppleMusicRunning() error {
