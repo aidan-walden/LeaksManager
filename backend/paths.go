@@ -1,9 +1,11 @@
 package backend
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -32,4 +34,55 @@ func (a *App) staticFilePath(relPath string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(a.staticPath, cleaned), nil
+}
+
+func isDevMode(ctx context.Context) bool {
+	if ctx != nil {
+		if buildType, _ := ctx.Value("buildtype").(string); buildType == "dev" {
+			return true
+		}
+	}
+
+	// wails dev sets these env vars for the app process
+	if os.Getenv("frontenddevserverurl") != "" || os.Getenv("assetdir") != "" || os.Getenv("devserver") != "" {
+		return true
+	}
+
+	// local repo checkout without an existing db should still use the project paths
+	if _, err := os.Stat("wails.json"); err == nil {
+		if info, err := os.Stat("svelte"); err == nil && info.IsDir() {
+			return true
+		}
+	}
+
+	return false
+}
+
+func userDataDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to determine user home directory: %w", err)
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(homeDir, "Library", "Application Support", "leaks-manager"), nil
+	case "windows":
+		return filepath.Join(homeDir, "AppData", "Roaming", "leaks-manager"), nil
+	default:
+		return filepath.Join(homeDir, ".local", "share", "leaks-manager"), nil
+	}
+}
+
+func resolveAppPaths(ctx context.Context) (dbPath string, staticPath string, err error) {
+	if isDevMode(ctx) {
+		return filepath.Join("svelte", "local.db"), "svelte", nil
+	}
+
+	dataDir, err := userDataDir()
+	if err != nil {
+		return "", "", err
+	}
+
+	return filepath.Join(dataDir, "local.db"), dataDir, nil
 }

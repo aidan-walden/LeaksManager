@@ -33,8 +33,8 @@ func main() {
 		HideWindowOnClose: false,
 		BackgroundColour:  &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		AssetServer: &assetserver.Options{
-			Assets:  assets,
-			Handler: backend.CreateUploadsHandler(),
+			Assets:     assets,
+			Middleware: backend.CreateUploadsMiddleware(),
 		},
 		Menu:             nil,
 		Logger:           nil,
