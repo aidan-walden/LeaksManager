@@ -83,7 +83,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 
 	albumID := input.AlbumID
 	if input.AlbumName != nil {
-		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, *input.AlbumName, input.ArtistIDs, now)
+		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, input.ID, *input.AlbumName, input.ArtistIDs, now)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -140,6 +140,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 
 func (a *App) resolveAlbumIDForSongUpdate(
 	tx *sql.Tx,
+	songID int,
 	albumName string,
 	artistIDs []int,
 	now int64,
@@ -165,9 +166,14 @@ func (a *App) resolveAlbumIDForSongUpdate(
 		return nil, fmt.Errorf("album must have at least one artist")
 	}
 
+	var artworkPath *string
+	if err := tx.QueryRow(`SELECT artwork_path FROM songs WHERE id = ?`, songID).Scan(&artworkPath); err != nil {
+		return nil, err
+	}
+
 	result, err := tx.Exec(
-		`INSERT INTO albums (name, created_at, updated_at) VALUES (?, ?, ?)`,
-		trimmedName, now, now,
+		`INSERT INTO albums (name, artwork_path, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		trimmedName, artworkPath, now, now,
 	)
 	if err != nil {
 		return nil, err

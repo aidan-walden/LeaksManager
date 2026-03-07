@@ -77,6 +77,7 @@
 	let selectedArtistIds = $state<number[]>([]);
 	let selectedProducerIds = $state<number[]>([]);
 	let trackNumber = $state<number | null>(null);
+	let manualTrackNumber = $state<number | null>(null);
 	let songName = $state('');
 	let albumName = $state('');
 	let manualAlbumName = $state('');
@@ -128,14 +129,16 @@
 				// Edit mode: capture initial values for change detection
 				const artistIds = song.artists?.map((a) => a.id) ?? [];
 				const producerIds = song.producers?.map((p) => p.id) ?? [];
+				const single = isSingleAlbum(song.name, song.album?.name ?? '');
 				selectedArtistIds = artistIds;
 				selectedProducerIds = producerIds;
 
 				trackNumber = song.trackNumber ?? null;
+				manualTrackNumber = song.trackNumber ?? null;
 				songName = song.name;
 				albumName = song.album?.name ?? '';
-				isSingle = isSingleAlbum(song.name, song.album?.name ?? '');
-				manualAlbumName = isSingle ? '' : song.album?.name ?? '';
+				isSingle = single;
+				manualAlbumName = single ? '' : song.album?.name ?? '';
 
 				initialValues = {
 					name: song.name,
@@ -143,7 +146,7 @@
 					artistIds: [...artistIds],
 					producerIds: [...producerIds],
 					trackNumber: song.trackNumber ?? null,
-					isSingle,
+					isSingle: single,
 					hasFile: false
 				};
 			} else {
@@ -151,6 +154,7 @@
 				selectedArtistIds = [];
 				selectedProducerIds = [];
 				trackNumber = null;
+				manualTrackNumber = null;
 				songName = '';
 				albumName = '';
 				manualAlbumName = '';
@@ -163,6 +167,7 @@
 			selectedArtistIds = [];
 			selectedProducerIds = [];
 			trackNumber = null;
+			manualTrackNumber = null;
 			songName = '';
 			albumName = '';
 			manualAlbumName = '';
@@ -315,8 +320,11 @@
 					if (nextChecked) {
 						manualAlbumName = albumName;
 						albumName = makeSingleAlbumName(songName);
+						manualTrackNumber = trackNumber;
+						trackNumber = 1;
 					} else {
 						albumName = manualAlbumName;
+						trackNumber = manualTrackNumber;
 					}
 
 					isSingle = nextChecked;
@@ -335,7 +343,7 @@
 					min="1"
 					placeholder={song?.trackNumber?.toString() ?? ''}
 					bind:value={trackNumber}
-					disabled={loading || (!albumName.trim() && !isSingle)}
+					disabled={loading || isSingle || (!albumName.trim() && !isSingle)}
 					class="w-20"
 				/>
 				<span class="text-sm text-muted-foreground">of</span>
