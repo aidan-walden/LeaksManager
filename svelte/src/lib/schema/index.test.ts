@@ -9,6 +9,7 @@ const serializedFileData = JSON.stringify([
 		metadata: {
 			title: 'Track',
 			artist: 'Artist',
+			albumArtist: 'Artist',
 			album: 'Album',
 			year: 2024,
 			genre: 'Hip-Hop',
@@ -64,5 +65,19 @@ describe('createSongsWithMetadataSchema', () => {
 			throw new Error('expected schema parse failure');
 		}
 		expect(result.error.issues[0]?.message).toContain('artistMapping must be valid JSON');
+	});
+
+	it('rejects artistMapping values that were only asserted previously', () => {
+		const result = createSongsWithMetadataSchema.safeParse({
+			filesData: serializedFileData,
+			artistMapping: JSON.stringify({ Artist: 'not-an-id' }),
+			useEmbeddedArtwork: false
+		});
+
+		expect(result.success).toBe(false);
+		if (result.success) {
+			throw new Error('expected schema parse failure');
+		}
+		expect(result.error.issues[0]?.path).toEqual(['artistMapping', 'Artist']);
 	});
 });

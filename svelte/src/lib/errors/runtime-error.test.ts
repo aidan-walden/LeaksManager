@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getErrorMessage, notifyRuntimeError } from './runtime-error';
+import { createRuntimeErrorNotifier, getErrorMessage } from './runtime-error';
 
 const { toastError } = vi.hoisted(() => ({
 	toastError: vi.fn()
@@ -12,9 +12,12 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 describe('runtime error helpers', () => {
+	let notifier = createRuntimeErrorNotifier();
+
 	beforeEach(() => {
 		toastError.mockReset();
 		vi.restoreAllMocks();
+		notifier = createRuntimeErrorNotifier();
 	});
 
 	it('normalizes different error shapes into messages', () => {
@@ -25,13 +28,11 @@ describe('runtime error helpers', () => {
 
 	it('deduplicates repeated runtime toasts in a short window', () => {
 		vi.useFakeTimers();
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		notifyRuntimeError(new Error('boom'), 'CreateSong');
-		notifyRuntimeError(new Error('boom'), 'CreateSong');
+		notifier.notify(new Error('boom'), 'CreateSong');
+		notifier.notify(new Error('boom'), 'CreateSong');
 
 		expect(toastError).toHaveBeenCalledTimes(1);
-		expect(consoleError).toHaveBeenCalledTimes(1);
 
 		vi.useRealTimers();
 	});

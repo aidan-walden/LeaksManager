@@ -222,8 +222,14 @@ func (a *App) GetProducersWithAliases() ([]ProducerWithAliases, error) {
 		prod.CreatedAt = createdAt.Int64
 		prod.UpdatedAt = updatedAt.Int64
 
-		aliases, _ := a.getAliasesForProducer(prod.ID)
-		songs, _ := a.getSongsForProducer(prod.ID)
+		aliases, err := a.getAliasesForProducer(prod.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load aliases for producer %d: %w", prod.ID, err)
+		}
+		songs, err := a.getSongsForProducer(prod.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load songs for producer %d: %w", prod.ID, err)
+		}
 
 		producers = append(producers, ProducerWithAliases{
 			Producer: prod,

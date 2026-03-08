@@ -4,269 +4,79 @@
 	import ArtistsTab from './inner-view/artists-tab.svelte';
 	import ProducersTab from './inner-view/producers-tab.svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { SongImportController } from '$lib/features/song-import/song-import-controller.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import { setArtistsContext } from '$lib/contexts/artists-context';
 	import { setAlbumsContext } from '$lib/contexts/albums-context';
 	import { setProducersContext } from '$lib/contexts/producers-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
-	import type { PageData } from '../../routes/[tab]/$types';
-	import {
-		UploadAndExtractMetadata,
-		CreateSongsWithMetadata,
-		CleanupFiles,
-		type FileUpload,
-		type FileData,
-		type Artist
-	} from '$lib/wails';
+	import type { TabViewData } from '$lib/view-models/tab-data';
 
-type ArtistsPromise = PageData['artists'];
-type RawArtists = Awaited<ArtistsPromise>;
-type ArtistElement = RawArtists extends Array<infer T> ? (T extends Artist ? T : Artist) : Artist;
-type ArtistForContext = ArtistElement & { image?: string | null };
+	type ArtistForContext = TabViewData['artists'][number] & { image?: string | null };
+	type AlbumElement = TabViewData['albums'][number];
+	type ProducerElement = TabViewData['producers'][number];
 
-type AlbumsPromise = PageData['albums'];
-type RawAlbums = Awaited<AlbumsPromise>;
-type AlbumElement = RawAlbums extends Array<infer T> ? T : never;
+	let { tab, data }: { tab: string; data: TabViewData } = $props();
 
-type ProducersPromise = PageData['producers'];
-type RawProducers = Awaited<ProducersPromise>;
-type ProducerElement = RawProducers extends Array<infer T> ? T : never;
+	// Initialize artists state and set context synchronously
+	let resolvedArtists = $state<ArtistForContext[]>([]);
+	let resolvedAlbums = $state<AlbumElement[]>([]);
+	let resolvedProducers = $state<ProducerElement[]>([]);
 
-let { tab, data }: { tab: string; data: PageData } = $props();
+	// Set context with a getter function to maintain reactivity
+	// Context must be set during component initialization
+	setArtistsContext<ArtistForContext>(() => resolvedArtists);
+	setAlbumsContext<AlbumElement>(() => resolvedAlbums);
+	setProducersContext<ProducerElement>(() => resolvedProducers);
+	const { wailsActions } = getAppServicesContext();
 
-// Initialize artists state and set context synchronously
-let resolvedArtists = $state<ArtistForContext[]>([]);
-let resolvedAlbums = $state<AlbumElement[]>([]);
-let resolvedProducers = $state<ProducerElement[]>([]);
-
-// Set context with a getter function to maintain reactivity
-// Context must be set during component initialization
-setArtistsContext<ArtistForContext>(() => resolvedArtists);
-setAlbumsContext<AlbumElement>(() => resolvedAlbums);
-setProducersContext<ProducerElement>(() => resolvedProducers);
-
-const defaultThumbnail = '/images/default-album.png';
-
-// Update the reactive state when the promise resolves
-$effect(() => {
-	data.artists.then((artists) => {
-		resolvedArtists = artists;
+	const defaultThumbnail = '/images/default-album.png';
+	const songImport = new SongImportController({
+		onComplete: () => invalidateAll(),
+		wailsActions
 	});
-});
 
-$effect(() => {
-	data.albums.then((albums) => {
-		resolvedAlbums = albums;
+	$effect(() => {
+		resolvedArtists = data.artists;
+		resolvedAlbums = data.albums;
+		resolvedProducers = data.producers;
 	});
-});
-
-$effect(() => {
-	data.producers.then((producers) => {
-		resolvedProducers = producers;
-	});
-});
-
-$inspect(tab, 'tab in InnerView');
-
-// Dialog state
-let showArtistMappingDialog = $state(false);
-let showArtworkChoiceDialog = $state(false);
-let pendingUploadData: any = $state(null);
-let unmappedArtistsList = $state<string[]>([]);
-let filesWithArtworkCount = $state(0);
-
-function canInheritArtwork(filesData: FileData[], albumId?: number) {
-	if (albumId != null) {
-		return true;
-	}
-
-	return filesData.some((file) => file.metadata.artwork && file.albumId != null);
-}
-
-// helper to convert File to FileUpload (base64)
-async function fileToUpload(file: File): Promise<FileUpload> {
-	const base64 = await new Promise<string>((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			if (typeof reader.result !== 'string') {
-				reject(new Error('failed to read file as data URL'));
-				return;
-			}
-			const base64Data = reader.result.split(',', 2)[1];
-			if (!base64Data) {
-				reject(new Error('failed to parse base64 data from file'));
-				return;
-			}
-			resolve(base64Data);
-		};
-		reader.onerror = () => reject(reader.error ?? new Error('failed to read file'));
-		reader.readAsDataURL(file);
-	});
-	return {
-		filename: file.name,
-		base64Data: base64
-	};
-}
-
-async function handleUpload(files: File[], albumId?: number) {
-	try {
-		// convert files to base64 for Wails
-		const fileUploads = await Promise.all(files.map(fileToUpload));
-
-		// call Wails binding to upload and extract metadata
-		const result = await UploadAndExtractMetadata(fileUploads, albumId ?? null);
-
-		// store the data for later use
-		pendingUploadData = {
-			filesData: result.filesData,
-			albumId: albumId
-		};
-
-		// store unmapped artists list if any
-		if (result.unmappedArtists && result.unmappedArtists.length > 0) {
-			unmappedArtistsList = result.unmappedArtists;
-		} else {
-			unmappedArtistsList = [];
-		}
-
-		const shouldUseEmbeddedArtworkByDefault =
-			result.filesWithArtwork > 0 && !canInheritArtwork(result.filesData, albumId);
-		pendingUploadData.useEmbeddedArtwork = shouldUseEmbeddedArtworkByDefault;
-
-		// only prompt when embedded artwork exists and album inheritance is possible
-		if (result.filesWithArtwork > 0 && canInheritArtwork(result.filesData, albumId)) {
-			filesWithArtworkCount = result.filesWithArtwork;
-			showArtworkChoiceDialog = true;
-			return; // wait for user choice
-		}
-
-		// check if any artists need mapping
-		if (unmappedArtistsList.length > 0) {
-			showArtistMappingDialog = true;
-			return; // wait for user mapping
-		}
-
-		// no dialogs needed, proceed directly
-		await createSongs({}, shouldUseEmbeddedArtworkByDefault);
-	} catch (error) {
-		console.error('Error uploading:', error);
-	}
-}
-
-async function handleArtworkChoice(useEmbedded: boolean) {
-	if (!pendingUploadData) return;
-
-	pendingUploadData.useEmbeddedArtwork = useEmbedded;
-
-	// Check if we need to show artist mapping dialog
-	if (unmappedArtistsList.length > 0) {
-		showArtistMappingDialog = true;
-		return;
-	}
-
-	// No artist mapping needed, proceed
-	await createSongs({}, useEmbedded);
-}
-
-async function handleArtistMapping(mapping: Record<string, number | 'CREATE_NEW'>) {
-	if (!pendingUploadData) return;
-
-	await createSongs(
-		mapping,
-		pendingUploadData.useEmbeddedArtwork !== undefined ? pendingUploadData.useEmbeddedArtwork : false
-	);
-}
-
-async function handleArtistMappingCancel() {
-	if (!pendingUploadData) return;
-
-	// filter out files that have unmapped artists
-	const filesToKeep = pendingUploadData.filesData.filter((f: FileData) => !f.hasUnmappedArtists);
-	const filesToDelete = pendingUploadData.filesData.filter((f: FileData) => f.hasUnmappedArtists);
-
-	// cleanup files that won't be uploaded
-	if (filesToDelete.length > 0) {
-		const filepaths = filesToDelete.map((f: FileData) => f.filepath);
-		await CleanupFiles(filepaths);
-	}
-
-	// if there are files to keep, create songs for those
-	if (filesToKeep.length > 0) {
-		pendingUploadData.filesData = filesToKeep;
-		await createSongs(
-			{},
-			pendingUploadData.useEmbeddedArtwork !== undefined ? pendingUploadData.useEmbeddedArtwork : false
-		);
-	} else {
-		// all files were skipped
-		pendingUploadData = null;
-		await invalidateAll();
-	}
-}
-
-async function createSongs(
-	artistMapping: Record<string, number | 'CREATE_NEW'>,
-	useEmbeddedArtwork: boolean
-) {
-	if (!pendingUploadData) return;
-
-	try {
-		// call Wails binding to create songs
-		const songs = await CreateSongsWithMetadata({
-			filesData: pendingUploadData.filesData,
-			artistMapping,
-			albumId: pendingUploadData.albumId,
-			useEmbeddedArtwork
-		});
-
-		console.log('Successfully created songs:', songs);
-
-		// clear pending data
-		pendingUploadData = null;
-		unmappedArtistsList = [];
-		filesWithArtworkCount = 0;
-
-		// refresh the UI
-		await invalidateAll();
-	} catch (error) {
-		console.error('Error creating songs:', error);
-	}
-}
 
 </script>
 
 {#if tab === 'songs'}
 	<SongsTab
-		songsPromise={data.songs}
+		songs={data.songs}
 		songsPerPage={data.limits.songsPerPage}
 		songsCount={data.songsCount}
-		onUpload={(files) => handleUpload(files)}
+		onUpload={(files) => songImport.handleUpload(files)}
 	/>
 {:else if tab === 'albums'}
 	<AlbumsTab
-		albumsPromise={data.albums}
+		albums={data.albums}
 		albumsPerPage={data.limits.albumsPerPage}
-		defaultThumbnail={defaultThumbnail}
-		onUpload={(files, albumId) => handleUpload(files, albumId)}
+		{defaultThumbnail}
+		onUpload={(files, albumId) => songImport.handleUpload(files, albumId)}
 	/>
 {:else if tab === 'artists'}
-	<ArtistsTab artistsPromise={data.artists} defaultThumbnail={defaultThumbnail} />
+	<ArtistsTab artists={data.artists} {defaultThumbnail} />
 {:else if tab === 'producers'}
-	<ProducersTab producersPromise={data.producers} artistsPromise={data.artists} />
+	<ProducersTab producers={data.producers} artists={data.artists} />
 {/if}
 
 <!-- Artist Mapping Dialog -->
 <ArtistMappingDialog
-	bind:open={showArtistMappingDialog}
-	unmappedArtists={unmappedArtistsList}
+	bind:open={songImport.showArtistMappingDialog}
+	unmappedArtists={songImport.unmappedArtists}
 	existingArtists={resolvedArtists}
-	onResolve={handleArtistMapping}
-	onCancel={handleArtistMappingCancel}
+	onResolve={songImport.handleArtistMapping.bind(songImport)}
+	onCancel={songImport.handleArtistMappingCancel.bind(songImport)}
 />
 
 <!-- Artwork Choice Dialog -->
 <ArtworkChoiceDialog
-	bind:open={showArtworkChoiceDialog}
-	filesWithArtwork={filesWithArtworkCount}
-	onChoice={handleArtworkChoice}
+	bind:open={songImport.showArtworkChoiceDialog}
+	filesWithArtwork={songImport.filesWithArtworkCount}
+	onChoice={songImport.handleArtworkChoice.bind(songImport)}
 />

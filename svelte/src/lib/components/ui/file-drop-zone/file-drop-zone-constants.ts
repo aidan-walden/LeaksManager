@@ -11,7 +11,7 @@ export const ACCEPT_IMAGE = 'image/*';
 export const ACCEPT_VIDEO = 'video/*';
 export const ACCEPT_AUDIO = 'audio/*';
 
-export const displaySize = (bytes: number): string => {
+export const formatFileSize = (bytes: number): string => {
 	if (bytes < KILOBYTE) return `${bytes.toFixed(0)} B`;
 	if (bytes < MEGABYTE) return `${(bytes / KILOBYTE).toFixed(0)} KB`;
 	if (bytes < GIGABYTE) return `${(bytes / MEGABYTE).toFixed(0)} MB`;

@@ -2,15 +2,19 @@
 	import type { Snippet } from 'svelte';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { FileDropZone } from '@/components/ui/file-drop-zone';
+	import { FileDropZone } from '$lib/components/ui/file-drop-zone';
 	import { invalidateAll } from '$app/navigation';
+	import { runAsyncAction } from '$lib/errors/async-action';
 
 	type UploadConfig = {
 		tabLabel: string;
 		placeholder?: string;
-		onUpload: (files: File[]) => Promise<void>;
+		onUpload: (files: File[]) => void | Promise<void>;
 		accept?: string;
-		maxFiles?: number;
+		limit?: {
+			maxFiles: number;
+			fileCount: number;
+		};
 		preview?: Blob | null;
 	};
 
@@ -52,8 +56,13 @@
 
 		loading = true;
 		try {
-			const formData = new FormData(formElement);
-			const result = await onSubmit(formData);
+			const result = await runAsyncAction(async () => {
+				const formData = new FormData(formElement);
+				return onSubmit(formData);
+			});
+			if (!result) {
+				return;
+			}
 
 			formElement.reset();
 			await invalidateAll();
@@ -63,8 +72,6 @@
 			}
 
 			open = false;
-		} catch (error) {
-			console.error('Form submission error:', error);
 		} finally {
 			loading = false;
 		}
@@ -94,7 +101,7 @@
 			<Tabs.Content value="upload" class="flex flex-1 items-center justify-center p-4">
 				<div class="mx-auto aspect-square w-full max-w-[20rem]">
 					<FileDropZone
-						maxFiles={upload.maxFiles ?? 1}
+						limit={upload.limit}
 						accept={upload.accept ?? 'image/*'}
 						onUpload={upload.onUpload}
 						disabled={loading}

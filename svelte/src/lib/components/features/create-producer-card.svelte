@@ -2,18 +2,14 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import CreateCard from './create-card.svelte';
+	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
-	import MultiArtistCombobox from './multi-artist-combobox.svelte';
+	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
-	import type { EditableProducer } from '@/schema';
-	import {
-		CreateProducerWithAliases,
-		UpdateProducerWithAliases,
-		WriteProducerMetadata
-	} from '$lib/wails';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import type { EditableProducer } from '$lib/schema';
 
 	type ArtistOption = { id: number; name: string };
 
@@ -38,6 +34,7 @@
 
 	let aliases = $state<Alias[]>([]);
 	let name = $state('');
+	const { wailsActions } = getAppServicesContext();
 
 	function addAlias() {
 		aliases = [...aliases, { name: '', artistIds: [] }];
@@ -80,19 +77,19 @@
 
 		if (producer) {
 			// update existing producer
-			const updated = await UpdateProducerWithAliases({
+			const updated = await wailsActions.updateProducerWithAliases({
 				id: producer.id,
 				name: producerName,
 				aliases: validAliases
 			});
 
 			// write metadata to all songs by this producer
-			await WriteProducerMetadata(producer.id);
+			await wailsActions.writeProducerMetadata(producer.id);
 
 			return { id: updated.id };
 		} else {
 			// create new producer
-			const newProducer = await CreateProducerWithAliases({
+			const newProducer = await wailsActions.createProducerWithAliases({
 				name: producerName,
 				aliases: validAliases
 			});
@@ -138,46 +135,46 @@
 			{#if aliases.length > 0}
 				<ScrollArea class="max-h-[200px] pr-4">
 					<div class="flex flex-col gap-3">
-					{#each aliases as alias, index (index)}
-						<div class="grid gap-2 rounded-lg border p-3">
-							<div class="flex items-center justify-between gap-2">
-								<Label for="alias-{index}-name" class="text-sm">Alias Name</Label>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onclick={() => removeAlias(index)}
+						{#each aliases as alias, index (index)}
+							<div class="grid gap-2 rounded-lg border p-3">
+								<div class="flex items-center justify-between gap-2">
+									<Label for="alias-{index}-name" class="text-sm">Alias Name</Label>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => removeAlias(index)}
+										disabled={loading}
+										class="h-6 w-6 p-0"
+									>
+										<TrashIcon class="h-4 w-4" />
+									</Button>
+								</div>
+								<Input
+									id="alias-{index}-name"
+									bind:value={alias.name}
+									type="text"
+									placeholder="e.g., Metro"
 									disabled={loading}
-									class="h-6 w-6 p-0"
-								>
-									<TrashIcon class="h-4 w-4" />
-								</Button>
-							</div>
-							<Input
-								id="alias-{index}-name"
-								bind:value={alias.name}
-								type="text"
-								placeholder="e.g., Metro"
-								disabled={loading}
-								class="h-9"
-							/>
-
-							<div class="mt-2 grid gap-2">
-								<Label for="alias-{index}-artists" class="text-sm text-muted-foreground">
-									Artist Restrictions (optional)
-								</Label>
-								<MultiArtistCombobox
-									{artists}
-									bind:value={alias.artistIds}
-									disabled={loading}
-									useProducerMode={false}
+									class="h-9"
 								/>
-								<p class="text-xs text-muted-foreground">
-									Leave empty for global alias, or select specific artists
-								</p>
+
+								<div class="mt-2 grid gap-2">
+									<Label for="alias-{index}-artists" class="text-sm text-muted-foreground">
+										Artist Restrictions (optional)
+									</Label>
+									<MultiArtistCombobox
+										{artists}
+										bind:value={alias.artistIds}
+										disabled={loading}
+										useProducerMode={false}
+									/>
+									<p class="text-xs text-muted-foreground">
+										Leave empty for global alias, or select specific artists
+									</p>
+								</div>
 							</div>
-						</div>
-					{/each}
+						{/each}
 					</div>
 				</ScrollArea>
 			{:else}
@@ -186,7 +183,6 @@
 				</p>
 			{/if}
 		</div>
-
 	</div>
 {/snippet}
 

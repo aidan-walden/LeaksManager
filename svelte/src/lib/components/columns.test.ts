@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { WailsActions } from '$lib/services/wails-actions';
 
-vi.mock('./ui/data-table', () => ({
+vi.mock('./ui/data-table/render-helpers.js', () => ({
 	renderComponent: vi.fn((_component, props) => props)
 }));
 
@@ -8,18 +9,20 @@ vi.mock('$app/navigation', () => ({
 	invalidateAll: vi.fn().mockResolvedValue(undefined)
 }));
 
-vi.mock('$lib/wails', () => ({
-	DeleteSong: vi.fn().mockResolvedValue(undefined)
-}));
-
 import { invalidateAll } from '$app/navigation';
-import { DeleteSong } from '$lib/wails';
-import { columns } from './columns';
+import { createSongColumns } from './columns';
 
 describe('song table columns', () => {
+	const wailsActions = {
+		deleteSong: vi.fn().mockResolvedValue(undefined)
+	} satisfies Pick<WailsActions, 'deleteSong'>;
+	const columns = createSongColumns(wailsActions);
+
 	it('builds the expected visible columns', () => {
 		expect(
-			columns.map((column) => column.id ?? ('accessorKey' in column ? column.accessorKey : undefined))
+			columns.map(
+				(column) => column.id ?? ('accessorKey' in column ? column.accessorKey : undefined)
+			)
 		).toEqual(['name', 'artist', 'album.name', 'actions']);
 	});
 
@@ -39,7 +42,7 @@ describe('song table columns', () => {
 
 		await props.onDelete(7);
 
-		expect(DeleteSong).toHaveBeenCalledWith(7);
+		expect(wailsActions.deleteSong).toHaveBeenCalledWith(7);
 		expect(invalidateAll).toHaveBeenCalled();
 	});
 });

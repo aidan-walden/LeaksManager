@@ -1,36 +1,28 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import CreateProducerCard from '$lib/components/ui/create-producer-card.svelte';
-	import ProducersSkeleton from '$lib/components/ui/producers-skeleton.svelte';
+	import CreateProducerCard from '$lib/components/features/create-producer-card.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { invalidateAll } from '$app/navigation';
-	import type { PageData } from '../../../routes/[tab]/$types';
-	import type { EditableProducer } from '@/schema';
-	import { DeleteProducer } from '$lib/wails';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import type { EditableProducer } from '$lib/schema';
+	import type { TabViewData } from '$lib/view-models/tab-data';
 
-	type ProducersPromise = PageData['producers'];
-	type ArtistsPromise = PageData['artists'];
-	type ProducerElement = Awaited<ProducersPromise> extends Array<infer T> ? T : never;
-	type ArtistElement = Awaited<ArtistsPromise> extends Array<infer A> ? A : never;
+	type ProducerElement = TabViewData['producers'][number];
+	type ArtistElement = TabViewData['artists'][number];
 
 	let {
-		producersPromise,
-		artistsPromise
+		producers,
+		artists
 	}: {
-		producersPromise: ProducersPromise;
-		artistsPromise: ArtistsPromise;
+		producers: TabViewData['producers'];
+		artists: TabViewData['artists'];
 	} = $props();
 
 	let dialogOpen = $state(false);
 	let currentProducer = $state<EditableProducer | null>(null);
-	let resolvedArtists = $state<Awaited<ArtistsPromise>>([]);
-
-	$effect(() => {
-		artistsPromise.then((artists) => {
-			resolvedArtists = artists;
-		});
-	});
+	let resolvedArtists = $state<ArtistElement[]>(artists);
+	const { wailsActions } = getAppServicesContext();
 
 	function openCreateModal() {
 		currentProducer = null;
@@ -60,12 +52,8 @@
 	}
 
 	async function onDelete(id: number) {
-		try {
-			await DeleteProducer(id);
-			await invalidateAll();
-		} catch (error) {
-			console.error('Error deleting producer:', error);
-		}
+		await wailsActions.deleteProducer(id);
+		await invalidateAll();
 	}
 </script>
 
@@ -85,48 +73,44 @@
 	artists={resolvedArtists}
 />
 
-{#await producersPromise}
-	<ProducersSkeleton />
-{:then producers}
-	<div class="mt-4 flex flex-row flex-wrap gap-4">
-		{#each producers as producer (producer.id)}
-			<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
-				<div class="flex items-start justify-between gap-2">
-					<p class="block text-sm font-medium break-words">{producer.name}</p>
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-									<span class="sr-only">Open menu</span>
-									<EllipsisIcon />
-								</Button>
-							{/snippet}
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Content>
-							<DropdownMenu.Group>
-								<DropdownMenu.Label>Actions</DropdownMenu.Label>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => onClickEdit(producer)}>Edit</DropdownMenu.Item>
-								<DropdownMenu.Item style="color: red;" onclick={() => onDelete(producer.id)}
-									>Delete</DropdownMenu.Item
-								>
-							</DropdownMenu.Group>
-						</DropdownMenu.Content>
-					</DropdownMenu.Root>
-				</div>
-				{#if producer.aliases && producer.aliases.length > 0}
-					<div class="mt-2 text-xs text-muted-foreground">
-						<p class="font-semibold">Aliases</p>
-						<ul class="mt-1 space-y-1">
-							{#each producer.aliases as alias (alias.id)}
-								<li>{alias.alias}</li>
-							{/each}
-						</ul>
-					</div>
-				{:else}
-					<p class="mt-2 text-xs italic text-muted-foreground">No aliases</p>
-				{/if}
+<div class="mt-4 flex flex-row flex-wrap gap-4">
+	{#each producers as producer (producer.id)}
+		<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
+			<div class="flex items-start justify-between gap-2">
+				<p class="block text-sm font-medium break-words">{producer.name}</p>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
+								<span class="sr-only">Open menu</span>
+								<EllipsisIcon />
+							</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content>
+						<DropdownMenu.Group>
+							<DropdownMenu.Label>Actions</DropdownMenu.Label>
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item onclick={() => onClickEdit(producer)}>Edit</DropdownMenu.Item>
+							<DropdownMenu.Item style="color: red;" onclick={() => onDelete(producer.id)}
+								>Delete</DropdownMenu.Item
+							>
+						</DropdownMenu.Group>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			</div>
-		{/each}
-	</div>
-{/await}
+			{#if producer.aliases && producer.aliases.length > 0}
+				<div class="mt-2 text-xs text-muted-foreground">
+					<p class="font-semibold">Aliases</p>
+					<ul class="mt-1 space-y-1">
+						{#each producer.aliases as alias (alias.id)}
+							<li>{alias.alias}</li>
+						{/each}
+					</ul>
+				</div>
+			{:else}
+				<p class="mt-2 text-xs text-muted-foreground italic">No aliases</p>
+			{/if}
+		</div>
+	{/each}
+</div>

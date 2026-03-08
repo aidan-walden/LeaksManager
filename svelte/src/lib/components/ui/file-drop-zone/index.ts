@@ -8,11 +8,11 @@ import {
 	ACCEPT_IMAGE,
 	ACCEPT_VIDEO,
 	BYTE,
-	displaySize,
+	formatFileSize,
 	GIGABYTE,
 	KILOBYTE,
 	MEGABYTE
-} from './shared';
+} from './file-drop-zone-constants';
 import { type FileRejectedReason, type FileDropZoneProps } from './types';
 
 export { FileDropZone, type FileRejectedReason, type FileDropZoneProps };
@@ -21,7 +21,7 @@ export {
 	ACCEPT_IMAGE,
 	ACCEPT_VIDEO,
 	BYTE,
-	displaySize,
+	formatFileSize,
 	GIGABYTE,
 	KILOBYTE,
 	MEGABYTE

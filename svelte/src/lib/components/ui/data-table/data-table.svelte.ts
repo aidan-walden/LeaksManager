@@ -4,66 +4,46 @@ import {
 	type TableOptionsResolved,
 	type TableState,
 	type Updater,
-	createTable,
-} from "@tanstack/table-core";
+	createTable
+} from '@tanstack/table-core';
 
-/**
- * Creates a reactive TanStack table object for Svelte.
- * @param options Table options to create the table with.
- * @returns A reactive table object.
- * @example
- * ```svelte
- * <script>
- *   const table = createSvelteTable({ ... })
- * </script>
- *
- * <table>
- *   <thead>
- *     {#each table.getHeaderGroups() as headerGroup}
- *       <tr>
- *         {#each headerGroup.headers as header}
- *           <th colspan={header.colSpan}>
- *         	   <FlexRender content={header.column.columnDef.header} context={header.getContext()} />
- *         	 </th>
- *         {/each}
- *       </tr>
- *     {/each}
- *   </thead>
- * 	 <!-- ... -->
- * </table>
- * ```
- */
 export function createSvelteTable<TData extends RowData>(options: TableOptions<TData>) {
-	const resolvedOptions: TableOptionsResolved<TData> = mergeObjects(
-		{
-			state: {},
-			onStateChange() {},
-			renderFallbackValue: null,
-			mergeOptions: (
-				defaultOptions: TableOptions<TData>,
-				options: Partial<TableOptions<TData>>
-			) => {
-				return mergeObjects(defaultOptions, options);
-			},
+	const resolvedOptions: TableOptionsResolved<TData> = {
+		state: {},
+		onStateChange() {},
+		renderFallbackValue: null,
+		mergeOptions: (defaultOptions: TableOptions<TData>, nextOptions: Partial<TableOptions<TData>>) => {
+			return mergeObjects(defaultOptions, nextOptions);
 		},
-		options
-	);
+		...options
+	};
 
 	const table = createTable(resolvedOptions);
 	let state = $state<Partial<TableState>>(table.initialState);
 
 	function updateOptions() {
 		table.setOptions((prev) => {
-			return mergeObjects(prev, options, {
-				state: mergeObjects(state, options.state || {}),
+			const nextTableState = {
+				...state,
+				...(options.state ?? {})
+			};
 
+			const nextOptions = {
+				...prev,
+				...options,
+				state: nextTableState,
 				onStateChange: (updater: Updater<TableState>) => {
-					const nextState = typeof updater === "function" ? updater(state as TableState) : updater;
-					state = mergeObjects(state, nextState);
+					const nextState = typeof updater === 'function' ? updater(state as TableState) : updater;
+					state = {
+						...state,
+						...nextState
+					};
 
 					options.onStateChange?.(updater);
-				},
-			});
+				}
+			};
+
+			return nextOptions;
 		});
 	}
 
@@ -82,13 +62,9 @@ type Intersection<T extends readonly unknown[]> = (T extends [infer H, ...infer 
 	: unknown) & {};
 
 /**
- * Lazily merges several objects (or thunks) while preserving
- * getter semantics from every source.
- *
- * Proxy-based to avoid known WebKit recursion issue.
+ * Proxy-based to preserve getter semantics and avoid a WebKit recursion bug.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
+export function mergeObjects<Sources extends readonly MaybeThunk<object>[]>(
 	...sources: Sources
 ): Intersection<{ [K in keyof Sources]: Sources[K] }> {
 	const resolve = <T extends object>(src: MaybeThunk<T>): T | undefined =>
@@ -134,8 +110,8 @@ export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
 				configurable: true,
 				enumerable: true,
 				value: Reflect.get(src, key),
-				writable: true,
+				writable: true
 			};
-		},
+		}
 	}) as Intersection<{ [K in keyof Sources]: Sources[K] }>;
 }

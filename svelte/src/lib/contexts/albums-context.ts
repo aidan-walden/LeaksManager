@@ -7,6 +7,8 @@ type AlbumsContextValue<T extends Album = Album> = {
 	get current(): T[];
 };
 
+const MISSING_ALBUMS_CONTEXT = 'Albums context is not available. Wrap the component in the albums provider.';
+
 export function setAlbumsContext<T extends Album>(getValue: () => T[]) {
 	const contextValue: AlbumsContextValue<T> = {
 		get current() {
@@ -19,5 +21,8 @@ export function setAlbumsContext<T extends Album>(getValue: () => T[]) {
 
 export function getAlbumsContext<T extends Album = Album>(): T[] {
 	const ctx = getContext<AlbumsContextValue<T>>(ALBUMS_KEY);
-	return ctx?.current ?? [];
+	if (!ctx) {
+		throw new Error(MISSING_ALBUMS_CONTEXT);
+	}
+	return ctx.current;
 }

@@ -2,6 +2,7 @@ package backend
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -61,8 +62,14 @@ func (a *App) GetArtistsWithRelations() ([]ArtistWithRelations, error) {
 
 	result := []ArtistWithRelations{}
 	for _, art := range artists {
-		albums, _ := a.getAlbumsByArtist(art.ID)
-		songs, _ := a.getSongsByArtist(art.ID)
+		albums, err := a.getAlbumsByArtist(art.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load albums for artist %d: %w", art.ID, err)
+		}
+		songs, err := a.getSongsByArtist(art.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load songs for artist %d: %w", art.ID, err)
+		}
 		result = append(result, ArtistWithRelations{
 			Artist: art,
 			Albums: albums,

@@ -1,37 +1,39 @@
-<script lang="ts">
-	import DataTable from '$lib/components/ui/data-table/data-table.svelte';
-	import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
-	import SongsTableSkeleton from '$lib/components/ui/data-table/songs-table-skeleton.svelte';
-	import { columns } from '../columns';
-	import type { PageData } from '../../../routes/[tab]/$types';
-	import { GetSongsReadable } from '$lib/wails';
+	<script lang="ts">
+		import DataTable from '$lib/components/ui/data-table/data-table.svelte';
+		import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
+		import SongsTableSkeleton from '$lib/components/features/songs-table-skeleton.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import { createSongColumns } from '../columns';
+	import type { SongReadable } from '$lib/wails';
 
-	type SongsPromise = PageData['songs'];
-	type Songs = Awaited<SongsPromise>;
-
-	let { songsPromise, songsPerPage, songsCount, onUpload }: {
-		songsPromise: SongsPromise;
+	let {
+		songs: initialSongs,
+		songsPerPage,
+		songsCount,
+		onUpload
+	}: {
+		songs: SongReadable[];
 		songsPerPage: number;
 		songsCount: number;
 		onUpload: (files: File[]) => Promise<void>;
 	} = $props();
 
 	let currentPage = $state(0);
-	let songs = $state<Songs>([]);
-	let isLoading = $state(true);
+	let songs = $state<SongReadable[]>(initialSongs);
+	let isLoading = $state(false);
+	const { wailsActions } = getAppServicesContext();
+	const columns = createSongColumns(wailsActions);
 
-	// load initial songs
 	$effect(() => {
-		songsPromise.then((initialSongs) => {
-			songs = initialSongs;
-			isLoading = false;
-		});
+		songs = initialSongs;
+		currentPage = 0;
+		isLoading = false;
 	});
 
 	async function fetchSongsForPage(page: number) {
 		isLoading = true;
 		const offset = page * songsPerPage;
-		songs = await GetSongsReadable(songsPerPage, offset);
+		songs = await wailsActions.getSongsReadable({ limit: songsPerPage, offset });
 		isLoading = false;
 		currentPage = page;
 	}
@@ -62,14 +64,14 @@
 			data={songs}
 			{columns}
 			pageSize={songsPerPage}
-			manualPagination={true}
-			pageCount={Math.ceil(songsCount / songsPerPage)}
-			{canNextPage}
-			{canPreviousPage}
-			onNextPage={handleNextPage}
-			onPreviousPage={handlePreviousPage}
+			pagination={{
+				pageIndex: currentPage,
+				pageSize: songsPerPage,
+				totalCount: songsCount
+			}}
+			onPaginationChange={fetchSongsForPage}
 		/>
 	{/if}
 {/snippet}
 
-<FileDropZone onUpload={onUpload} children={table} class="contents" clickable={false} />
+<FileDropZone {onUpload} children={table} class="contents" clickable={false} />

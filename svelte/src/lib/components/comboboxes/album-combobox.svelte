@@ -24,9 +24,7 @@
 	let open = $state(false);
 	let triggerRef = $state<HTMLButtonElement>(null!);
 
-	const selectedAlbum = $derived(
-		albums.find((album) => album.id === value) ?? null
-	);
+	const selectedAlbum = $derived(albums.find((album) => album.id === value) ?? null);
 
 	function selectAlbum(albumId: number) {
 		value = albumId;

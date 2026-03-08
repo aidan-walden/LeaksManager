@@ -41,7 +41,7 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
-	import SyncChangesCard from './ui/sync-changes-card.svelte';
+	import SyncChangesCard from '$lib/components/features/sync-changes-card.svelte';
 
 	let {
 		currentPath = '/',

@@ -1,18 +1,13 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import CreateCard from './create-card.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import { invalidateAll } from '$app/navigation';
-	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
-	import { getArtistsContext } from '@/contexts/artists-context';
-	import type { EditableAlbum } from '@/schema';
-	import {
-		CreateAlbum,
-		UpdateAlbum,
-		UploadAlbumArt,
-		WriteAlbumMetadata
-	} from '$lib/wails';
-	import { toAssetUrl } from '$lib/utils';
+	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
+	import { getArtistsContext } from '$lib/contexts/artists-context';
+	import type { EditableAlbum } from '$lib/schema';
+	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 
 	let {
 		open = $bindable(),
@@ -27,6 +22,7 @@
 	let loading = $state(false);
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
+	const { wailsActions } = getAppServicesContext();
 
 	const artists = $derived(getArtistsContext());
 
@@ -82,16 +78,13 @@
 		}
 
 		(async () => {
-			try {
-				const response = await fetch(toAssetUrl(artworkPath) ?? '');
-				if (!response.ok) return;
-				const artworkBlob = await response.blob();
+			const artworkBlob = await loadArtworkPreviewBlob(artworkPath);
+			if (!artworkBlob) {
+				return;
+			}
 
-				if (!file && album?.artworkPath === artworkPath) {
-					blob = artworkBlob;
-				}
-			} catch (error) {
-				console.error('Failed to fetch album artwork:', error);
+			if (!file && album?.artworkPath === artworkPath) {
+				blob = artworkBlob;
 			}
 		})();
 	});
@@ -102,7 +95,7 @@
 		}
 	});
 
-	const handleUpload = async (files: File[]) => {
+	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
 		file = files[0];
 		if (initialValues) {
@@ -157,7 +150,11 @@
 			const base64 = btoa(
 				new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
 			);
-			await UploadAlbumArt(albumId, currentFile.name, base64);
+			await wailsActions.uploadAlbumArt({
+				albumId,
+				filename: currentFile.name,
+				base64Data: base64
+			});
 			await invalidateAll();
 		} finally {
 			loading = false;
@@ -173,7 +170,7 @@
 
 		if (album) {
 			// update existing album
-			await UpdateAlbum({
+			await wailsActions.updateAlbum({
 				id: album.id,
 				name,
 				year,
@@ -182,12 +179,12 @@
 			});
 
 			// write metadata to all songs in album
-			await WriteAlbumMetadata(album.id);
+			await wailsActions.writeAlbumMetadata(album.id);
 
 			return { id: album.id };
 		} else {
 			// create new album
-			const newAlbum = await CreateAlbum({
+			const newAlbum = await wailsActions.createAlbum({
 				name,
 				artistIds: selectedArtistIds,
 				year,
@@ -261,6 +258,10 @@
 		tabLabel: 'Album Art',
 		placeholder: 'Upload Album Art',
 		onUpload: handleUpload,
+		limit: {
+			maxFiles: 1,
+			fileCount: file ? 1 : 0
+		},
 		preview: blob
 	}}
 	formFields={albumFields}

@@ -1,30 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as bindings from './bindings';
-import { notifyRuntimeError } from '$lib/errors/runtime-error';
-import { syncState } from '$lib/stores/sync.svelte';
-import { CreateSong, UpdateSettings } from './index';
-
-vi.mock('$lib/errors/runtime-error', () => ({
-	notifyRuntimeError: vi.fn()
-}));
+import { getRawWailsAppBindings, wailsTransport } from './bindings';
+import { createRuntimeErrorNotifier } from '$lib/errors/runtime-error';
+import { createWailsActions } from '$lib/services/wails-actions';
+import { createSyncState } from '$lib/stores/sync.svelte';
 
 vi.mock('./bindings', async (importOriginal) => {
 	const actual = (await importOriginal()) as typeof import('./bindings');
 	return {
 		...actual,
-		CreateSong: vi.fn(),
-		UpdateSettings: vi.fn()
+		wailsTransport: {
+			...actual.wailsTransport,
+			createSong: vi.fn(),
+			updateSettings: vi.fn()
+		}
 	};
 });
 
 describe('wails wrapper bindings', () => {
+	const runtimeErrors = {
+		notify: vi.fn(),
+		reset: vi.fn()
+	};
+	const syncState = createSyncState();
+	const wailsActions = createWailsActions({ syncState, runtimeErrors }, wailsTransport);
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		syncState.configure(false, false);
 	});
 
 	it('marks sync state as changed after successful mutating calls', async () => {
-		vi.mocked(bindings.CreateSong).mockResolvedValue({
+		vi.mocked(wailsTransport.createSong).mockResolvedValue({
 			id: 1,
 			name: 'Track',
 			filepath: 'uploads/songs/track.mp3',
@@ -41,7 +47,7 @@ describe('wails wrapper bindings', () => {
 		});
 		syncState.configure(true, false);
 
-		await CreateSong({
+		await wailsActions.createSong({
 			name: 'Track',
 			filepath: 'uploads/songs/track.mp3',
 			artistIds: [],
@@ -53,10 +59,10 @@ describe('wails wrapper bindings', () => {
 
 	it('reports runtime failures before rethrowing', async () => {
 		const error = new Error('boom');
-		vi.mocked(bindings.CreateSong).mockRejectedValue(error);
+		vi.mocked(wailsTransport.createSong).mockRejectedValue(error);
 
 		await expect(
-			CreateSong({
+			wailsActions.createSong({
 				name: 'Track',
 				filepath: 'uploads/songs/track.mp3',
 				artistIds: [],
@@ -64,11 +70,11 @@ describe('wails wrapper bindings', () => {
 			})
 		).rejects.toThrow('boom');
 
-		expect(notifyRuntimeError).toHaveBeenCalledWith(error, 'CreateSong');
+		expect(runtimeErrors.notify).toHaveBeenCalledWith(error, 'CreateSong');
 	});
 
 	it('reconfigures sync state from updated settings', async () => {
-		vi.mocked(bindings.UpdateSettings).mockResolvedValue({
+		vi.mocked(wailsTransport.updateSettings).mockResolvedValue({
 			id: 1,
 			clearTrackNumberOnUpload: false,
 			importToAppleMusic: true,
@@ -76,9 +82,22 @@ describe('wails wrapper bindings', () => {
 			updatedAt: 1
 		});
 
-		await UpdateSettings({ importToAppleMusic: true });
+		await wailsActions.updateSettings({ importToAppleMusic: true });
 
 		expect(syncState.isAppleMusicEnabled).toBe(true);
 		expect(syncState.hasChanges).toBe(false);
+	});
+
+	it('rejects missing-runtime bindings instead of returning fake placeholder shapes', async () => {
+		const originalWindow = globalThis.window;
+		Reflect.deleteProperty(globalThis, 'window');
+
+		try {
+			await expect(getRawWailsAppBindings().GetInitialData()).rejects.toThrow(
+				'Wails runtime not available'
+			);
+		} finally {
+			globalThis.window = originalWindow;
+		}
 	});
 });

@@ -43,6 +43,7 @@ svelte/uploads/
 .cursor
 .claude
 .vscode
+.desloppify
 
 # Python
 microservice/venv

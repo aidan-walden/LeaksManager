@@ -8,10 +8,10 @@ import {
 
 describe('data table helpers', () => {
 	it('wraps renderable helpers in config objects', () => {
-		const component = {} as never;
+		const component = {} as import('svelte').Component<Record<string, never>>;
 		const snippet = (() => undefined) as never;
 
-		expect(renderComponent(component)).toBeInstanceOf(RenderComponentConfig);
+		expect(renderComponent(component, {})).toBeInstanceOf(RenderComponentConfig);
 		expect(renderSnippet(snippet, { id: 1 })).toBeInstanceOf(RenderSnippetConfig);
 	});
 

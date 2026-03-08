@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { load, prerender, ssr, trailingSlash } from '../../routes/+layout';
-import { syncState } from '$lib/stores/sync.svelte';
 
 vi.mock('$lib/wails', () => ({
-	GetInitialData: vi.fn()
+	wailsTransport: {
+		getInitialData: vi.fn()
+	}
 }));
 
-import { GetInitialData } from '$lib/wails';
+import { wailsTransport } from '$lib/wails';
 
 describe('+layout load', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		syncState.configure(false, false);
 	});
 
-	it('loads initial Wails data and configures sync state', async () => {
-		vi.mocked(GetInitialData).mockResolvedValue({
+	it('loads initial Wails data without mutating app stores', async () => {
+		vi.mocked(wailsTransport.getInitialData).mockResolvedValue({
 			songs: [],
 			songsCount: 0,
 			albums: [],
@@ -41,8 +41,8 @@ describe('+layout load', () => {
 		expect(ssr).toBe(false);
 		expect(prerender).toBe(false);
 		expect(trailingSlash).toBe('always');
-		expect(syncState.shouldShow).toBe(true);
-		await expect(result.songs).resolves.toEqual([]);
+		expect(result.songs).toEqual([]);
+		expect(result.hasUnsyncedChanges).toBe(true);
 		expect(result.limits.songsPerPage).toBe(25);
 	});
 });

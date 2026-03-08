@@ -41,7 +41,10 @@ func (a *App) GetInitialData() (*InitialData, error) {
 		return nil, err
 	}
 
-	hasUnsyncedChanges, _ := a.checkUnsyncedChanges()
+	hasUnsyncedChanges, err := a.checkUnsyncedChanges()
+	if err != nil {
+		return nil, err
+	}
 
 	return &InitialData{
 		Songs:      songs,

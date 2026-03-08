@@ -2,19 +2,20 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import CreateSongCard from '../create-song-card.svelte';
-	import type { EditableSong } from '@/components/columns';
-	import { ShowInFileExplorer } from '$lib/wails';
+	import CreateSongCard from '$lib/components/features/create-song-card.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import type { EditableSong } from '$lib/components/columns';
 
 	let { song, onDelete }: { song: EditableSong; onDelete: (id: number) => void } = $props();
 	let editingSong = $state(false);
+	const { wailsActions } = getAppServicesContext();
 
 	function onClickEdit() {
 		editingSong = true;
 	}
 
 	async function onClickShowInFileExplorer() {
-		await ShowInFileExplorer(song.filepath);
+		await wailsActions.showInFileExplorer(song.filepath);
 	}
 </script>
 
@@ -32,7 +33,9 @@
 			<DropdownMenu.Label>Actions</DropdownMenu.Label>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={onClickEdit}>Edit</DropdownMenu.Item>
-			<DropdownMenu.Item onclick={onClickShowInFileExplorer}>Show in File Explorer</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={onClickShowInFileExplorer}
+				>Show in File Explorer</DropdownMenu.Item
+			>
 			<DropdownMenu.Item style="color: red;" onclick={() => onDelete(song.id)}
 				>Delete</DropdownMenu.Item
 			>

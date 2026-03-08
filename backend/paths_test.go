@@ -25,3 +25,23 @@ func TestStaticFilePathReturnsAbsolutePath(t *testing.T) {
 		t.Fatalf("expected path %q, got %q", filepath.Join(tempDir, expectedSuffix), fullPath)
 	}
 }
+
+func TestUploadsFilePathRejectsPathsOutsideUploadsRoot(t *testing.T) {
+	app := &App{staticPath: t.TempDir()}
+
+	if _, err := app.uploadsFilePath("outside/example.m4a"); err == nil {
+		t.Fatal("expected uploadsFilePath to reject paths outside uploads root")
+	}
+}
+
+func TestNewUploadPathRejectsPathSeparatorsInFilename(t *testing.T) {
+	app := &App{staticPath: t.TempDir()}
+
+	if _, _, err := app.newUploadPath("songs", "../escape.m4a"); err == nil {
+		t.Fatal("expected newUploadPath to reject path traversal filename")
+	}
+
+	if _, _, err := app.newUploadPath("songs", "nested/track.m4a"); err == nil {
+		t.Fatal("expected newUploadPath to reject nested filename")
+	}
+}
