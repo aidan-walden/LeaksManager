@@ -20,8 +20,8 @@ func (a *App) CreateAlbum(input CreateAlbumInput) (*Album, error) {
 	}
 
 	result, err := tx.Exec(
-		`INSERT INTO albums (name, genre, year, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		input.Name, input.Genre, input.Year, now, now,
+		`INSERT INTO albums (name, genre, year, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		input.Name, input.Genre, input.Year, input.IsSingle, now, now,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -55,6 +55,7 @@ func (a *App) CreateAlbum(input CreateAlbumInput) (*Album, error) {
 		Name:      input.Name,
 		Genre:     input.Genre,
 		Year:      input.Year,
+		IsSingle:  input.IsSingle,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
@@ -129,7 +130,7 @@ func (a *App) DeleteAlbum(albumID int) error {
 
 func (a *App) GetAlbumsWithSongs(limit, offset int) ([]AlbumWithSongs, error) {
 	rows, err := a.db.Query(`
-		SELECT id, name, artwork_path, genre, year, created_at, updated_at, synced
+		SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced
 		FROM albums
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -143,7 +144,7 @@ func (a *App) GetAlbumsWithSongs(limit, offset int) ([]AlbumWithSongs, error) {
 	for rows.Next() {
 		var alb Album
 		var createdAt, updatedAt sql.NullInt64
-		err := rows.Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &createdAt, &updatedAt, &alb.Synced)
+		err := rows.Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &alb.IsSingle, &createdAt, &updatedAt, &alb.Synced)
 		if err != nil {
 			return nil, err
 		}
@@ -175,9 +176,9 @@ func (a *App) GetAlbumWithArtists(albumID int) (*AlbumWithArtists, error) {
 	var alb Album
 	var createdAt, updatedAt sql.NullInt64
 	err := a.db.QueryRow(`
-		SELECT id, name, artwork_path, genre, year, created_at, updated_at, synced
+		SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced
 		FROM albums WHERE id = ?
-	`, albumID).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &createdAt, &updatedAt, &alb.Synced)
+	`, albumID).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &alb.IsSingle, &createdAt, &updatedAt, &alb.Synced)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -258,9 +259,9 @@ func (a *App) FindAlbumByName(name string) (*Album, error) {
 	var alb Album
 	var createdAt, updatedAt sql.NullInt64
 	err := a.db.QueryRow(
-		`SELECT id, name, artwork_path, genre, year, created_at, updated_at, synced FROM albums WHERE LOWER(name) = LOWER(?)`,
+		`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced FROM albums WHERE LOWER(name) = LOWER(?)`,
 		name,
-	).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &createdAt, &updatedAt, &alb.Synced)
+	).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &alb.IsSingle, &createdAt, &updatedAt, &alb.Synced)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

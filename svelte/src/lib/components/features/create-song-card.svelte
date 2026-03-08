@@ -49,8 +49,11 @@
 		}
 	});
 
+	// effective path: song's own artwork or inherited from album
+	const effectiveArtworkPath = $derived(song?.artworkPath ?? song?.album?.artworkPath ?? null);
+
 	$effect(() => {
-		if (file || !song?.artworkPath) {
+		if (file || !effectiveArtworkPath) {
 			if (!file) {
 				blob = null;
 			}
@@ -60,7 +63,7 @@
 		let cancelled = false;
 
 		(async () => {
-			const artworkBlob = await loadArtworkPreviewBlob(song.artworkPath);
+			const artworkBlob = await loadArtworkPreviewBlob(effectiveArtworkPath);
 			if (!cancelled) {
 				blob = artworkBlob;
 			}
@@ -92,6 +95,8 @@
 	function isSingleAlbum(title: string, album: string) {
 		return normalizeAlbumName(album) === normalizeAlbumName(makeSingleAlbumName(title));
 	}
+
+	const nonSingleAlbums = $derived(albums.filter((album) => !album.isSingle));
 
 	const matchedAlbum = $derived(
 		albums.find((album) => normalizeAlbumName(album.name) === normalizeAlbumName(albumName)) ?? null
@@ -127,7 +132,7 @@
 				// Edit mode: capture initial values for change detection
 				const artistIds = song.artists?.map((a) => a.id) ?? [];
 				const producerIds = song.producers?.map((p) => p.id) ?? [];
-				const single = isSingleAlbum(song.name, song.album?.name ?? '');
+				const single = song.album?.isSingle ?? isSingleAlbum(song.name, song.album?.name ?? '');
 				selectedArtistIds = artistIds;
 				selectedProducerIds = producerIds;
 
@@ -247,7 +252,8 @@
 			albumName: albumName.trim() || undefined,
 			artistIds: selectedArtistIds,
 			producerIds: selectedProducerIds,
-			trackNumber: trackNumber ?? undefined
+			trackNumber: trackNumber ?? undefined,
+			isSingle
 		});
 
 		// write metadata to disk
@@ -327,7 +333,7 @@
 						<Command.List>
 							<Command.Empty>Type to set a custom album name.</Command.Empty>
 							<Command.Group>
-								{#each albums as album (album.id)}
+								{#each nonSingleAlbums as album (album.id)}
 									<Command.Item
 										value={album.name}
 										onSelect={() => {

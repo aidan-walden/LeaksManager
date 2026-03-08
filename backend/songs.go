@@ -83,7 +83,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 
 	albumID := input.AlbumID
 	if input.AlbumName != nil {
-		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, input.ID, *input.AlbumName, input.ArtistIDs, now)
+		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, input.ID, *input.AlbumName, input.ArtistIDs, input.IsSingle, now)
 		if err != nil {
 			tx.Rollback()
 			return err
@@ -143,6 +143,7 @@ func (a *App) resolveAlbumIDForSongUpdate(
 	songID int,
 	albumName string,
 	artistIDs []int,
+	isSingle bool,
 	now int64,
 ) (*int, error) {
 	trimmedName := strings.TrimSpace(albumName)
@@ -156,6 +157,9 @@ func (a *App) resolveAlbumIDForSongUpdate(
 		trimmedName,
 	).Scan(&existingAlbumID)
 	if err == nil {
+		if isSingle {
+			tx.Exec(`UPDATE albums SET is_single = 1, updated_at = ? WHERE id = ?`, now, existingAlbumID)
+		}
 		return &existingAlbumID, nil
 	}
 	if err != sql.ErrNoRows {
@@ -172,8 +176,8 @@ func (a *App) resolveAlbumIDForSongUpdate(
 	}
 
 	result, err := tx.Exec(
-		`INSERT INTO albums (name, artwork_path, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-		trimmedName, artworkPath, now, now,
+		`INSERT INTO albums (name, artwork_path, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		trimmedName, artworkPath, isSingle, now, now,
 	)
 	if err != nil {
 		return nil, err
@@ -364,9 +368,9 @@ func (a *App) getAlbumByID(albumID int) (*Album, error) {
 	var alb Album
 	var createdAt, updatedAt sql.NullInt64
 	err := a.db.QueryRow(`
-		SELECT id, name, artwork_path, genre, year, created_at, updated_at, synced
+		SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced
 		FROM albums WHERE id = ?
-	`, albumID).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &createdAt, &updatedAt, &alb.Synced)
+	`, albumID).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &alb.IsSingle, &createdAt, &updatedAt, &alb.Synced)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

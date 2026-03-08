@@ -72,6 +72,7 @@ export interface Album {
 	artworkPath: string | null;
 	genre: string | null;
 	year: number | null;
+	isSingle: boolean;
 	createdAt: number;
 	updatedAt: number;
 	synced: boolean;
@@ -171,6 +172,7 @@ export interface CreateAlbumInput {
 	artistIds: number[];
 	year?: number;
 	genre?: string;
+	isSingle?: boolean;
 }
 
 export interface UpdateAlbumInput {
@@ -202,6 +204,7 @@ export interface UpdateSongInput {
 	artistIds: number[];
 	producerIds: number[];
 	trackNumber?: number;
+	isSingle?: boolean;
 }
 
 export interface AliasInput {

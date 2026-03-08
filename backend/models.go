@@ -60,6 +60,7 @@ type Album struct {
 	ArtworkPath *string `json:"artworkPath"`
 	Genre       *string `json:"genre"`
 	Year        *int    `json:"year"`
+	IsSingle    bool    `json:"isSingle"`
 	CreatedAt   int64   `json:"createdAt"`
 	UpdatedAt   int64   `json:"updatedAt"`
 	Synced      bool    `json:"synced"`
@@ -191,6 +192,7 @@ type CreateAlbumInput struct {
 	ArtistIDs []int   `json:"artistIds"`
 	Year      *int    `json:"year"`
 	Genre     *string `json:"genre"`
+	IsSingle  bool    `json:"isSingle"`
 }
 
 type UpdateAlbumInput struct {
@@ -222,6 +224,7 @@ type UpdateSongInput struct {
 	ArtistIDs   []int   `json:"artistIds"`
 	ProducerIDs []int   `json:"producerIds"`
 	TrackNumber *int    `json:"trackNumber"`
+	IsSingle    bool    `json:"isSingle"`
 }
 
 type AliasInput struct {
