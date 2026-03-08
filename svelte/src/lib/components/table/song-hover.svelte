@@ -1,13 +1,11 @@
 <script lang="ts">
-	import type { EditableSong } from '@/components/columns';
+	import type { EditableSong } from '$lib/components/columns';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
 	import { toAssetUrl } from '$lib/utils';
 
 	let { song }: { song: EditableSong } = $props();
 
-	let songProducersString = $derived(
-		song.producers?.map((p) => p.name).join(', ') ?? ''
-	);
+	let songProducersString = $derived(song.producers?.map((p) => p.name).join(', ') ?? '');
 
 	let open = $state(false);
 

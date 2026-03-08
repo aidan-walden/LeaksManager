@@ -4,9 +4,11 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import { toast } from 'svelte-sonner';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
-	import { UpdateSettings, type Settings } from '$lib/wails';
+	import { runAsyncAction } from '$lib/errors/async-action';
+	import type { Settings } from '$lib/wails';
 	import { invalidateAll } from '$app/navigation';
 
 	let {
@@ -25,6 +27,7 @@
 	let clearTrackNumber = $state(settings.clearTrackNumberOnUpload);
 	let autoMakeSingles = $state(settings.automaticallyMakeSingles);
 	let importToAppleMusic = $state(settings.importToAppleMusic);
+	const { wailsActions } = getAppServicesContext();
 
 	// sync state when settings prop changes
 	$effect(() => {
@@ -36,16 +39,19 @@
 	async function handleSave() {
 		isSubmitting = true;
 		try {
-			await UpdateSettings({
-				clearTrackNumberOnUpload: clearTrackNumber,
-				automaticallyMakeSingles: autoMakeSingles,
-				importToAppleMusic: importToAppleMusic
-			});
+			const updatedSettings = await runAsyncAction(() =>
+				wailsActions.updateSettings({
+					clearTrackNumberOnUpload: clearTrackNumber,
+					automaticallyMakeSingles: autoMakeSingles,
+					importToAppleMusic: importToAppleMusic
+				})
+			);
+			if (!updatedSettings) {
+				return;
+			}
 			await invalidateAll();
 			toast.success('Settings saved successfully');
 			editingSettings = false;
-		} catch (error) {
-			console.error('Failed to save settings:', error);
 		} finally {
 			isSubmitting = false;
 		}

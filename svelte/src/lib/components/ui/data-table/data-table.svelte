@@ -5,7 +5,8 @@
 		getCoreRowModel,
 		getPaginationRowModel
 	} from '@tanstack/table-core';
-	import { createSvelteTable, FlexRender } from '$lib/components/ui/data-table/index.js';
+	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
+	import { createSvelteTable } from '$lib/components/ui/data-table/data-table.svelte.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 
@@ -13,37 +14,56 @@
 		columns: ColumnDef<TData, TValue>[];
 		data: TData[];
 		pageSize?: number;
-		manualPagination?: boolean;
-		pageCount?: number;
-		canNextPage?: boolean;
-		canPreviousPage?: boolean;
-		onNextPage?: () => void;
-		onPreviousPage?: () => void;
-	};
+	} & (
+		| {
+				pagination?: undefined;
+			}
+		| {
+				pagination: {
+					pageIndex: number;
+					pageSize: number;
+					totalCount: number;
+				};
+				onPaginationChange: (nextPageIndex: number) => void;
+			}
+	);
+
+	let props: DataTableProps<TData, TValue> = $props();
 
 	let {
 		data,
 		columns,
 		pageSize = 10,
-		manualPagination = false,
-		pageCount,
-		canNextPage: externalCanNextPage,
-		canPreviousPage: externalCanPreviousPage,
-		onNextPage,
-		onPreviousPage
-	}: DataTableProps<TData, TValue> = $props();
+		pagination: controlledPagination
+	} = props;
 
-	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize });
+	const onPaginationChange = 'onPaginationChange' in props ? props.onPaginationChange : undefined;
+
+	let pagination = $state<PaginationState>({
+		pageIndex: controlledPagination?.pageIndex ?? 0,
+		pageSize: controlledPagination?.pageSize ?? pageSize
+	});
+
+	$effect(() => {
+		if (!controlledPagination) {
+			return;
+		}
+
+		pagination = {
+			pageIndex: controlledPagination.pageIndex,
+			pageSize: controlledPagination.pageSize
+		};
+	});
 
 	const table = createSvelteTable({
 		get data() {
 			return data;
 		},
 		columns,
-		...(manualPagination
+		...(controlledPagination
 			? {
 					manualPagination: true,
-					pageCount: pageCount ?? -1
+					pageCount: Math.ceil(controlledPagination.totalCount / controlledPagination.pageSize)
 				}
 			: {}),
 		state: {
@@ -63,26 +83,29 @@
 	});
 
 	function handleNextPage() {
-		if (manualPagination && onNextPage) {
-			onNextPage();
+		if (controlledPagination) {
+			onPaginationChange?.(pagination.pageIndex + 1);
 		} else {
 			table.nextPage();
 		}
 	}
 
 	function handlePreviousPage() {
-		if (manualPagination && onPreviousPage) {
-			onPreviousPage();
+		if (controlledPagination) {
+			onPaginationChange?.(pagination.pageIndex - 1);
 		} else {
 			table.previousPage();
 		}
 	}
 
 	const canNext = $derived(
-		manualPagination ? externalCanNextPage ?? false : table.getCanNextPage()
+		controlledPagination
+			? pagination.pageIndex + 1 <
+				Math.ceil(controlledPagination.totalCount / controlledPagination.pageSize)
+			: table.getCanNextPage()
 	);
 	const canPrevious = $derived(
-		manualPagination ? externalCanPreviousPage ?? false : table.getCanPreviousPage()
+		controlledPagination ? pagination.pageIndex > 0 : table.getCanPreviousPage()
 	);
 </script>
 

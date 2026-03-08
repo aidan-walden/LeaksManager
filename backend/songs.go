@@ -256,19 +256,26 @@ func (a *App) GetSongsReadable(limit, offset int) ([]SongReadable, error) {
 		song.UpdatedAt = updatedAt.Int64
 
 		// Get artists
-		artists, _ := a.getArtistsForSong(song.ID)
+		artists, err := a.getArtistsForSong(song.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load artists for song %d: %w", song.ID, err)
+		}
 		artistNames := make([]string, len(artists))
 		for i, art := range artists {
 			artistNames[i] = art.Name
 		}
 
-		// Get producers
-		producers, _ := a.getProducersForSong(song.ID)
+		producers, err := a.getProducersForSong(song.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load producers for song %d: %w", song.ID, err)
+		}
 
-		// Get album
 		var album *Album
 		if song.AlbumID != nil {
-			album, _ = a.getAlbumByID(*song.AlbumID)
+			album, err = a.getAlbumByID(*song.AlbumID)
+			if err != nil {
+				return nil, fmt.Errorf("load album %d for song %d: %w", *song.AlbumID, song.ID, err)
+			}
 		}
 
 		songs = append(songs, SongReadable{

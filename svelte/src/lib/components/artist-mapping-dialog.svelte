@@ -2,6 +2,11 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
+	import {
+		coerceArtistMapping,
+		createArtistSelectionState,
+		type ArtistMappingValue
+	} from '$lib/components/artist-mapping';
 	import type { Artist } from '$lib/wails';
 
 	let {
@@ -14,17 +19,14 @@
 		open: boolean;
 		unmappedArtists: string[];
 		existingArtists: Artist[];
-		onResolve: (mapping: Record<string, number | 'CREATE_NEW'>) => void;
+		onResolve: (mapping: Record<string, ArtistMappingValue>) => void;
 		onCancel: () => void;
 	} = $props();
 
-	// Initialize mapping with default 'CREATE_NEW' for each unmapped artist
-	let mapping = $state<Record<string, number | 'CREATE_NEW'>>(
-		Object.fromEntries(unmappedArtists.map((artist) => [artist, 'CREATE_NEW']))
-	);
+	let selection = $state<Record<string, string>>(createArtistSelectionState(unmappedArtists));
 
 	function handleSubmit() {
-		onResolve(mapping);
+		onResolve(coerceArtistMapping(selection));
 		open = false;
 	}
 
@@ -33,9 +35,8 @@
 		open = false;
 	}
 
-	// Reactive: Update mapping when unmappedArtists changes
 	$effect(() => {
-		mapping = Object.fromEntries(unmappedArtists.map((artist) => [artist, 'CREATE_NEW']));
+		selection = createArtistSelectionState(unmappedArtists);
 	});
 </script>
 
@@ -60,7 +61,7 @@
 						<select
 							id={`artist-${artistName}`}
 							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-							bind:value={mapping[artistName]}
+							bind:value={selection[artistName]}
 						>
 							<option value="CREATE_NEW">Create new artist: {artistName}</option>
 							<optgroup label="Map to existing artist">

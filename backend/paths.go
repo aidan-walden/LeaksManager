@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
+
+const uploadsRoot = "uploads"
 
 // normalizeUploadRelPath keeps upload paths relative to staticPath.
 // It accepts legacy values with a leading slash for backward compatibility.
@@ -28,6 +31,40 @@ func normalizeUploadRelPath(relPath string) (string, error) {
 	return cleaned, nil
 }
 
+func normalizeUploadsRootRelPath(relPath string) (string, error) {
+	cleaned, err := normalizeUploadRelPath(relPath)
+	if err != nil {
+		return "", err
+	}
+
+	uploadsPrefix := uploadsRoot + string(os.PathSeparator)
+	if cleaned != uploadsRoot && !strings.HasPrefix(cleaned, uploadsPrefix) {
+		return "", fmt.Errorf("path outside uploads root not allowed: %s", relPath)
+	}
+
+	return cleaned, nil
+}
+
+func normalizeUploadFilename(filename string) (string, error) {
+	trimmed := strings.TrimSpace(filename)
+	if trimmed == "" {
+		return "", fmt.Errorf("empty upload filename")
+	}
+	if strings.ContainsRune(trimmed, 0) {
+		return "", fmt.Errorf("invalid upload filename: %q", filename)
+	}
+	if strings.ContainsAny(trimmed, `/\`) {
+		return "", fmt.Errorf("upload filename must not contain path separators: %s", filename)
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." || cleaned == ".." {
+		return "", fmt.Errorf("invalid upload filename: %s", filename)
+	}
+
+	return cleaned, nil
+}
+
 func (a *App) staticFilePath(relPath string) (string, error) {
 	cleaned, err := normalizeUploadRelPath(relPath)
 	if err != nil {
@@ -40,6 +77,36 @@ func (a *App) staticFilePath(relPath string) (string, error) {
 	}
 
 	return fullPath, nil
+}
+
+func (a *App) uploadsFilePath(relPath string) (string, error) {
+	cleaned, err := normalizeUploadsRootRelPath(relPath)
+	if err != nil {
+		return "", err
+	}
+
+	return a.staticFilePath(cleaned)
+}
+
+func (a *App) newUploadPath(category string, filename string) (relPath string, fullPath string, err error) {
+	safeFilename, err := normalizeUploadFilename(filename)
+	if err != nil {
+		return "", "", err
+	}
+
+	relPath, err = normalizeUploadsRootRelPath(
+		filepath.ToSlash(filepath.Join(uploadsRoot, category, fmt.Sprintf("%d-%s", time.Now().UnixMilli(), safeFilename))),
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	fullPath, err = a.uploadsFilePath(relPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	return relPath, fullPath, nil
 }
 
 func isDevMode(ctx context.Context) bool {

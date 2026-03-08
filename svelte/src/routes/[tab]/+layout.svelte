@@ -3,7 +3,7 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
-	import SettingsDialog from '@/components/settings-dialog.svelte';
+	import SettingsDialog from '$lib/components/settings-dialog.svelte';
 
 	const tab = $derived(page.params.tab || 'songs');
 	const currentPath = $derived('/' + tab);
@@ -34,4 +34,9 @@
 	</Sidebar.Inset>
 </Sidebar.Provider>
 
-<SettingsDialog bind:editingSettings={settingsOpen} onOpenChange={onSettingsOpenChange} settings={data.settings} isServerMac={data.isServerMac} />
+<SettingsDialog
+	bind:editingSettings={settingsOpen}
+	onOpenChange={onSettingsOpenChange}
+	settings={data.settings}
+	isServerMac={data.isServerMac}
+/>

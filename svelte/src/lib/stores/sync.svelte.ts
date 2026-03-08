@@ -1,3 +1,7 @@
+import { getContext, setContext } from 'svelte';
+
+const SYNC_STATE_KEY = Symbol('sync-state');
+
 export class SyncState {
 	hasChanges = $state(false);
 	isDismissed = $state(false);
@@ -50,7 +54,6 @@ export class SyncState {
 			this.lastSyncError = null;
 		} else if (error) {
 			this.lastSyncError = error;
-			// keep hasChanges true so card remains visible
 		}
 	}
 
@@ -73,15 +76,46 @@ export class SyncState {
 }
 
 type SyncProgress = {
-    current: number;
-    total: number;
+	current: number;
+	total: number;
 };
 
 type SyncErrorState = {
-    message: string;
-    failedCount: number;
-    totalCount: number;
-    timestamp: number;
+	message: string;
+	failedCount: number;
+	totalCount: number;
+	timestamp: number;
 };
 
-export const syncState = new SyncState();
+export type SyncStateLike = Pick<
+	SyncState,
+	'configure' | 'markChanged' | 'dismiss' | 'startSync' | 'updateProgress' | 'finishSync' | 'clearError'
+> & {
+	readonly hasChanges: boolean;
+	readonly isDismissed: boolean;
+	readonly isSyncing: boolean;
+	readonly isAppleMusicEnabled: boolean;
+	readonly syncProgress: SyncProgress | null;
+	readonly lastSyncError: SyncErrorState | null;
+	readonly shouldShow: boolean;
+	readonly progressPercent: number;
+	readonly hasError: boolean;
+};
+
+export function createSyncState() {
+	return new SyncState();
+}
+
+export function setSyncStateContext(syncState: SyncStateLike) {
+	setContext(SYNC_STATE_KEY, syncState);
+	return syncState;
+}
+
+export function getSyncStateContext() {
+	const syncState = getContext<SyncStateLike | undefined>(SYNC_STATE_KEY);
+	if (!syncState) {
+		throw new Error('sync state context is not available');
+	}
+
+	return syncState;
+}

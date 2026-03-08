@@ -150,10 +150,14 @@ func (a *App) GetAlbumsWithSongs(limit, offset int) ([]AlbumWithSongs, error) {
 		alb.CreatedAt = createdAt.Int64
 		alb.UpdatedAt = updatedAt.Int64
 
-		// Get artists
-		artists, _ := a.getArtistsForAlbum(alb.ID)
-		// Get songs
-		songs, _ := a.getSongsForAlbum(alb.ID)
+		artists, err := a.getArtistsForAlbum(alb.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load artists for album %d: %w", alb.ID, err)
+		}
+		songs, err := a.getSongsForAlbum(alb.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load songs for album %d: %w", alb.ID, err)
+		}
 
 		albums = append(albums, AlbumWithSongs{
 			Album:   alb,
@@ -183,7 +187,10 @@ func (a *App) GetAlbumWithArtists(albumID int) (*AlbumWithArtists, error) {
 	alb.CreatedAt = createdAt.Int64
 	alb.UpdatedAt = updatedAt.Int64
 
-	artists, _ := a.getArtistsForAlbum(albumID)
+	artists, err := a.getArtistsForAlbum(albumID)
+	if err != nil {
+		return nil, fmt.Errorf("load artists for album %d: %w", albumID, err)
+	}
 	return &AlbumWithArtists{Album: alb, Artists: artists}, nil
 }
 

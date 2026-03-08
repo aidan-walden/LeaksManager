@@ -2,14 +2,15 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import CreateCard from './create-card.svelte';
-	import type { EditableSong } from '../columns';
-	import MultiArtistCombobox from '$lib/components/ui/multi-artist-combobox.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import CreateCard from '$lib/components/forms/create-card.svelte';
+	import type { EditableSong } from '$lib/components/columns';
+	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import { UpdateSong, WriteSongMetadata, type Album, type Song } from '$lib/wails';
-	import { toAssetUrl } from '$lib/utils';
+	import type { Album, Song } from '$lib/wails';
+	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -29,6 +30,7 @@
 	const artists = $derived(getArtistsContext());
 	const producers = $derived(getProducersContext());
 	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
+	const { wailsActions } = getAppServicesContext();
 
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
@@ -51,20 +53,9 @@
 		let cancelled = false;
 
 		(async () => {
-			try {
-				const response = await fetch(toAssetUrl(song.artworkPath) ?? '');
-				if (!response.ok) {
-					throw new Error(`failed to fetch artwork: ${response.status}`);
-				}
-				const artworkBlob = await response.blob();
-				if (!cancelled) {
-					blob = artworkBlob;
-				}
-			} catch (error) {
-				if (!cancelled) {
-					blob = null;
-				}
-				console.error('Failed to fetch artwork:', error);
+			const artworkBlob = await loadArtworkPreviewBlob(song.artworkPath);
+			if (!cancelled) {
+				blob = artworkBlob;
 			}
 		})();
 
@@ -138,7 +129,7 @@
 				songName = song.name;
 				albumName = song.album?.name ?? '';
 				isSingle = single;
-				manualAlbumName = single ? '' : song.album?.name ?? '';
+				manualAlbumName = single ? '' : (song.album?.name ?? '');
 
 				initialValues = {
 					name: song.name,
@@ -189,7 +180,7 @@
 		}
 	});
 
-	const handleUpload = async (files: File[]) => {
+	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
 		file = files[0];
 		if (initialValues) {
@@ -243,7 +234,7 @@
 		}
 
 		// update existing song
-		await UpdateSong({
+		await wailsActions.updateSong({
 			id: song.id,
 			name: songName,
 			albumName: albumName.trim() || undefined,
@@ -253,7 +244,7 @@
 		});
 
 		// write metadata to disk
-		await WriteSongMetadata(song.id);
+		await wailsActions.writeSongMetadata(song.id);
 
 		return { id: song.id };
 	}
@@ -359,11 +350,17 @@
 	{callback}
 	title={song ? 'Edit Song' : 'Create Song'}
 	formId="create-song-form"
-	uploadTabLabel="Song Art"
-	uploadPlaceholder="Upload Song Art"
+	upload={{
+		tabLabel: 'Song Art',
+		placeholder: 'Upload Song Art',
+		onUpload: handleUpload,
+		limit: {
+			maxFiles: 1,
+			fileCount: file ? 1 : 0
+		},
+		preview: blob
+	}}
 	formFields={songFields}
-	onFileUpload={handleUpload}
-	uploadFieldImage={blob}
 	submitLabel={song ? 'Save Changes' : 'Create'}
 	{beforeSubmit}
 	onSubmit={handleSubmit}

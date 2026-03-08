@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"time"
 )
 
 // --- File Operations ---
@@ -18,9 +17,7 @@ func (a *App) SaveUploadedFile(filename string, base64Data string) (string, erro
 		return "", fmt.Errorf("failed to decode base64: %v", err)
 	}
 
-	timestampedName := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), filename)
-	relPath := filepath.ToSlash(filepath.Join("uploads", "songs", timestampedName))
-	fullPath, err := a.staticFilePath(relPath)
+	relPath, fullPath, err := a.newUploadPath("songs", filename)
 	if err != nil {
 		return "", err
 	}
@@ -39,9 +36,7 @@ func (a *App) SaveArtwork(filename string, base64Data string) (string, error) {
 		return "", fmt.Errorf("failed to decode base64: %v", err)
 	}
 
-	timestampedName := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), filename)
-	relPath := filepath.ToSlash(filepath.Join("uploads", "artwork", timestampedName))
-	fullPath, err := a.staticFilePath(relPath)
+	relPath, fullPath, err := a.newUploadPath("artwork", filename)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +50,7 @@ func (a *App) SaveArtwork(filename string, base64Data string) (string, error) {
 }
 
 func (a *App) DeleteFile(relPath string) error {
-	fullPath, err := a.staticFilePath(relPath)
+	fullPath, err := a.uploadsFilePath(relPath)
 	if err != nil {
 		return err
 	}
@@ -73,7 +68,7 @@ func (a *App) CleanupFiles(relPaths []string) int {
 }
 
 func (a *App) ShowInFileExplorer(relPath string) error {
-	fullPath, err := a.staticFilePath(relPath)
+	fullPath, err := a.uploadsFilePath(relPath)
 	if err != nil {
 		return err
 	}

@@ -6,15 +6,15 @@ export interface ArtworkData {
 }
 
 export interface ExtractedMetadata {
-	title: string;
-	artist: string;
-	albumArtist: string;
-	album: string;
-	year: number;
-	genre: string;
-	trackNumber: number;
-	producer: string;
-	duration: number;
+	title: string | null;
+	artist: string | null;
+	albumArtist: string | null;
+	album: string | null;
+	year: number | null;
+	genre: string | null;
+	trackNumber: number | null;
+	producer: string | null;
+	duration: number | null;
 	artwork: ArtworkData | null;
 }
 
@@ -45,7 +45,7 @@ export interface SyncResult {
 export interface SyncItemResult {
 	songId: number;
 	songName: string;
-	status: string;
+	status: 'failed' | 'added' | 'updated';
 	appleMusicId?: string;
 	errorMessage?: string;
 }
@@ -97,6 +97,7 @@ export interface Song {
 	duration: number | null;
 	filepath: string;
 	fileType: string | null;
+	appleMusicId?: string;
 	createdAt: number;
 	updatedAt: number;
 	synced: boolean;
@@ -225,23 +226,31 @@ export interface UpdateSettingsInput {
 	automaticallyMakeSingles?: boolean;
 }
 
-export interface FileData {
+export interface PageRequest {
+	limit: number;
+	offset: number;
+}
+
+export interface SongImportDraft {
 	originalFilename: string;
 	filepath: string;
 	metadata: ExtractedMetadata;
 	parsedArtists: string[];
+	parsedProducers?: string[];
 	hasUnmappedArtists: boolean;
 	albumId?: number;
 }
 
+export type FileData = SongImportDraft;
+
 export interface UploadAndExtractResult {
-	filesData: FileData[];
+	filesData: SongImportDraft[];
 	unmappedArtists: string[];
 	filesWithArtwork: number;
 }
 
 export interface CreateSongsWithMetadataInput {
-	filesData: FileData[];
+	filesData: SongImportDraft[];
 	artistMapping: Record<string, number | 'CREATE_NEW'>;
 	albumId?: number;
 	useEmbeddedArtwork: boolean;
@@ -250,4 +259,15 @@ export interface CreateSongsWithMetadataInput {
 export interface FileUpload {
 	filename: string;
 	base64Data: string;
+}
+
+export interface FileUploadRequest extends FileUpload {}
+
+export interface AlbumArtUploadRequest extends FileUpload {
+	albumId: number;
+}
+
+export interface SongBatchUploadRequest {
+	files: FileUpload[];
+	albumId?: number;
 }

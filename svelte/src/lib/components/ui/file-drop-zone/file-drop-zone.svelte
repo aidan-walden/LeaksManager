@@ -3,18 +3,22 @@
 -->
 
 <script lang="ts">
-	import { cn } from '$lib/utils/utils';
+	import { cn } from '$lib/utils';
 	import UploadIcon from '@lucide/svelte/icons/upload';
-	import { displaySize } from '.';
+	import { formatFileSize } from './file-drop-zone-constants';
+	import {
+		canUploadFiles as getCanUploadFiles,
+		shouldAcceptFile,
+		shouldAllowMultiple
+	} from './file-drop-zone-helpers';
 	import { useId } from 'bits-ui';
-	import type { FileDropZoneProps, FileRejectedReason } from './types';
+	import type { FileDropZoneProps } from './types';
 
 	let {
 		id = useId(),
 		children,
-		maxFiles,
+		limit,
 		maxFileSize,
-		fileCount,
 		disabled = false,
 		clickable = true,
 		onUpload,
@@ -23,12 +27,6 @@
 		class: className,
 		...rest
 	}: FileDropZoneProps = $props();
-
-	if (maxFiles !== undefined && fileCount === undefined) {
-		console.warn(
-			'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt'
-		);
-	}
 
 	let uploading = $state(false);
 
@@ -63,38 +61,6 @@
 		(e.target as HTMLInputElement).value = '';
 	};
 
-	const shouldAcceptFile = (file: File, fileNumber: number): FileRejectedReason | undefined => {
-		if (maxFileSize !== undefined && file.size > maxFileSize) return 'Maximum file size exceeded';
-
-		if (maxFiles !== undefined && fileNumber > maxFiles) return 'Maximum files uploaded';
-
-		if (!accept) return undefined;
-
-		const acceptedTypes = accept.split(',').map((a) => a.trim().toLowerCase());
-		const fileType = file.type.toLowerCase();
-		const fileName = file.name.toLowerCase();
-
-		const isAcceptable = acceptedTypes.some((pattern) => {
-			// check extension like .mp4
-			if (fileType.startsWith('.')) {
-				return fileName.endsWith(pattern);
-			}
-
-			// if pattern has wild card like video/*
-			if (pattern.endsWith('/*')) {
-				const baseType = pattern.slice(0, pattern.indexOf('/*'));
-				return fileType.startsWith(baseType + '/');
-			}
-
-			// otherwise it must be a specific type like video/mp4
-			return fileType === pattern;
-		});
-
-		if (!isAcceptable) return 'File type not allowed';
-
-		return undefined;
-	};
-
 	const upload = async (uploadFiles: File[]) => {
 		uploading = true;
 
@@ -103,7 +69,11 @@
 		for (let i = 0; i < uploadFiles.length; i++) {
 			const file = uploadFiles[i];
 
-			const rejectedReason = shouldAcceptFile(file, (fileCount ?? 0) + i + 1);
+			const rejectedReason = shouldAcceptFile(file, (limit?.fileCount ?? 0) + i + 1, {
+				accept,
+				maxFileSize,
+				limit
+			});
 
 			if (rejectedReason) {
 				onFileRejected?.({ file, reason: rejectedReason });
@@ -113,16 +83,14 @@
 			validFiles.push(file);
 		}
 
-		await onUpload(validFiles);
-
-		uploading = false;
+		try {
+			await onUpload(validFiles);
+		} finally {
+			uploading = false;
+		}
 	};
 
-	const canUploadFiles = $derived(
-		!disabled &&
-			!uploading &&
-			!(maxFiles !== undefined && fileCount !== undefined && fileCount >= maxFiles)
-	);
+	const canUploadFiles = $derived(getCanUploadFiles(disabled ?? false, uploading, limit));
 </script>
 
 {#if clickable}
@@ -149,16 +117,16 @@
 					<span class="font-medium text-muted-foreground">
 						Drag 'n' drop files here, or click to select files
 					</span>
-					{#if maxFiles || maxFileSize}
+					{#if limit || maxFileSize}
 						<span class="text-sm text-muted-foreground/75">
-							{#if maxFiles}
-								<span>You can upload {maxFiles} files</span>
+							{#if limit}
+								<span>You can upload {limit.maxFiles} files</span>
 							{/if}
-							{#if maxFiles && maxFileSize}
-								<span>(up to {displaySize(maxFileSize)} each)</span>
+							{#if limit && maxFileSize}
+								<span>(up to {formatFileSize(maxFileSize)} each)</span>
 							{/if}
-							{#if maxFileSize && !maxFiles}
-								<span>Maximum size {displaySize(maxFileSize)}</span>
+							{#if maxFileSize && !limit}
+								<span>Maximum size {formatFileSize(maxFileSize)}</span>
 							{/if}
 						</span>
 					{/if}
@@ -170,7 +138,7 @@
 			disabled={!canUploadFiles}
 			{id}
 			{accept}
-			multiple={maxFiles === undefined || maxFiles - (fileCount ?? 0) > 1}
+			multiple={shouldAllowMultiple(limit)}
 			type="file"
 			onchange={change}
 			class="hidden"

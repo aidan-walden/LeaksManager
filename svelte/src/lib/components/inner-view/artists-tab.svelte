@@ -1,28 +1,29 @@
 <script lang="ts">
-	import ArtistsLike from './artists-like.svelte';
-	import CreateArtistCard from '$lib/components/ui/create-artist-card.svelte';
-	import ArtistsSkeleton from '$lib/components/ui/artists-skeleton.svelte';
-	import { invalidateAll } from '$app/navigation';
-	import { editableArtistSchema, type EditableArtist } from '@/schema';
+	import EntityGrid from '$lib/components/shared/entity-grid.svelte';
+	import CreateArtistCard from '$lib/components/features/create-artist-card.svelte';
+	import { editableArtistSchema, type EditableArtist } from '$lib/schema';
 	import type { Artist } from '$lib/wails';
-	import type { PageData } from '../../../routes/[tab]/$types';
+	import type { TabViewData } from '$lib/view-models/tab-data';
 
-	type ArtistsPromise = PageData['artists'];
-	type ArtistElement = Awaited<ArtistsPromise> extends Array<infer T> ? (T extends Artist ? T : Artist) : Artist;
+	type ArtistElement = TabViewData['artists'][number] extends infer T
+		? T extends Artist
+			? T
+			: Artist
+		: Artist;
 
 	let creatingArtist = $state(false);
 	let currentArtist = $state<EditableArtist | null>(null);
 
-	let { artistsPromise, defaultThumbnail }: {
-		artistsPromise: ArtistsPromise;
+	let {
+		artists,
+		defaultThumbnail
+	}: {
+		artists: TabViewData['artists'];
 		defaultThumbnail: string;
 	} = $props();
 
 	async function onDelete(id: number) {
-		// DeleteArtist function not yet implemented in wails
-		console.warn('DeleteArtist not yet implemented');
-		// await DeleteArtist(id);
-		// await invalidateAll();
+		void id;
 	}
 
 	function convertToEditableArtist(artist: Artist): EditableArtist {
@@ -43,15 +44,13 @@
 	}
 </script>
 
-<ArtistsLike
-	dataPromise={artistsPromise}
+<EntityGrid
+	data={artists}
 	entityType="artist"
 	showImages={true}
-	defaultThumbnail={defaultThumbnail}
+	{defaultThumbnail}
 	createCardComponent={CreateArtistCard}
-	skeletonComponent={ArtistsSkeleton}
 	resolveImage={resolveArtistImage}
 	onEdit={onClickEdit}
-	onDelete={onDelete}
+	{onDelete}
 />
-

@@ -1,7 +1,7 @@
+import { getContext, setContext } from 'svelte';
 import { toast } from 'svelte-sonner';
 
-let lastErrorKey = '';
-let lastErrorAt = 0;
+const RUNTIME_ERROR_NOTIFIER_KEY = Symbol('runtime-error-notifier');
 const DEDUPE_WINDOW_MS = 1500;
 
 export function getErrorMessage(error: unknown): string {
@@ -22,21 +22,49 @@ export function getErrorMessage(error: unknown): string {
 	return 'Unknown runtime error';
 }
 
-export function notifyRuntimeError(error: unknown, context?: string): void {
-	const message = getErrorMessage(error);
-	const toastMessage = context ? `${context}: ${message}` : message;
-	const now = Date.now();
+export class RuntimeErrorNotifier {
+	#lastErrorKey = '';
+	#lastErrorAt = 0;
 
-	if (toastMessage === lastErrorKey && now - lastErrorAt < DEDUPE_WINDOW_MS) {
-		return;
+	notify(error: unknown, context?: string): void {
+		const message = getErrorMessage(error);
+		const toastMessage = context ? `${context}: ${message}` : message;
+		const now = Date.now();
+
+		if (toastMessage === this.#lastErrorKey && now - this.#lastErrorAt < DEDUPE_WINDOW_MS) {
+			return;
+		}
+
+		this.#lastErrorKey = toastMessage;
+		this.#lastErrorAt = now;
+
+		if (typeof window !== 'undefined') {
+			toast.error(toastMessage);
+		}
 	}
 
-	lastErrorKey = toastMessage;
-	lastErrorAt = now;
+	reset() {
+		this.#lastErrorKey = '';
+		this.#lastErrorAt = 0;
+	}
+}
 
-	if (typeof window !== 'undefined') {
-		toast.error(toastMessage);
+export type RuntimeErrorNotifierLike = Pick<RuntimeErrorNotifier, 'notify' | 'reset'>;
+
+export function createRuntimeErrorNotifier() {
+	return new RuntimeErrorNotifier();
+}
+
+export function setRuntimeErrorNotifierContext(notifier: RuntimeErrorNotifierLike) {
+	setContext(RUNTIME_ERROR_NOTIFIER_KEY, notifier);
+	return notifier;
+}
+
+export function getRuntimeErrorNotifierContext() {
+	const notifier = getContext<RuntimeErrorNotifierLike | undefined>(RUNTIME_ERROR_NOTIFIER_KEY);
+	if (!notifier) {
+		throw new Error('runtime error notifier context is not available');
 	}
 
-	console.error(context ? `Runtime error (${context})` : 'Runtime error', error);
+	return notifier;
 }

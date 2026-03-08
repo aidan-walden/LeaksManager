@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import CreateCard from './create-card.svelte';
-	import { CreateArtist } from '$lib/wails';
+	import CreateCard from '$lib/components/forms/create-card.svelte';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
 
 	let {
 		open = $bindable(),
@@ -14,8 +14,9 @@
 	let blob: Blob | null = $derived.by(() => {
 		return file ? new Blob([file], { type: file.type }) : null;
 	});
+	const { wailsActions } = getAppServicesContext();
 
-	const handleUpload = async (files: File[]) => {
+	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
 		file = files[0];
 	};
@@ -25,7 +26,7 @@
 		const careerStartStr = formData.get('career-start') as string;
 		const careerEndStr = formData.get('career-end') as string;
 
-		const artist = await CreateArtist({
+		const artist = await wailsActions.createArtist({
 			name,
 			careerStartYear: careerStartStr ? parseInt(careerStartStr) : undefined,
 			careerEndYear: careerEndStr ? parseInt(careerEndStr) : undefined
@@ -77,10 +78,16 @@
 	{callback}
 	title="Create Artist"
 	formId="create-artist-form"
-	uploadTabLabel="Artist Art"
-	uploadPlaceholder="Upload Artist Art"
+	upload={{
+		tabLabel: 'Artist Art',
+		placeholder: 'Upload Artist Art',
+		onUpload: handleUpload,
+		limit: {
+			maxFiles: 1,
+			fileCount: file ? 1 : 0
+		},
+		preview: blob
+	}}
 	formFields={artistFields}
-	onFileUpload={handleUpload}
-	uploadFieldImage={blob}
 	onSubmit={handleSubmit}
 />

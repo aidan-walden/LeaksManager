@@ -6,7 +6,7 @@
 	import * as Command from '$lib/components/ui/command/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { cn } from '$lib/utils/utils.js';
+	import { cn } from '$lib/utils.js';
 	import type { Album } from '$lib/wails';
 
 	let {
@@ -24,9 +24,7 @@
 	let open = $state(false);
 	let triggerRef = $state<HTMLButtonElement>(null!);
 
-	const selectedAlbum = $derived(
-		albums.find((album) => album.id === value) ?? null
-	);
+	const selectedAlbum = $derived(albums.find((album) => album.id === value) ?? null);
 
 	function selectAlbum(albumId: number) {
 		value = albumId;

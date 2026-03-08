@@ -2,49 +2,16 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import { syncState } from '$lib/stores/sync.svelte';
-	import { SyncSongsToAppleMusic } from '$lib/wails';
+	import { getAppServicesContext } from '$lib/contexts/app-services';
+	import { runAsyncAction } from '$lib/errors/async-action';
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 
+	const { syncState, wailsActions } = getAppServicesContext();
+
 	async function handleSync() {
 		syncState.startSync();
-
-		try {
-			const result = await SyncSongsToAppleMusic();
-
-			// update progress as we go (currently backend returns all at once)
-			// future: could use wails runtime events for streaming progress
-			syncState.updateProgress(result.totalSongs, result.totalSongs);
-
-			// check for failures
-			if (result.failureCount === 0) {
-				syncState.finishSync(true);
-
-				// show success message
-				const addedMsg = result.addedCount > 0 ? `, ${result.addedCount} added` : '';
-				const updatedMsg =
-					result.updatedCount > 0 ? `, ${result.updatedCount} updated` : '';
-				toast.success(`Successfully synced ${result.successCount} songs${addedMsg}${updatedMsg}`);
-			} else {
-				// partial failure - store error state
-				syncState.finishSync(false, {
-					message: `${result.failureCount} songs failed to sync`,
-					failedCount: result.failureCount,
-					totalCount: result.totalSongs,
-					timestamp: result.completedAt
-				});
-
-				toast.error(`Sync completed with ${result.failureCount} errors`);
-
-				// TODO: future error card will show detailed error messages
-				// for now, log to console
-				console.error(
-					'Sync errors:',
-					result.results.filter((r) => r.status === 'failed')
-				);
-			}
-		} catch (error) {
+		const result = await runAsyncAction(() => wailsActions.syncSongsToAppleMusic(), (error) => {
 			const message = error instanceof Error ? error.message : 'Unknown error';
 			syncState.finishSync(false, {
 				message,
@@ -52,7 +19,30 @@
 				totalCount: 0,
 				timestamp: Date.now()
 			});
+		});
+		if (!result) {
+			return;
 		}
+
+		syncState.updateProgress(result.totalSongs, result.totalSongs);
+
+		if (result.failureCount === 0) {
+			syncState.finishSync(true);
+
+			const addedMsg = result.addedCount > 0 ? `, ${result.addedCount} added` : '';
+			const updatedMsg = result.updatedCount > 0 ? `, ${result.updatedCount} updated` : '';
+			toast.success(`Successfully synced ${result.successCount} songs${addedMsg}${updatedMsg}`);
+			return;
+		}
+
+		syncState.finishSync(false, {
+			message: `${result.failureCount} songs failed to sync`,
+			failedCount: result.failureCount,
+			totalCount: result.totalSongs,
+			timestamp: result.completedAt
+		});
+
+		toast.error(`Sync completed with ${result.failureCount} errors`);
 	}
 </script>
 
@@ -68,14 +58,13 @@
 				{#if syncState.isSyncing}
 					<p>Syncing changes to Apple Music...</p>
 					<Progress value={syncState.progressPercent} class="mt-2" />
-					<p class="text-sm text-muted-foreground mt-1">
+					<p class="mt-1 text-sm text-muted-foreground">
 						{syncState.syncProgress?.current ?? 0} / {syncState.syncProgress?.total ?? 0}
 					</p>
 				{:else if syncState.hasError}
 					<p class="text-destructive">{syncState.lastSyncError?.message}</p>
-					<p class="text-sm text-muted-foreground mt-2">
-						{syncState.lastSyncError?.failedCount} of {syncState.lastSyncError?.totalCount} songs
-						failed
+					<p class="mt-2 text-sm text-muted-foreground">
+						{syncState.lastSyncError?.failedCount} of {syncState.lastSyncError?.totalCount} songs failed
 					</p>
 					<!-- TODO: future error card implementation will show detailed errors here -->
 				{:else}
@@ -84,12 +73,7 @@
 				{/if}
 			</Card.Content>
 			<Card.Footer class="flex-col gap-2">
-				<Button
-					type="submit"
-					class="w-full"
-					onclick={handleSync}
-					disabled={syncState.isSyncing}
-				>
+				<Button type="submit" class="w-full" onclick={handleSync} disabled={syncState.isSyncing}>
 					{syncState.isSyncing ? 'Syncing...' : syncState.hasError ? 'Retry Sync' : 'Sync'}
 				</Button>
 				<Button
