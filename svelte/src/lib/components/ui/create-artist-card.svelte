@@ -77,10 +77,12 @@
 	{callback}
 	title="Create Artist"
 	formId="create-artist-form"
-	uploadTabLabel="Artist Art"
-	uploadPlaceholder="Upload Artist Art"
+	upload={{
+		tabLabel: 'Artist Art',
+		placeholder: 'Upload Artist Art',
+		onUpload: handleUpload,
+		preview: blob
+	}}
 	formFields={artistFields}
-	onFileUpload={handleUpload}
-	uploadFieldImage={blob}
 	onSubmit={handleSubmit}
 />

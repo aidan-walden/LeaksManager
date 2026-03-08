@@ -3,7 +3,7 @@
 -->
 
 <script lang="ts">
-	import { cn } from '$lib/utils/utils';
+	import { cn } from '$lib/utils';
 	import type { TagsInputProps } from './types';
 	import TagsInputTag from './tags-input-tag.svelte';
 	import { untrack } from 'svelte';

@@ -257,10 +257,12 @@
 	{callback}
 	title={album ? 'Edit Album' : 'Create Album'}
 	formId="create-album-form"
-	uploadTabLabel="Album Art"
-	uploadPlaceholder="Upload Album Art"
-	onFileUpload={handleUpload}
-	uploadFieldImage={blob}
+	upload={{
+		tabLabel: 'Album Art',
+		placeholder: 'Upload Album Art',
+		onUpload: handleUpload,
+		preview: blob
+	}}
 	formFields={albumFields}
 	submitLabel={album ? 'Save Changes' : 'Create'}
 	{beforeSubmit}

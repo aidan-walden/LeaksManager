@@ -3,9 +3,9 @@
 -->
 
 <script lang="ts">
-	import { cn } from '$lib/utils/utils';
+	import { cn } from '$lib/utils';
 	import UploadIcon from '@lucide/svelte/icons/upload';
-	import { displaySize } from '.';
+	import { displaySize } from './shared';
 	import { useId } from 'bits-ui';
 	import type { FileDropZoneProps, FileRejectedReason } from './types';
 
@@ -76,7 +76,7 @@
 
 		const isAcceptable = acceptedTypes.some((pattern) => {
 			// check extension like .mp4
-			if (fileType.startsWith('.')) {
+			if (pattern.startsWith('.')) {
 				return fileName.endsWith(pattern);
 			}
 
@@ -113,9 +113,11 @@
 			validFiles.push(file);
 		}
 
-		await onUpload(validFiles);
-
-		uploading = false;
+		try {
+			await onUpload(validFiles);
+		} finally {
+			uploading = false;
+		}
 	};
 
 	const canUploadFiles = $derived(

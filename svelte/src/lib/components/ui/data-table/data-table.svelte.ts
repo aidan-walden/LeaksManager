@@ -3,6 +3,7 @@ import {
 	type TableOptions,
 	type TableOptionsResolved,
 	type TableState,
+	type Updater,
 	createTable,
 } from "@tanstack/table-core";
 
@@ -56,10 +57,9 @@ export function createSvelteTable<TData extends RowData>(options: TableOptions<T
 			return mergeObjects(prev, options, {
 				state: mergeObjects(state, options.state || {}),
 
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				onStateChange: (updater: any) => {
-					if (updater instanceof Function) state = updater(state);
-					else state = mergeObjects(state, updater);
+				onStateChange: (updater: Updater<TableState>) => {
+					const nextState = typeof updater === "function" ? updater(state as TableState) : updater;
+					state = mergeObjects(state, nextState);
 
 					options.onStateChange?.(updater);
 				},
@@ -133,8 +133,7 @@ export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
 			return {
 				configurable: true,
 				enumerable: true,
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				value: (src as any)[key],
+				value: Reflect.get(src, key),
 				writable: true,
 			};
 		},

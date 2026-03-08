@@ -4,34 +4,21 @@ import { notifyRuntimeError } from '$lib/errors/runtime-error';
 
 export * from './types';
 
-const wrapRead = <T extends (...args: any[]) => Promise<any>>(name: string, fn: T) => {
-	return async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
-		try {
-			return await fn(...args);
-		} catch (error) {
-			notifyRuntimeError(error, name);
-			throw error;
-		}
-	};
+type AsyncBinding = (...args: any[]) => Promise<any>;
+
+type WrapOptions<T extends AsyncBinding> = {
+	markChanged?: boolean;
+	onSuccess?: (result: Awaited<ReturnType<T>>) => void;
 };
 
-// Helper to wrap mutating functions
-const wrapMutating = <T extends (...args: any[]) => Promise<any>>(name: string, fn: T) => {
-	return async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
-		try {
-			return await fn(...args);
-		} catch (error) {
-			notifyRuntimeError(error, name);
-			throw error;
-		}
-	};
-};
-
-const wrapSyncMutating = <T extends (...args: any[]) => Promise<any>>(name: string, fn: T) => {
+const wrapBinding = <T extends AsyncBinding>(name: string, fn: T, options: WrapOptions<T> = {}) => {
 	return async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
 		try {
 			const result = await fn(...args);
-			syncState.markChanged();
+			if (options.markChanged) {
+				syncState.markChanged();
+			}
+			options.onSuccess?.(result);
 			return result;
 		} catch (error) {
 			notifyRuntimeError(error, name);
@@ -41,78 +28,76 @@ const wrapSyncMutating = <T extends (...args: any[]) => Promise<any>>(name: stri
 };
 
 // --- Read-only / Non-mutating exports ---
-export const GetInitialData = wrapRead('GetInitialData', bindings.GetInitialData);
-export const GetArtists = wrapRead('GetArtists', bindings.GetArtists);
-export const FindArtistByName = wrapRead('FindArtistByName', bindings.FindArtistByName);
-export const GetAlbumsWithSongs = wrapRead('GetAlbumsWithSongs', bindings.GetAlbumsWithSongs);
-export const GetAlbumWithArtists = wrapRead('GetAlbumWithArtists', bindings.GetAlbumWithArtists);
-export const FindAlbumByName = wrapRead('FindAlbumByName', bindings.FindAlbumByName);
-export const GetSongsReadable = wrapRead('GetSongsReadable', bindings.GetSongsReadable);
-export const GetSongsCount = wrapRead('GetSongsCount', bindings.GetSongsCount);
-export const GetProducersWithAliases = wrapRead(
+export const GetInitialData = wrapBinding('GetInitialData', bindings.GetInitialData);
+export const GetArtists = wrapBinding('GetArtists', bindings.GetArtists);
+export const FindArtistByName = wrapBinding('FindArtistByName', bindings.FindArtistByName);
+export const GetAlbumsWithSongs = wrapBinding('GetAlbumsWithSongs', bindings.GetAlbumsWithSongs);
+export const GetAlbumWithArtists = wrapBinding(
+	'GetAlbumWithArtists',
+	bindings.GetAlbumWithArtists
+);
+export const FindAlbumByName = wrapBinding('FindAlbumByName', bindings.FindAlbumByName);
+export const GetSongsReadable = wrapBinding('GetSongsReadable', bindings.GetSongsReadable);
+export const GetSongsCount = wrapBinding('GetSongsCount', bindings.GetSongsCount);
+export const GetProducersWithAliases = wrapBinding(
 	'GetProducersWithAliases',
 	bindings.GetProducersWithAliases
 );
-export const MatchProducersFromFilename = wrapRead(
+export const MatchProducersFromFilename = wrapBinding(
 	'MatchProducersFromFilename',
 	bindings.MatchProducersFromFilename
 );
-export const GetSettings = wrapRead('GetSettings', bindings.GetSettings);
-export const ShowInFileExplorer = wrapRead('ShowInFileExplorer', bindings.ShowInFileExplorer);
-export const ExtractMetadata = wrapRead('ExtractMetadata', bindings.ExtractMetadata);
-export const SyncSongsToAppleMusic = wrapRead(
+export const GetSettings = wrapBinding('GetSettings', bindings.GetSettings);
+export const ShowInFileExplorer = wrapBinding('ShowInFileExplorer', bindings.ShowInFileExplorer);
+export const ExtractMetadata = wrapBinding('ExtractMetadata', bindings.ExtractMetadata);
+export const SyncSongsToAppleMusic = wrapBinding(
 	'SyncSongsToAppleMusic',
 	bindings.SyncSongsToAppleMusic
 );
 
 // --- Mutating exports ---
-export const CreateArtist = wrapMutating('CreateArtist', bindings.CreateArtist);
-export const CreateAlbum = wrapMutating('CreateAlbum', bindings.CreateAlbum);
-export const UpdateAlbum = wrapMutating('UpdateAlbum', bindings.UpdateAlbum);
-export const DeleteAlbum = wrapMutating('DeleteAlbum', bindings.DeleteAlbum);
-export const CreateSong = wrapSyncMutating('CreateSong', bindings.CreateSong);
-export const UpdateSong = wrapSyncMutating('UpdateSong', bindings.UpdateSong);
-export const DeleteSong = wrapSyncMutating('DeleteSong', bindings.DeleteSong);
-export const CreateProducerWithAliases = wrapMutating(
+export const CreateArtist = wrapBinding('CreateArtist', bindings.CreateArtist);
+export const CreateAlbum = wrapBinding('CreateAlbum', bindings.CreateAlbum);
+export const UpdateAlbum = wrapBinding('UpdateAlbum', bindings.UpdateAlbum);
+export const DeleteAlbum = wrapBinding('DeleteAlbum', bindings.DeleteAlbum);
+export const CreateSong = wrapBinding('CreateSong', bindings.CreateSong, { markChanged: true });
+export const UpdateSong = wrapBinding('UpdateSong', bindings.UpdateSong, { markChanged: true });
+export const DeleteSong = wrapBinding('DeleteSong', bindings.DeleteSong, { markChanged: true });
+export const CreateProducerWithAliases = wrapBinding(
 	'CreateProducerWithAliases',
 	bindings.CreateProducerWithAliases
 );
-export const UpdateProducerWithAliases = wrapMutating(
+export const UpdateProducerWithAliases = wrapBinding(
 	'UpdateProducerWithAliases',
 	bindings.UpdateProducerWithAliases
 );
-export const DeleteProducer = wrapMutating('DeleteProducer', bindings.DeleteProducer);
-export const SaveUploadedFile = wrapMutating('SaveUploadedFile', bindings.SaveUploadedFile);
-export const SaveArtwork = wrapMutating('SaveArtwork', bindings.SaveArtwork);
-export const DeleteFile = wrapMutating('DeleteFile', bindings.DeleteFile);
-export const CleanupFiles = wrapMutating('CleanupFiles', bindings.CleanupFiles);
-export const UploadAlbumArt = wrapMutating('UploadAlbumArt', bindings.UploadAlbumArt);
-export const WriteSongMetadata = wrapSyncMutating(
-	'WriteSongMetadata',
-	bindings.WriteSongMetadata
-);
-export const WriteAlbumMetadata = wrapMutating('WriteAlbumMetadata', bindings.WriteAlbumMetadata);
-export const WriteProducerMetadata = wrapMutating(
+export const DeleteProducer = wrapBinding('DeleteProducer', bindings.DeleteProducer);
+export const SaveUploadedFile = wrapBinding('SaveUploadedFile', bindings.SaveUploadedFile);
+export const SaveArtwork = wrapBinding('SaveArtwork', bindings.SaveArtwork);
+export const DeleteFile = wrapBinding('DeleteFile', bindings.DeleteFile);
+export const CleanupFiles = wrapBinding('CleanupFiles', bindings.CleanupFiles);
+export const UploadAlbumArt = wrapBinding('UploadAlbumArt', bindings.UploadAlbumArt);
+export const WriteSongMetadata = wrapBinding('WriteSongMetadata', bindings.WriteSongMetadata, {
+	markChanged: true
+});
+export const WriteAlbumMetadata = wrapBinding('WriteAlbumMetadata', bindings.WriteAlbumMetadata);
+export const WriteProducerMetadata = wrapBinding(
 	'WriteProducerMetadata',
 	bindings.WriteProducerMetadata
 );
-export const UploadAndExtractMetadata = wrapMutating(
+export const UploadAndExtractMetadata = wrapBinding(
 	'UploadAndExtractMetadata',
 	bindings.UploadAndExtractMetadata
 );
-export const CreateSongsWithMetadata = wrapSyncMutating(
+export const CreateSongsWithMetadata = wrapBinding(
 	'CreateSongsWithMetadata',
-	bindings.CreateSongsWithMetadata
+	bindings.CreateSongsWithMetadata,
+	{ markChanged: true }
 );
-export const UploadSongs = wrapSyncMutating('UploadSongs', bindings.UploadSongs);
+export const UploadSongs = wrapBinding('UploadSongs', bindings.UploadSongs, { markChanged: true });
 
-export const UpdateSettings = async (...args: Parameters<typeof bindings.UpdateSettings>) => {
-	try {
-		const result = await bindings.UpdateSettings(...args);
+export const UpdateSettings = wrapBinding('UpdateSettings', bindings.UpdateSettings, {
+	onSuccess: (result) => {
 		syncState.configure(result.importToAppleMusic);
-		return result;
-	} catch (error) {
-		notifyRuntimeError(error, 'UpdateSettings');
-		throw error;
 	}
-};
+});

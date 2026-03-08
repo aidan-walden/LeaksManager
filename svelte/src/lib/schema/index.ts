@@ -1,5 +1,21 @@
 import * as z from 'zod';
 
+const parseJsonValue = <T>(
+	value: string,
+	ctx: z.RefinementCtx,
+	fieldName: string
+): T | typeof z.NEVER => {
+	try {
+		return JSON.parse(value) as T;
+	} catch {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: `${fieldName} must be valid JSON`
+		});
+		return z.NEVER;
+	}
+};
+
 export const artworkDataSchema = z.object({
 	data: z.string(),
 	mimeType: z.string()
@@ -197,12 +213,16 @@ export const createSongsWithMetadataSchema = z.object({
 	),
 	filesData: z
 		.string()
-		.transform((str) => JSON.parse(str))
+		.transform((str, ctx) => parseJsonValue<unknown>(str, ctx, 'filesData'))
 		.pipe(z.array(fileDataSchema).min(1)),
 	artistMapping: z
 		.string()
 		.nullable()
-		.transform((v) => (v && v.trim() ? JSON.parse(v) : {})) as z.ZodType<
+		.transform((v, ctx) =>
+			v && v.trim()
+				? parseJsonValue<Record<string, number | 'CREATE_NEW'>>(v, ctx, 'artistMapping')
+				: {}
+		) as z.ZodType<
 		Record<string, number | 'CREATE_NEW'>
 	>,
 	useEmbeddedArtwork: z.preprocess((v) => v === 'true' || v === true, z.boolean())

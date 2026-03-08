@@ -359,11 +359,13 @@
 	{callback}
 	title={song ? 'Edit Song' : 'Create Song'}
 	formId="create-song-form"
-	uploadTabLabel="Song Art"
-	uploadPlaceholder="Upload Song Art"
+	upload={{
+		tabLabel: 'Song Art',
+		placeholder: 'Upload Song Art',
+		onUpload: handleUpload,
+		preview: blob
+	}}
 	formFields={songFields}
-	onFileUpload={handleUpload}
-	uploadFieldImage={blob}
 	submitLabel={song ? 'Save Changes' : 'Create'}
 	{beforeSubmit}
 	onSubmit={handleSubmit}

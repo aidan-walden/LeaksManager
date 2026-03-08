@@ -5,6 +5,15 @@
 	import { FileDropZone } from '@/components/ui/file-drop-zone';
 	import { invalidateAll } from '$app/navigation';
 
+	type UploadConfig = {
+		tabLabel: string;
+		placeholder?: string;
+		onUpload: (files: File[]) => Promise<void>;
+		accept?: string;
+		maxFiles?: number;
+		preview?: Blob | null;
+	};
+
 	let {
 		open = $bindable(),
 		onOpenChange,
@@ -13,12 +22,7 @@
 		formId,
 		submitLabel = 'Create',
 		metadataTabLabel = 'Metadata',
-		uploadTabLabel,
-		uploadPlaceholder = 'Upload File',
-		onFileUpload,
-		uploadAccept = 'image/*',
-		uploadMaxFiles = 1,
-		uploadFieldImage,
+		upload,
 		formFields,
 		beforeSubmit,
 		onSubmit
@@ -30,12 +34,7 @@
 		formId: string;
 		submitLabel?: string;
 		metadataTabLabel?: string;
-		uploadTabLabel?: string;
-		uploadPlaceholder?: string;
-		onFileUpload?: (files: File[]) => Promise<void>;
-		uploadAccept?: string;
-		uploadMaxFiles?: number;
-		uploadFieldImage?: Blob | null;
+		upload?: UploadConfig;
 		formFields: Snippet<[loading: boolean]>;
 		beforeSubmit?: () => boolean;
 		onSubmit: (formData: FormData) => Promise<{ id?: number }>;
@@ -82,8 +81,8 @@
 	<Tabs.Root value="metadata" class="flex h-full w-full flex-col">
 		<Tabs.List>
 			<Tabs.Trigger value="metadata">{metadataTabLabel}</Tabs.Trigger>
-			{#if uploadTabLabel}
-				<Tabs.Trigger value="upload">{uploadTabLabel}</Tabs.Trigger>
+			{#if upload}
+				<Tabs.Trigger value="upload">{upload.tabLabel}</Tabs.Trigger>
 			{/if}
 		</Tabs.List>
 		<Tabs.Content value="metadata" class="flex flex-1 justify-start">
@@ -91,25 +90,25 @@
 				{@render formContent()}
 			</div>
 		</Tabs.Content>
-		{#if uploadTabLabel}
+		{#if upload}
 			<Tabs.Content value="upload" class="flex flex-1 items-center justify-center p-4">
 				<div class="mx-auto aspect-square w-full max-w-[20rem]">
 					<FileDropZone
-						maxFiles={uploadMaxFiles}
-						accept={uploadAccept}
-						onUpload={onFileUpload ?? (() => Promise.resolve())}
+						maxFiles={upload.maxFiles ?? 1}
+						accept={upload.accept ?? 'image/*'}
+						onUpload={upload.onUpload}
 						disabled={loading}
 						class="size-full"
 					>
-						{#if uploadFieldImage}
+						{#if upload.preview}
 							<img
-								src={URL.createObjectURL(uploadFieldImage)}
+								src={URL.createObjectURL(upload.preview)}
 								alt="Uploaded file preview"
 								class="size-full rounded-md object-cover"
 							/>
 						{:else}
 							<div class="flex size-full items-center justify-center text-center">
-								{uploadPlaceholder}
+								{upload.placeholder ?? 'Upload File'}
 							</div>
 						{/if}
 					</FileDropZone>
@@ -125,7 +124,7 @@
 			<AlertDialog.Title>{title}</AlertDialog.Title>
 		</AlertDialog.Header>
 		<div style="min-height: 450px; max-height: 450px;">
-			{#if uploadTabLabel}
+			{#if upload}
 				{@render tabs()}
 			{:else}
 				<div class="flex h-full w-full items-start justify-start pt-4 pl-0.5">
