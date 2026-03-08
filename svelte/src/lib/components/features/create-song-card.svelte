@@ -11,6 +11,12 @@
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
 	import type { Album, Song } from '$lib/wails';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import * as Command from '$lib/components/ui/command/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { cn } from '$lib/utils.js';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -34,6 +40,7 @@
 
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
+	let albumPopoverOpen = $state(false);
 
 	// Update blob when file changes
 	$effect(() => {
@@ -284,20 +291,64 @@
 		</div>
 		<div class="grid gap-2">
 			<Label>Album</Label>
-			<Input
-				id="album"
-				name="album"
-				type="text"
-				list="song-album-suggestions"
-				placeholder="Album Name"
-				bind:value={albumName}
-				disabled={loading || isSingle}
-			/>
-			<datalist id="song-album-suggestions">
-				{#each albums as album (album.id)}
-					<option value={album.name}></option>
-				{/each}
-			</datalist>
+			<Popover.Root bind:open={albumPopoverOpen}>
+				<Popover.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							class="h-auto min-h-[36px] w-full justify-start"
+							role="combobox"
+							aria-expanded={albumPopoverOpen}
+							disabled={loading || isSingle}
+						>
+							<div class="flex flex-1 items-center">
+								{#if albumName}
+									<span>{albumName}</span>
+								{:else}
+									<span class="text-muted-foreground">Select album...</span>
+								{/if}
+							</div>
+							<ChevronsUpDownIcon class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content class="w-[400px] p-0">
+					<Command.Root>
+						<Command.Input
+							placeholder="Search or type album name..."
+							bind:value={albumName}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' && albumName.trim()) {
+									albumPopoverOpen = false;
+								}
+							}}
+						/>
+						<Command.List>
+							<Command.Empty>Type to set a custom album name.</Command.Empty>
+							<Command.Group>
+								{#each albums as album (album.id)}
+									<Command.Item
+										value={album.name}
+										onSelect={() => {
+											albumName = album.name;
+											albumPopoverOpen = false;
+										}}
+									>
+										<CheckIcon
+											class={cn(
+												'mr-2 h-4 w-4',
+												albumName !== album.name && 'text-transparent'
+											)}
+										/>
+										{album.name}
+									</Command.Item>
+								{/each}
+							</Command.Group>
+						</Command.List>
+					</Command.Root>
+				</Popover.Content>
+			</Popover.Root>
 		</div>
 		<div class="flex items-center gap-3">
 			<Checkbox

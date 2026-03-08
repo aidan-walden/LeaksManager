@@ -30,18 +30,16 @@
 
 	let props: DataTableProps<TData, TValue> = $props();
 
-	let {
-		data,
-		columns,
-		pageSize = 10,
-		pagination: controlledPagination
-	} = props;
-
-	const onPaginationChange = 'onPaginationChange' in props ? props.onPaginationChange : undefined;
+	const controlledPagination = $derived(
+		'pagination' in props ? props.pagination : undefined
+	);
+	const onPaginationChange = $derived(
+		'onPaginationChange' in props ? props.onPaginationChange : undefined
+	);
 
 	let pagination = $state<PaginationState>({
 		pageIndex: controlledPagination?.pageIndex ?? 0,
-		pageSize: controlledPagination?.pageSize ?? pageSize
+		pageSize: controlledPagination?.pageSize ?? (props.pageSize ?? 10)
 	});
 
 	$effect(() => {
@@ -57,15 +55,19 @@
 
 	const table = createSvelteTable({
 		get data() {
-			return data;
+			return props.data;
 		},
-		columns,
-		...(controlledPagination
-			? {
-					manualPagination: true,
-					pageCount: Math.ceil(controlledPagination.totalCount / controlledPagination.pageSize)
-				}
-			: {}),
+		get columns() {
+			return props.columns;
+		},
+		get manualPagination() {
+			return !!controlledPagination;
+		},
+		get pageCount() {
+			return controlledPagination
+				? Math.ceil(controlledPagination.totalCount / controlledPagination.pageSize)
+				: undefined;
+		},
 		state: {
 			get pagination() {
 				return pagination;
@@ -138,7 +140,7 @@
 				</Table.Row>
 			{:else}
 				<Table.Row>
-					<Table.Cell colspan={columns.length} class="h-24 text-center">No results.</Table.Cell>
+					<Table.Cell colspan={props.columns.length} class="h-24 text-center">No results.</Table.Cell>
 				</Table.Row>
 			{/each}
 		</Table.Body>
