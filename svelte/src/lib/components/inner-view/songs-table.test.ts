@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	clampSongsPage,
+	getSongsPagePropSyncMode,
 	mergeIncomingPageRows,
 	removeSongFromPage,
 	replaceSongInPage
@@ -21,6 +22,34 @@ describe('clampSongsPage', () => {
 });
 
 describe('page row helpers', () => {
+	it('replaces the visible page from props when the first page is refreshed', () => {
+		expect(
+			getSongsPagePropSyncMode(
+				0,
+				{ songs: [{ id: 1 }], songsCount: 10 },
+				{ songs: [{ id: 2 }], songsCount: 11 }
+			)
+		).toBe('replace-visible');
+	});
+
+	it('refreshes the current page when later pages receive new props', () => {
+		expect(
+			getSongsPagePropSyncMode(
+				2,
+				{ songs: [{ id: 1 }], songsCount: 75 },
+				{ songs: [{ id: 2 }], songsCount: 76 }
+			)
+		).toBe('refresh-current-page');
+	});
+
+	it('ignores the first prop snapshot and unchanged props', () => {
+		expect(getSongsPagePropSyncMode(0, null, { songs: [], songsCount: 0 })).toBe('none');
+		const songs = [{ id: 1 }];
+		expect(getSongsPagePropSyncMode(0, { songs, songsCount: 1 }, { songs, songsCount: 1 })).toBe(
+			'none'
+		);
+	});
+
 	it('removes deleted songs from the visible page', () => {
 		expect(
 			removeSongFromPage(

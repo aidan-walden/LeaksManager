@@ -3,6 +3,31 @@ export function clampSongsPage(page: number, songsCount: number, songsPerPage: n
 	return Math.min(page, lastPage);
 }
 
+type SongsPageProps<T> = {
+	songs: T[];
+	songsCount: number;
+};
+
+export function getSongsPagePropSyncMode<T>(
+	currentPage: number,
+	previousProps: SongsPageProps<T> | null,
+	nextProps: SongsPageProps<T>
+) {
+	if (
+		previousProps &&
+		previousProps.songs === nextProps.songs &&
+		previousProps.songsCount === nextProps.songsCount
+	) {
+		return 'none' as const;
+	}
+
+	if (!previousProps) {
+		return 'none' as const;
+	}
+
+	return currentPage === 0 ? ('replace-visible' as const) : ('refresh-current-page' as const);
+}
+
 export function removeSongFromPage<T extends { id: number }>(rows: T[], songId: number) {
 	return rows.filter((row) => row.id !== songId);
 }

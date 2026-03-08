@@ -5,6 +5,7 @@
 	import { createSongColumns } from '../columns';
 	import {
 		clampSongsPage,
+		getSongsPagePropSyncMode,
 		mergeIncomingPageRows,
 		removeSongFromPage,
 		replaceSongInPage
@@ -27,6 +28,7 @@
 	let localSongs = $state<SongReadable[] | null>(null);
 	let localSongsCount = $state<number | null>(null);
 	let refreshRequestId = 0;
+	let previousPageProps: { songs: SongReadable[]; songsCount: number } | null = null;
 	const { wailsActions } = getAppServicesContext();
 	const columns = createSongColumns(wailsActions, {
 		onSongDeleted: handleSongDeleted,
@@ -94,6 +96,23 @@
 		});
 		localSongs = mergeIncomingPageRows(incomingRows, visibleSongs, songsPerPage);
 	}
+
+	$effect(() => {
+		const nextPageProps = { songs: initialSongs, songsCount };
+		const syncMode = getSongsPagePropSyncMode(currentPage, previousPageProps, nextPageProps);
+		previousPageProps = nextPageProps;
+
+		if (syncMode === 'replace-visible') {
+			localSongs = initialSongs;
+			localSongsCount = songsCount;
+			return;
+		}
+
+		if (syncMode === 'refresh-current-page') {
+			localSongsCount = songsCount;
+			void refreshSongs(currentPage);
+		}
+	});
 </script>
 
 {#snippet table()}

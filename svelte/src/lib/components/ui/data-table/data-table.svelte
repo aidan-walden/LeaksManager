@@ -38,19 +38,26 @@
 	);
 
 	let pagination = $state<PaginationState>({
-		pageIndex: controlledPagination?.pageIndex ?? 0,
-		pageSize: controlledPagination?.pageSize ?? (props.pageSize ?? 10)
+		pageIndex: 0,
+		pageSize: props.pageSize ?? 10
 	});
 
 	$effect(() => {
-		if (!controlledPagination) {
+		if (controlledPagination) {
+			pagination = {
+				pageIndex: controlledPagination.pageIndex,
+				pageSize: controlledPagination.pageSize
+			};
 			return;
 		}
 
-		pagination = {
-			pageIndex: controlledPagination.pageIndex,
-			pageSize: controlledPagination.pageSize
-		};
+		const nextPageSize = props.pageSize ?? 10;
+		if (pagination.pageSize !== nextPageSize) {
+			pagination = {
+				...pagination,
+				pageSize: nextPageSize
+			};
+		}
 	});
 
 	const table = createSvelteTable({
