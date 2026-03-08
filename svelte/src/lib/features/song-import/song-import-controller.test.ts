@@ -29,6 +29,7 @@ describe('SongImportController', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		globalThis.FileReader = MockFileReader as unknown as typeof FileReader;
+		wailsActions.createSongsWithMetadata.mockResolvedValue([{ id: 1 }]);
 	});
 
 	it('creates songs immediately when no follow-up dialogs are needed', async () => {
@@ -46,7 +47,9 @@ describe('SongImportController', () => {
 		});
 		const controller = new SongImportController({ onComplete, wailsActions });
 
-		await controller.handleUpload([new File(['track'], 'track.mp3', { type: 'audio/mpeg' })]);
+		const createdCount = await controller.handleUpload([
+			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
+		]);
 
 		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith({
 			filesData: [
@@ -60,6 +63,7 @@ describe('SongImportController', () => {
 		});
 		expect(controller.showArtworkChoiceDialog).toBe(false);
 		expect(controller.showArtistMappingDialog).toBe(false);
+		expect(createdCount).toBe(1);
 		expect(onComplete).toHaveBeenCalled();
 	});
 
@@ -79,12 +83,17 @@ describe('SongImportController', () => {
 		});
 		const controller = new SongImportController({ onComplete, wailsActions });
 
-		await controller.handleUpload([new File(['track'], 'track.mp3', { type: 'audio/mpeg' })]);
+		const uploadPromise = controller.handleUpload([
+			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
+		]);
+		await vi.waitFor(() => {
+			expect(controller.showArtworkChoiceDialog).toBe(true);
+		});
 
-		expect(controller.showArtworkChoiceDialog).toBe(true);
 		expect(wailsActions.createSongsWithMetadata).not.toHaveBeenCalled();
 
 		await controller.handleArtworkChoice(true);
+		expect(await uploadPromise).toBe(1);
 
 		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -114,11 +123,15 @@ describe('SongImportController', () => {
 		});
 		const controller = new SongImportController({ onComplete, wailsActions });
 
-		await controller.handleUpload([new File(['track'], 'track.mp3', { type: 'audio/mpeg' })]);
+		const uploadPromise = controller.handleUpload([
+			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
+		]);
+		await vi.waitFor(() => {
+			expect(controller.showArtistMappingDialog).toBe(true);
+		});
 
-		expect(controller.showArtistMappingDialog).toBe(true);
-
-		await controller.handleArtistMappingCancel();
+		expect(await controller.handleArtistMappingCancel()).toBe(1);
+		expect(await uploadPromise).toBe(1);
 
 		expect(wailsActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
 		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith(
@@ -143,8 +156,14 @@ describe('SongImportController', () => {
 		});
 		const controller = new SongImportController({ onComplete, wailsActions });
 
-		await controller.handleUpload([new File(['track'], 'track.mp3', { type: 'audio/mpeg' })]);
-		await controller.handleArtistMappingCancel();
+		const uploadPromise = controller.handleUpload([
+			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
+		]);
+		await vi.waitFor(() => {
+			expect(controller.showArtistMappingDialog).toBe(true);
+		});
+		expect(await controller.handleArtistMappingCancel()).toBe(0);
+		expect(await uploadPromise).toBe(0);
 
 		expect(wailsActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
 		expect(wailsActions.createSongsWithMetadata).not.toHaveBeenCalled();

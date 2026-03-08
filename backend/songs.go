@@ -74,11 +74,11 @@ func (a *App) CreateSong(input CreateSongInput) (*Song, error) {
 	}, nil
 }
 
-func (a *App) UpdateSong(input UpdateSongInput) error {
+func (a *App) UpdateSong(input UpdateSongInput) (*SongReadable, error) {
 	now := time.Now().Unix()
 	tx, err := a.db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	albumID := input.AlbumID
@@ -86,7 +86,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 		resolvedAlbumID, err := a.resolveAlbumIDForSongUpdate(tx, input.ID, *input.AlbumName, input.ArtistIDs, input.IsSingle, now)
 		if err != nil {
 			tx.Rollback()
-			return err
+			return nil, err
 		}
 		albumID = resolvedAlbumID
 	}
@@ -98,14 +98,14 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 	)
 	if err != nil {
 		tx.Rollback()
-		return err
+		return nil, err
 	}
 
 	// Update artist links
 	if input.ArtistIDs != nil {
 		if _, err := tx.Exec(`DELETE FROM song_artists WHERE song_id = ?`, input.ID); err != nil {
 			tx.Rollback()
-			return err
+			return nil, err
 		}
 		for i, artistID := range input.ArtistIDs {
 			if _, err := tx.Exec(
@@ -113,7 +113,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 				input.ID, artistID, i, now,
 			); err != nil {
 				tx.Rollback()
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -122,7 +122,7 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 	if input.ProducerIDs != nil {
 		if _, err := tx.Exec(`DELETE FROM song_producers WHERE song_id = ?`, input.ID); err != nil {
 			tx.Rollback()
-			return err
+			return nil, err
 		}
 		for i, producerID := range input.ProducerIDs {
 			if _, err := tx.Exec(
@@ -130,12 +130,16 @@ func (a *App) UpdateSong(input UpdateSongInput) error {
 				input.ID, producerID, i, now,
 			); err != nil {
 				tx.Rollback()
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return a.GetSongReadable(input.ID)
 }
 
 func (a *App) resolveAlbumIDForSongUpdate(
@@ -236,6 +240,18 @@ func (a *App) DeleteSong(songID int) error {
 	return nil
 }
 
+func (a *App) GetSongReadable(songID int) (*SongReadable, error) {
+	song, err := a.getSongByID(songID)
+	if err != nil {
+		return nil, err
+	}
+	if song == nil {
+		return nil, nil
+	}
+
+	return a.buildSongReadable(*song)
+}
+
 func (a *App) GetSongsReadable(limit, offset int) ([]SongReadable, error) {
 	rows, err := a.db.Query(`
 		SELECT id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id
@@ -259,41 +275,84 @@ func (a *App) GetSongsReadable(limit, offset int) ([]SongReadable, error) {
 		song.CreatedAt = createdAt.Int64
 		song.UpdatedAt = updatedAt.Int64
 
-		// Get artists
-		artists, err := a.getArtistsForSong(song.ID)
+		readableSong, err := a.buildSongReadable(song)
 		if err != nil {
-			return nil, fmt.Errorf("load artists for song %d: %w", song.ID, err)
-		}
-		artistNames := make([]string, len(artists))
-		for i, art := range artists {
-			artistNames[i] = art.Name
+			return nil, err
 		}
 
-		producers, err := a.getProducersForSong(song.ID)
-		if err != nil {
-			return nil, fmt.Errorf("load producers for song %d: %w", song.ID, err)
-		}
-
-		var album *Album
-		if song.AlbumID != nil {
-			album, err = a.getAlbumByID(*song.AlbumID)
-			if err != nil {
-				return nil, fmt.Errorf("load album %d for song %d: %w", *song.AlbumID, song.ID, err)
-			}
-		}
-
-		songs = append(songs, SongReadable{
-			Song:      song,
-			Artist:    strings.Join(artistNames, ", "),
-			Artists:   artists,
-			Producers: producers,
-			Album:     album,
-		})
+		songs = append(songs, *readableSong)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return songs, nil
+}
+
+func (a *App) buildSongReadable(song Song) (*SongReadable, error) {
+	artists, err := a.getArtistsForSong(song.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load artists for song %d: %w", song.ID, err)
+	}
+	artistNames := make([]string, len(artists))
+	for i, art := range artists {
+		artistNames[i] = art.Name
+	}
+
+	producers, err := a.getProducersForSong(song.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load producers for song %d: %w", song.ID, err)
+	}
+
+	var album *Album
+	if song.AlbumID != nil {
+		album, err = a.getAlbumByID(*song.AlbumID)
+		if err != nil {
+			return nil, fmt.Errorf("load album %d for song %d: %w", *song.AlbumID, song.ID, err)
+		}
+	}
+
+	return &SongReadable{
+		Song:      song,
+		Artist:    strings.Join(artistNames, ", "),
+		Artists:   artists,
+		Producers: producers,
+		Album:     album,
+	}, nil
+}
+
+func (a *App) getSongByID(songID int) (*Song, error) {
+	var song Song
+	var createdAt, updatedAt sql.NullInt64
+	err := a.db.QueryRow(`
+		SELECT id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id
+		FROM songs
+		WHERE id = ?
+	`, songID).Scan(
+		&song.ID,
+		&song.Name,
+		&song.AlbumID,
+		&song.ArtworkPath,
+		&song.Genre,
+		&song.Year,
+		&song.TrackNumber,
+		&song.Duration,
+		&song.Filepath,
+		&song.FileType,
+		&createdAt,
+		&updatedAt,
+		&song.Synced,
+		&song.AppleMusicID,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	song.CreatedAt = createdAt.Int64
+	song.UpdatedAt = updatedAt.Int64
+	return &song, nil
 }
 
 func (a *App) GetSongsCount() (int, error) {

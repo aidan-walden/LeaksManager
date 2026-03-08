@@ -5,6 +5,7 @@
 	import { FileDropZone } from '$lib/components/ui/file-drop-zone';
 	import { invalidateAll } from '$app/navigation';
 	import { runAsyncAction } from '$lib/errors/async-action';
+	import { handleCreateCardSuccess } from './create-card';
 
 	type UploadConfig = {
 		tabLabel: string;
@@ -33,7 +34,7 @@
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
-		callback?: (recordId: number) => void;
+		callback?: (recordId: number) => void | Promise<void>;
 		title: string;
 		formId: string;
 		submitLabel?: string;
@@ -64,14 +65,15 @@
 				return;
 			}
 
-			formElement.reset();
-			await invalidateAll();
-
-			if (callback && result?.id) {
-				callback(result.id);
-			}
-
-			open = false;
+			await handleCreateCardSuccess({
+				result,
+				resetForm: () => formElement.reset(),
+				invalidate: invalidateAll,
+				callback,
+				close: () => {
+					open = false;
+				}
+			});
 		} finally {
 			loading = false;
 		}

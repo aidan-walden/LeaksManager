@@ -167,3 +167,48 @@ func TestCreateSongsWithMetadataCreatesArtistsAndInheritsAlbumArtwork(t *testing
 		t.Fatalf("expected song to be linked to inherited album, got %#v", readableSongs[0].Album)
 	}
 }
+
+func TestUpdateSongReturnsReadableSong(t *testing.T) {
+	app := newTestApp(t)
+
+	firstArtist, err := app.CreateArtist(CreateArtistInput{Name: "First Artist"})
+	if err != nil {
+		t.Fatalf("CreateArtist returned error: %v", err)
+	}
+
+	secondArtist, err := app.CreateArtist(CreateArtistInput{Name: "Second Artist"})
+	if err != nil {
+		t.Fatalf("CreateArtist returned error: %v", err)
+	}
+
+	song, err := app.CreateSong(CreateSongInput{
+		Name:      "Original Title",
+		Filepath:  "uploads/songs/original.mp3",
+		ArtistIDs: []int{firstArtist.ID},
+	})
+	if err != nil {
+		t.Fatalf("CreateSong returned error: %v", err)
+	}
+
+	updatedName := "Updated Title"
+	updatedSong, err := app.UpdateSong(UpdateSongInput{
+		ID:        song.ID,
+		Name:      &updatedName,
+		ArtistIDs: []int{secondArtist.ID},
+	})
+	if err != nil {
+		t.Fatalf("UpdateSong returned error: %v", err)
+	}
+	if updatedSong == nil {
+		t.Fatal("expected UpdateSong to return the updated readable song")
+	}
+	if updatedSong.Name != updatedName {
+		t.Fatalf("expected updated song name %q, got %q", updatedName, updatedSong.Name)
+	}
+	if updatedSong.Artist != "Second Artist" {
+		t.Fatalf("expected readable artist to be refreshed, got %q", updatedSong.Artist)
+	}
+	if len(updatedSong.Artists) != 1 || updatedSong.Artists[0].ID != secondArtist.ID {
+		t.Fatalf("expected artist links to be refreshed, got %#v", updatedSong.Artists)
+	}
+}

@@ -100,6 +100,21 @@
 		}
 	}
 
+	// derived values that track reactive props so the template re-renders
+	// when data/columns change (table methods are opaque to svelte's reactivity)
+	const headerGroups = $derived.by(() => {
+		void props.data;
+		void props.columns;
+		void pagination;
+		return table.getHeaderGroups();
+	});
+
+	const rowModel = $derived.by(() => {
+		void props.data;
+		void pagination;
+		return table.getRowModel();
+	});
+
 	const canNext = $derived(
 		controlledPagination
 			? pagination.pageIndex + 1 <
@@ -114,7 +129,7 @@
 <div class="rounded-md border">
 	<Table.Root>
 		<Table.Header>
-			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
+			{#each headerGroups as headerGroup (headerGroup.id)}
 				<Table.Row>
 					{#each headerGroup.headers as header (header.id)}
 						<Table.Head colspan={header.colSpan}>
@@ -130,7 +145,7 @@
 			{/each}
 		</Table.Header>
 		<Table.Body>
-			{#each table.getRowModel().rows as row (row.id)}
+			{#each rowModel.rows as row (row.id)}
 				<Table.Row data-state={row.getIsSelected() && 'selected'}>
 					{#each row.getVisibleCells() as cell (cell.id)}
 						<Table.Cell>

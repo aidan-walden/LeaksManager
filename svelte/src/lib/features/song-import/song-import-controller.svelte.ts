@@ -8,11 +8,16 @@ type StagedSongImport = {
 };
 
 type SongImportControllerOptions = {
-	onComplete: () => Promise<void>;
+	onComplete: () => Promise<void> | void;
 	wailsActions: Pick<
 		WailsActions,
 		'cleanupFiles' | 'createSongsWithMetadata' | 'uploadAndExtractMetadata'
 	>;
+};
+
+type PendingImportCompletion = {
+	resolve: (createdCount: number) => void;
+	reject: (error: unknown) => void;
 };
 
 export class SongImportController {
@@ -22,6 +27,8 @@ export class SongImportController {
 	filesWithArtworkCount = $state(0);
 
 	#stagedImport = $state<StagedSongImport | null>(null);
+	#pendingCompletion: PendingImportCompletion | null = null;
+	#pendingCompletionPromise: Promise<number> | null = null;
 	#onComplete: SongImportControllerOptions['onComplete'];
 	#wailsActions: SongImportControllerOptions['wailsActions'];
 
@@ -30,7 +37,7 @@ export class SongImportController {
 		this.#wailsActions = options.wailsActions;
 	}
 
-	async handleUpload(files: File[], albumId?: number) {
+	async handleUpload(files: File[], albumId?: number): Promise<number> {
 		const fileUploads = await Promise.all(files.map(this.#fileToUpload));
 		const result = await this.#wailsActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
 
@@ -45,54 +52,60 @@ export class SongImportController {
 		if (result.filesWithArtwork > 0 && this.#canInheritArtwork(result.filesData, albumId)) {
 			this.filesWithArtworkCount = result.filesWithArtwork;
 			this.showArtworkChoiceDialog = true;
-			return;
+			return this.#waitForPendingCompletion();
 		}
 
 		if (this.unmappedArtists.length > 0) {
 			this.showArtistMappingDialog = true;
-			return;
+			return this.#waitForPendingCompletion();
 		}
 
-		await this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
+		return this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
 	}
 
-	async handleArtworkChoice(useEmbeddedArtwork: boolean) {
-		if (!this.#stagedImport) return;
+	async handleArtworkChoice(useEmbeddedArtwork: boolean): Promise<number> {
+		if (!this.#stagedImport) return 0;
 
 		this.#stagedImport.useEmbeddedArtwork = useEmbeddedArtwork;
 
 		if (this.unmappedArtists.length > 0) {
 			this.showArtistMappingDialog = true;
-			return;
+			return this.#waitForPendingCompletion();
 		}
 
-		await this.#createSongs({}, useEmbeddedArtwork);
+		return this.#createSongs({}, useEmbeddedArtwork);
 	}
 
-	async handleArtistMapping(artistMapping: Record<string, number | 'CREATE_NEW'>) {
-		if (!this.#stagedImport) return;
+	async handleArtistMapping(artistMapping: Record<string, number | 'CREATE_NEW'>): Promise<number> {
+		if (!this.#stagedImport) return 0;
 
-		await this.#createSongs(artistMapping, this.#stagedImport.useEmbeddedArtwork);
+		return this.#createSongs(artistMapping, this.#stagedImport.useEmbeddedArtwork);
 	}
 
-	async handleArtistMappingCancel() {
-		if (!this.#stagedImport) return;
+	async handleArtistMappingCancel(): Promise<number> {
+		if (!this.#stagedImport) return 0;
 
-		const filesToKeep = this.#stagedImport.filesData.filter((file) => !file.hasUnmappedArtists);
-		const filesToDelete = this.#stagedImport.filesData.filter((file) => file.hasUnmappedArtists);
+		try {
+			const filesToKeep = this.#stagedImport.filesData.filter((file) => !file.hasUnmappedArtists);
+			const filesToDelete = this.#stagedImport.filesData.filter((file) => file.hasUnmappedArtists);
 
-		if (filesToDelete.length > 0) {
-			await this.#wailsActions.cleanupFiles(filesToDelete.map((file) => file.filepath));
+			if (filesToDelete.length > 0) {
+				await this.#wailsActions.cleanupFiles(filesToDelete.map((file) => file.filepath));
+			}
+
+			if (filesToKeep.length > 0) {
+				this.#stagedImport.filesData = filesToKeep;
+				return this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
+			}
+
+			this.#reset();
+			this.#resolvePendingCompletion(0);
+			void this.#onComplete();
+			return 0;
+		} catch (error) {
+			this.#rejectPendingCompletion(error);
+			throw error;
 		}
-
-		if (filesToKeep.length > 0) {
-			this.#stagedImport.filesData = filesToKeep;
-			await this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
-			return;
-		}
-
-		this.#reset();
-		await this.#onComplete();
 	}
 
 	#canInheritArtwork(filesData: SongImportDraft[], albumId?: number) {
@@ -131,19 +144,57 @@ export class SongImportController {
 	#createSongs = async (
 		artistMapping: Record<string, number | 'CREATE_NEW'>,
 		useEmbeddedArtwork: boolean
-	) => {
-		if (!this.#stagedImport) return;
+	): Promise<number> => {
+		if (!this.#stagedImport) return 0;
 
-		await this.#wailsActions.createSongsWithMetadata({
-			filesData: this.#stagedImport.filesData,
-			artistMapping,
-			albumId: this.#stagedImport.albumId,
-			useEmbeddedArtwork
-		});
+		try {
+			const createdSongs = await this.#wailsActions.createSongsWithMetadata({
+				filesData: this.#stagedImport.filesData,
+				artistMapping,
+				albumId: this.#stagedImport.albumId,
+				useEmbeddedArtwork
+			});
 
-		this.#reset();
-		await this.#onComplete();
+			this.#reset();
+			this.#resolvePendingCompletion(createdSongs.length);
+			void this.#onComplete();
+			return createdSongs.length;
+		} catch (error) {
+			this.#rejectPendingCompletion(error);
+			throw error;
+		}
 	};
+
+	#waitForPendingCompletion(): Promise<number> {
+		if (this.#pendingCompletionPromise) {
+			return this.#pendingCompletionPromise;
+		}
+
+		this.#pendingCompletionPromise = new Promise<number>((resolve, reject) => {
+			this.#pendingCompletion = { resolve, reject };
+		});
+		return this.#pendingCompletionPromise;
+	}
+
+	#resolvePendingCompletion(createdCount: number) {
+		if (!this.#pendingCompletion) {
+			return;
+		}
+
+		this.#pendingCompletion.resolve(createdCount);
+		this.#pendingCompletion = null;
+		this.#pendingCompletionPromise = null;
+	}
+
+	#rejectPendingCompletion(error: unknown) {
+		if (!this.#pendingCompletion) {
+			return;
+		}
+
+		this.#pendingCompletion.reject(error);
+		this.#pendingCompletion = null;
+		this.#pendingCompletionPromise = null;
+	}
 
 	#reset() {
 		this.#stagedImport = null;

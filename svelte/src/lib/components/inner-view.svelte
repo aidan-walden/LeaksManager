@@ -57,7 +57,9 @@
 		albums={data.albums}
 		albumsPerPage={data.limits.albumsPerPage}
 		{defaultThumbnail}
-		onUpload={(files, albumId) => songImport.handleUpload(files, albumId)}
+		onUpload={async (files, albumId) => {
+			await songImport.handleUpload(files, albumId);
+		}}
 	/>
 {:else if tab === 'artists'}
 	<ArtistsTab artists={data.artists} {defaultThumbnail} />

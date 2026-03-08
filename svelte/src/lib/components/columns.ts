@@ -9,10 +9,19 @@ import type { WailsActions } from '$lib/services/wails-actions';
 // EditableSong mirrors the shape returned by GetSongsReadable from Go
 export type EditableSong = SongReadable;
 
-export function createSongColumns(wailsActions: Pick<WailsActions, 'deleteSong'>): ColumnDef<EditableSong>[] {
+type SongMutationHandlers = {
+	onSongDeleted?: (songId: number) => void | Promise<void>;
+	onSongSaved?: (song: SongReadable) => void | Promise<void>;
+};
+
+export function createSongColumns(
+	wailsActions: Pick<WailsActions, 'deleteSong'>,
+	handlers: SongMutationHandlers = {}
+): ColumnDef<EditableSong>[] {
 	async function onDelete(id: number) {
 		await wailsActions.deleteSong(id);
-		await invalidateAll();
+		await handlers.onSongDeleted?.(id);
+		void invalidateAll();
 	}
 
 	return [
@@ -34,7 +43,11 @@ export function createSongColumns(wailsActions: Pick<WailsActions, 'deleteSong'>
 		{
 			id: 'actions',
 			cell: ({ row }) => {
-				return renderComponent(SongRowActions, { song: row.original, onDelete });
+				return renderComponent(SongRowActions, {
+					song: row.original,
+					onDelete,
+					onSongSaved: handlers.onSongSaved
+				});
 			}
 		}
 	];

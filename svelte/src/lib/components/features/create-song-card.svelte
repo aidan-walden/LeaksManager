@@ -17,6 +17,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
+	import type { SongReadable } from '$lib/wails';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -24,11 +25,13 @@
 		open = $bindable(),
 		onOpenChange,
 		callback,
+		onSongSaved,
 		song
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
-		callback?: () => void;
+		callback?: (recordId: number) => void | Promise<void>;
+		onSongSaved?: (song: SongReadable) => void | Promise<void>;
 		song: EditableSong | null;
 	} = $props();
 
@@ -246,7 +249,7 @@
 		}
 
 		// update existing song
-		await wailsActions.updateSong({
+		const updatedSong = await wailsActions.updateSong({
 			id: song.id,
 			name: songName,
 			albumName: albumName.trim() || undefined,
@@ -258,6 +261,9 @@
 
 		// write metadata to disk
 		await wailsActions.writeSongMetadata(song.id);
+		if (updatedSong) {
+			await onSongSaved?.(updatedSong);
+		}
 
 		return { id: song.id };
 	}

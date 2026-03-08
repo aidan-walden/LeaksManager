@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WailsActions } from '$lib/services/wails-actions';
 
 vi.mock('./ui/data-table/render-helpers.js', () => ({
@@ -16,7 +16,12 @@ describe('song table columns', () => {
 	const wailsActions = {
 		deleteSong: vi.fn().mockResolvedValue(undefined)
 	} satisfies Pick<WailsActions, 'deleteSong'>;
-	const columns = createSongColumns(wailsActions);
+	const onSongDeleted = vi.fn().mockResolvedValue(undefined);
+	const columns = createSongColumns(wailsActions, { onSongDeleted });
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
 
 	it('builds the expected visible columns', () => {
 		expect(
@@ -44,5 +49,6 @@ describe('song table columns', () => {
 
 		expect(wailsActions.deleteSong).toHaveBeenCalledWith(7);
 		expect(invalidateAll).toHaveBeenCalled();
+		expect(onSongDeleted).toHaveBeenCalledWith(7);
 	});
 });

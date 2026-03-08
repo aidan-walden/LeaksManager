@@ -5,8 +5,17 @@
 	import CreateSongCard from '$lib/components/features/create-song-card.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import type { EditableSong } from '$lib/components/columns';
+	import type { SongReadable } from '$lib/wails';
 
-	let { song, onDelete }: { song: EditableSong; onDelete: (id: number) => void } = $props();
+	let {
+		song,
+		onDelete,
+		onSongSaved
+	}: {
+		song: EditableSong;
+		onDelete: (id: number) => void | Promise<void>;
+		onSongSaved?: (song: SongReadable) => void | Promise<void>;
+	} = $props();
 	let editingSong = $state(false);
 	const { wailsActions } = getAppServicesContext();
 
@@ -43,4 +52,4 @@
 	</DropdownMenu.Content>
 </DropdownMenu.Root>
 
-<CreateSongCard bind:open={editingSong} {song} />
+<CreateSongCard bind:open={editingSong} {song} {onSongSaved} />

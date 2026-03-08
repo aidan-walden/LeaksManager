@@ -52,7 +52,8 @@ export type RawWailsAppBindings = {
 	GetAlbumWithArtists(albumId: number): Promise<AlbumWithArtists | null>;
 	FindAlbumByName(name: string): Promise<Album | null>;
 	CreateSong(input: CreateSongInput): Promise<Song>;
-	UpdateSong(input: UpdateSongInput): Promise<void>;
+	GetSongReadable(songId: number): Promise<SongReadable | null>;
+	UpdateSong(input: UpdateSongInput): Promise<SongReadable | null>;
 	DeleteSong(songId: number): Promise<void>;
 	GetSongsReadable(limit: number, offset: number): Promise<SongReadable[]>;
 	GetSongsCount(): Promise<number>;
@@ -94,7 +95,8 @@ export type WailsTransport = {
 	getAlbumWithArtists(albumId: number): Promise<AlbumWithArtists | null>;
 	findAlbumByName(name: string): Promise<Album | null>;
 	createSong(input: CreateSongInput): Promise<Song>;
-	updateSong(input: UpdateSongInput): Promise<void>;
+	getSongReadable(songId: number): Promise<SongReadable | null>;
+	updateSong(input: UpdateSongInput): Promise<SongReadable | null>;
 	deleteSong(songId: number): Promise<void>;
 	getSongsReadable(request: PageRequest): Promise<SongReadable[]>;
 	getSongsCount(): Promise<number>;
@@ -145,6 +147,7 @@ const transportFactories = {
 	getAlbumWithArtists: (app, albumId) => app.GetAlbumWithArtists(albumId),
 	findAlbumByName: (app, name) => app.FindAlbumByName(name),
 	createSong: (app, input) => app.CreateSong(input),
+	getSongReadable: (app, songId) => app.GetSongReadable(songId),
 	updateSong: (app, input) => app.UpdateSong(input),
 	deleteSong: (app, songId) => app.DeleteSong(songId),
 	getSongsReadable: (app, { limit, offset }) => app.GetSongsReadable(limit, offset),
@@ -187,6 +190,7 @@ const missingRuntimeBindings: RawWailsAppBindings = {
 	GetAlbumWithArtists: () => rejectMissingRuntime(),
 	FindAlbumByName: () => rejectMissingRuntime(),
 	CreateSong: () => rejectMissingRuntime(),
+	GetSongReadable: () => rejectMissingRuntime(),
 	UpdateSong: () => rejectMissingRuntime(),
 	DeleteSong: () => rejectMissingRuntime(),
 	GetSongsReadable: () => rejectMissingRuntime(),
