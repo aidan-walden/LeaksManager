@@ -2,10 +2,114 @@ package backend
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
 // --- Complex Workflows ---
+
+// songCreationSpec captures the fully-resolved inputs for creating one song from
+// an upload. Both upload flows reduce their per-file decisions to this shape and
+// hand it to createSongsFromSpecs, which owns the shared tail: producer matching,
+// field extraction, song creation, and metadata write-back.
+type songCreationSpec struct {
+	Filepath         string
+	OriginalFilename string
+	Metadata         ExtractedMetadata
+	ArtistIDs        []int
+	AlbumID          *int
+	ArtworkPath      *string
+	MatchProducers   bool
+}
+
+// resolveUploadArtwork picks the artwork for an uploaded song: embedded artwork
+// when requested and present (falling back to none if it can't be saved),
+// otherwise the album's artwork.
+func (a *App) resolveUploadArtwork(useEmbedded bool, metadata ExtractedMetadata, album *AlbumWithArtists) *string {
+	if useEmbedded && metadata.Artwork != nil {
+		ext := "jpg"
+		if metadata.Artwork.MimeType == "image/png" {
+			ext = "png"
+		}
+		if path, err := a.SaveArtwork(fmt.Sprintf("artwork.%s", ext), metadata.Artwork.Data); err == nil {
+			return &path
+		}
+		return nil
+	}
+	if album != nil && album.ArtworkPath != nil {
+		return album.ArtworkPath
+	}
+	return nil
+}
+
+// createSongsFromSpecs is the shared core of the upload flows. It creates a song
+// per spec and writes metadata back to each file. A metadata write failure does
+// not abort the batch (the song is already created); it is logged rather than
+// silently discarded.
+func (a *App) createSongsFromSpecs(specs []songCreationSpec, settings *Settings) ([]Song, error) {
+	createdSongs := []Song{}
+	for _, spec := range specs {
+		var producerIDs []int
+		if spec.MatchProducers {
+			producerIDs, _ = a.MatchProducersFromFilename(spec.OriginalFilename, spec.ArtistIDs)
+		}
+
+		var trackNumber *int
+		if !settings.ClearTrackNumberOnUpload && spec.Metadata.TrackNumber > 0 {
+			tn := spec.Metadata.TrackNumber
+			trackNumber = &tn
+		}
+
+		songName := spec.Metadata.Title
+		if songName == "" {
+			songName = spec.OriginalFilename
+		}
+
+		var year *int
+		if spec.Metadata.Year > 0 {
+			y := spec.Metadata.Year
+			year = &y
+		}
+
+		var genre *string
+		if spec.Metadata.Genre != "" {
+			g := spec.Metadata.Genre
+			genre = &g
+		}
+
+		var duration *float64
+		if spec.Metadata.Duration > 0 {
+			d := spec.Metadata.Duration
+			duration = &d
+		}
+
+		song, err := a.CreateSong(CreateSongInput{
+			Name:        songName,
+			Filepath:    spec.Filepath,
+			ArtistIDs:   spec.ArtistIDs,
+			ProducerIDs: producerIDs,
+			AlbumID:     spec.AlbumID,
+			ArtworkPath: spec.ArtworkPath,
+			Genre:       genre,
+			Year:        year,
+			TrackNumber: trackNumber,
+			Duration:    duration,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		createdSongs = append(createdSongs, *song)
+
+		// Write metadata back to file. The song exists regardless, so a write
+		// failure is logged rather than failing the whole upload.
+		if result, _ := a.WriteSongMetadata(song.ID); !result.Success {
+			log.Printf("upload: failed to write metadata for song %d (%s): %s", song.ID, spec.Filepath, result.Error)
+		}
+	}
+
+	return createdSongs, nil
+}
 
 // UploadAndExtractMetadata handles the first step of the metadata extraction workflow
 func (a *App) UploadAndExtractMetadata(files []FileUpload, albumID *int) (*UploadAndExtractResult, error) {
@@ -138,7 +242,7 @@ func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Son
 		album, _ = a.GetAlbumWithArtists(*input.AlbumID)
 	}
 
-	createdSongs := []Song{}
+	specs := make([]songCreationSpec, 0, len(input.FilesData))
 	for _, fileData := range input.FilesData {
 		// Resolve artist IDs
 		songArtistIDs := []int{}
@@ -163,21 +267,6 @@ func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Son
 			}
 		}
 
-		// Handle artwork
-		var artworkPath *string
-		if input.UseEmbeddedArtwork && fileData.Metadata.Artwork != nil {
-			ext := "jpg"
-			if fileData.Metadata.Artwork.MimeType == "image/png" {
-				ext = "png"
-			}
-			path, err := a.SaveArtwork(fmt.Sprintf("artwork.%s", ext), fileData.Metadata.Artwork.Data)
-			if err == nil {
-				artworkPath = &path
-			}
-		} else if currentAlbum != nil && currentAlbum.ArtworkPath != nil {
-			artworkPath = currentAlbum.ArtworkPath
-		}
-
 		// Determine final album ID
 		var finalAlbumID *int
 		if input.AlbumID != nil {
@@ -186,59 +275,18 @@ func (a *App) CreateSongsWithMetadata(input CreateSongsWithMetadataInput) ([]Son
 			finalAlbumID = fileData.AlbumID
 		}
 
-		// Match producers from filename
-		producerIDs, _ := a.MatchProducersFromFilename(fileData.OriginalFilename, finalArtistIDs)
-
-		// Prepare track number
-		var trackNumber *int
-		if !settings.ClearTrackNumberOnUpload && fileData.Metadata.TrackNumber > 0 {
-			trackNumber = &fileData.Metadata.TrackNumber
-		}
-
-		// Create song
-		songName := fileData.Metadata.Title
-		if songName == "" {
-			songName = fileData.OriginalFilename
-		}
-
-		var year *int
-		if fileData.Metadata.Year > 0 {
-			year = &fileData.Metadata.Year
-		}
-
-		var genre *string
-		if fileData.Metadata.Genre != "" {
-			genre = &fileData.Metadata.Genre
-		}
-
-		var duration *float64
-		if fileData.Metadata.Duration > 0 {
-			duration = &fileData.Metadata.Duration
-		}
-
-		song, err := a.CreateSong(CreateSongInput{
-			Name:        songName,
-			Filepath:    fileData.Filepath,
-			ArtistIDs:   finalArtistIDs,
-			ProducerIDs: producerIDs,
-			AlbumID:     finalAlbumID,
-			ArtworkPath: artworkPath,
-			Genre:       genre,
-			Year:        year,
-			TrackNumber: trackNumber,
-			Duration:    duration,
+		specs = append(specs, songCreationSpec{
+			Filepath:         fileData.Filepath,
+			OriginalFilename: fileData.OriginalFilename,
+			Metadata:         fileData.Metadata,
+			ArtistIDs:        finalArtistIDs,
+			AlbumID:          finalAlbumID,
+			ArtworkPath:      a.resolveUploadArtwork(input.UseEmbeddedArtwork, fileData.Metadata, currentAlbum),
+			MatchProducers:   true,
 		})
-		if err != nil {
-			return nil, err
-		}
-
-		createdSongs = append(createdSongs, *song)
-
-		// Write metadata back to file
-		a.WriteSongMetadata(song.ID)
 	}
 
-	return createdSongs, nil
+	return a.createSongsFromSpecs(specs, settings)
 }
 
 // UploadSongs handles simple song upload without metadata preview
@@ -250,20 +298,18 @@ func (a *App) UploadSongs(files []FileUpload, albumID *int) ([]Song, error) {
 
 	// Get album data for inheritance
 	var album *AlbumWithArtists
-	var artworkPath *string
 	artistIDs := []int{}
 
 	if albumID != nil {
 		album, _ = a.GetAlbumWithArtists(*albumID)
 		if album != nil {
-			artworkPath = album.ArtworkPath
 			for _, art := range album.Artists {
 				artistIDs = append(artistIDs, art.ID)
 			}
 		}
 	}
 
-	createdSongs := []Song{}
+	specs := make([]songCreationSpec, 0, len(files))
 	for _, file := range files {
 		// Save file
 		relPath, err := a.SaveUploadedFile(file.Filename, file.Base64Data)
@@ -277,49 +323,16 @@ func (a *App) UploadSongs(files []FileUpload, albumID *int) ([]Song, error) {
 			metadata = &ExtractedMetadata{}
 		}
 
-		var trackNumber *int
-		if !settings.ClearTrackNumberOnUpload && metadata.TrackNumber > 0 {
-			trackNumber = &metadata.TrackNumber
-		}
-
-		songName := metadata.Title
-		if songName == "" {
-			songName = file.Filename
-		}
-
-		var year *int
-		if metadata.Year > 0 {
-			year = &metadata.Year
-		}
-
-		var genre *string
-		if metadata.Genre != "" {
-			genre = &metadata.Genre
-		}
-
-		var duration *float64
-		if metadata.Duration > 0 {
-			duration = &metadata.Duration
-		}
-
-		song, err := a.CreateSong(CreateSongInput{
-			Name:        songName,
-			Filepath:    relPath,
-			ArtistIDs:   artistIDs,
-			AlbumID:     albumID,
-			ArtworkPath: artworkPath,
-			Genre:       genre,
-			Year:        year,
-			TrackNumber: trackNumber,
-			Duration:    duration,
+		specs = append(specs, songCreationSpec{
+			Filepath:         relPath,
+			OriginalFilename: file.Filename,
+			Metadata:         *metadata,
+			ArtistIDs:        artistIDs,
+			AlbumID:          albumID,
+			ArtworkPath:      a.resolveUploadArtwork(false, *metadata, album),
+			MatchProducers:   false,
 		})
-		if err != nil {
-			return nil, err
-		}
-
-		createdSongs = append(createdSongs, *song)
-		a.WriteSongMetadata(song.ID)
 	}
 
-	return createdSongs, nil
+	return a.createSongsFromSpecs(specs, settings)
 }

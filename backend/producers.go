@@ -4,78 +4,79 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
+// Pattern is a flat producer-matching term: either a producer's name or one of its aliases.
+// AliasArtistIDs is empty for producer names and for unrestricted aliases.
+type Pattern struct {
+	Term           string
+	ProducerID     int
+	IsAlias        bool
+	AliasArtistIDs []int
+}
+
 // --- Producer CRUD ---
 
 func (a *App) CreateProducerWithAliases(input CreateProducerInput) (*Producer, error) {
 	now := time.Now().Unix()
-	tx, err := a.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-
-	// Check alias uniqueness
-	for _, alias := range input.Aliases {
-		var exists int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`, alias.Name).Scan(&exists); err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-		if exists > 0 {
-			tx.Rollback()
-			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
-		}
-	}
-
-	result, err := tx.Exec(
-		`INSERT INTO producers (name, created_at, updated_at) VALUES (?, ?, ?)`,
-		input.Name, now, now,
-	)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	producerID, err := result.LastInsertId()
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// Create aliases
-	for _, alias := range input.Aliases {
-		aliasResult, err := tx.Exec(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
-			producerID, alias.Name, now,
-		)
-		if err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-
-		aliasID, err := aliasResult.LastInsertId()
-		if err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-
-		// Create artist restrictions
-		for _, artistID := range alias.ArtistIDs {
-			if _, err := tx.Exec(
-				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
-				aliasID, artistID, now,
-			); err != nil {
-				tx.Rollback()
-				return nil, err
+	var producerID int64
+	err := a.InTx(func(tx *sql.Tx) error {
+		// Check alias uniqueness
+		for _, alias := range input.Aliases {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`, alias.Name).Scan(&exists); err != nil {
+				return err
+			}
+			if exists > 0 {
+				return fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
 			}
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
+		result, err := tx.Exec(
+			`INSERT INTO producers (name, created_at, updated_at) VALUES (?, ?, ?)`,
+			input.Name, now, now,
+		)
+		if err != nil {
+			return err
+		}
+
+		producerID, err = result.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		// Create aliases
+		for _, alias := range input.Aliases {
+			aliasResult, err := tx.Exec(
+				`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
+				producerID, alias.Name, now,
+			)
+			if err != nil {
+				return err
+			}
+
+			aliasID, err := aliasResult.LastInsertId()
+			if err != nil {
+				return err
+			}
+
+			// Create artist restrictions
+			for _, artistID := range alias.ArtistIDs {
+				if _, err := tx.Exec(
+					`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
+					aliasID, artistID, now,
+				); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -89,104 +90,88 @@ func (a *App) CreateProducerWithAliases(input CreateProducerInput) (*Producer, e
 
 func (a *App) UpdateProducerWithAliases(input UpdateProducerInput) (*Producer, error) {
 	now := time.Now().Unix()
-	tx, err := a.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-
 	var createdAt int64
-	if err := tx.QueryRow(`SELECT created_at FROM producers WHERE id = ?`, input.ID).Scan(&createdAt); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// Check alias uniqueness (excluding current producer)
-	for _, alias := range input.Aliases {
-		var conflictID int
-		err := tx.QueryRow(`
-			SELECT pa.producer_id FROM producer_aliases pa
-			WHERE LOWER(pa.alias) = LOWER(?) AND pa.producer_id != ?
-		`, alias.Name, input.ID).Scan(&conflictID)
-		if err == nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
-		}
-		if err != nil && err != sql.ErrNoRows {
-			tx.Rollback()
-			return nil, err
-		}
-	}
-
-	// Update producer name
-	_, err = tx.Exec(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`, input.Name, now, input.ID)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// Delete existing aliases and their artist restrictions
-	rows, err := tx.Query(`SELECT id FROM producer_aliases WHERE producer_id = ?`, input.ID)
-	if err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	aliasIDs := []int{}
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			tx.Rollback()
-			return nil, err
-		}
-		aliasIDs = append(aliasIDs, id)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		tx.Rollback()
-		return nil, err
-	}
-	rows.Close()
-
-	for _, aliasID := range aliasIDs {
-		if _, err := tx.Exec(`DELETE FROM producer_alias_artists WHERE alias_id = ?`, aliasID); err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-	}
-	if _, err := tx.Exec(`DELETE FROM producer_aliases WHERE producer_id = ?`, input.ID); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// Create new aliases
-	for _, alias := range input.Aliases {
-		aliasResult, err := tx.Exec(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
-			input.ID, alias.Name, now,
-		)
-		if err != nil {
-			tx.Rollback()
-			return nil, err
+	err := a.InTx(func(tx *sql.Tx) error {
+		if err := tx.QueryRow(`SELECT created_at FROM producers WHERE id = ?`, input.ID).Scan(&createdAt); err != nil {
+			return err
 		}
 
-		aliasID, err := aliasResult.LastInsertId()
-		if err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-
-		for _, artistID := range alias.ArtistIDs {
-			if _, err := tx.Exec(
-				`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
-				aliasID, artistID, now,
-			); err != nil {
-				tx.Rollback()
-				return nil, err
+		// Check alias uniqueness (excluding current producer)
+		for _, alias := range input.Aliases {
+			var conflictID int
+			err := tx.QueryRow(`
+				SELECT pa.producer_id FROM producer_aliases pa
+				WHERE LOWER(pa.alias) = LOWER(?) AND pa.producer_id != ?
+			`, alias.Name, input.ID).Scan(&conflictID)
+			if err == nil {
+				return fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)
+			}
+			if err != nil && err != sql.ErrNoRows {
+				return err
 			}
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
+		// Update producer name
+		if _, err := tx.Exec(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`, input.Name, now, input.ID); err != nil {
+			return err
+		}
+
+		// Delete existing aliases and their artist restrictions
+		rows, err := tx.Query(`SELECT id FROM producer_aliases WHERE producer_id = ?`, input.ID)
+		if err != nil {
+			return err
+		}
+		aliasIDs := []int{}
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			aliasIDs = append(aliasIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+
+		for _, aliasID := range aliasIDs {
+			if _, err := tx.Exec(`DELETE FROM producer_alias_artists WHERE alias_id = ?`, aliasID); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`DELETE FROM producer_aliases WHERE producer_id = ?`, input.ID); err != nil {
+			return err
+		}
+
+		// Create new aliases
+		for _, alias := range input.Aliases {
+			aliasResult, err := tx.Exec(
+				`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`,
+				input.ID, alias.Name, now,
+			)
+			if err != nil {
+				return err
+			}
+
+			aliasID, err := aliasResult.LastInsertId()
+			if err != nil {
+				return err
+			}
+
+			for _, artistID := range alias.ArtistIDs {
+				if _, err := tx.Exec(
+					`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`,
+					aliasID, artistID, now,
+				); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -389,60 +374,80 @@ func (a *App) WriteProducerMetadata(producerID int) (BatchResult, error) {
 	}, nil
 }
 
-// MatchProducersFromFilename matches producers based on filename patterns
-func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) ([]int, error) {
-	// Remove file extension and normalize
-	nameWithoutExt := strings.ToLower(regexp.MustCompile(`\.[^/.]+$`).ReplaceAllString(filename, ""))
-
-	// Get all producers with aliases
-	producers, err := a.GetProducersWithAliases()
+// LoadProducerPatterns loads all producer-matching patterns in one query (no N+1).
+// Each producer contributes one row for its name and one row per alias; artist
+// restrictions are aggregated via GROUP_CONCAT.
+func (a *App) LoadProducerPatterns() ([]Pattern, error) {
+	rows, err := a.db.Query(`
+		SELECT p.id, p.name, pa.alias, GROUP_CONCAT(paa.artist_id)
+		FROM producers p
+		LEFT JOIN producer_aliases pa ON pa.producer_id = p.id
+		LEFT JOIN producer_alias_artists paa ON paa.alias_id = pa.id
+		GROUP BY p.id, pa.id
+	`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	// Build searchable terms
-	type searchTerm struct {
-		term           string
-		producerID     int
-		isAlias        bool
-		aliasArtistIDs []int
-	}
-	searchableTerms := []searchTerm{}
-
-	for _, prod := range producers {
-		// Add producer name
-		searchableTerms = append(searchableTerms, searchTerm{
-			term:       strings.ToLower(prod.Name),
-			producerID: prod.ID,
-			isAlias:    false,
-		})
-
-		// Add aliases
-		for _, alias := range prod.Aliases {
-			searchableTerms = append(searchableTerms, searchTerm{
-				term:           strings.ToLower(alias.Alias),
-				producerID:     prod.ID,
-				isAlias:        true,
-				aliasArtistIDs: alias.ArtistIDs,
+	// dedupe producer-name rows: producers with multiple aliases would repeat the name.
+	seenName := make(map[int]bool)
+	patterns := []Pattern{}
+	for rows.Next() {
+		var producerID int
+		var name string
+		var alias sql.NullString
+		var artistIDs sql.NullString
+		if err := rows.Scan(&producerID, &name, &alias, &artistIDs); err != nil {
+			return nil, err
+		}
+		if !seenName[producerID] {
+			patterns = append(patterns, Pattern{
+				Term:       strings.ToLower(name),
+				ProducerID: producerID,
+				IsAlias:    false,
+			})
+			seenName[producerID] = true
+		}
+		if alias.Valid {
+			ids := []int{}
+			if artistIDs.Valid && artistIDs.String != "" {
+				for _, s := range strings.Split(artistIDs.String, ",") {
+					var id int
+					if _, err := fmt.Sscanf(s, "%d", &id); err == nil {
+						ids = append(ids, id)
+					}
+				}
+			}
+			patterns = append(patterns, Pattern{
+				Term:           strings.ToLower(alias.String),
+				ProducerID:     producerID,
+				IsAlias:        true,
+				AliasArtistIDs: ids,
 			})
 		}
 	}
-
-	// Sort by length (longest first)
-	for i := 0; i < len(searchableTerms)-1; i++ {
-		for j := i + 1; j < len(searchableTerms); j++ {
-			if len(searchableTerms[j].term) > len(searchableTerms[i].term) {
-				searchableTerms[i], searchableTerms[j] = searchableTerms[j], searchableTerms[i]
-			}
-		}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
+	return patterns, nil
+}
 
-	matchedIDs := make(map[int]bool)
-	consumedRanges := make([]struct{ start, end int }, 0)
+// MatchPatterns runs the pure matching algorithm: word-boundary scan, artist-restriction
+// filter, dedupe, sort. No DB access.
+func MatchPatterns(filename string, patterns []Pattern, songArtistIDs []int) []int {
+	nameWithoutExt := strings.ToLower(regexp.MustCompile(`\.[^/.]+$`).ReplaceAllString(filename, ""))
+
+	// copy then sort longest-first so longer terms claim ranges before shorter substrings.
+	sorted := make([]Pattern, len(patterns))
+	copy(sorted, patterns)
+	sort.Slice(sorted, func(i, j int) bool {
+		return len(sorted[i].Term) > len(sorted[j].Term)
+	})
 
 	isArtistContextValid := func(aliasArtistIDs []int) bool {
 		if len(aliasArtistIDs) == 0 {
-			return true // Global alias
+			return true
 		}
 		if len(songArtistIDs) == 0 {
 			return false
@@ -457,6 +462,7 @@ func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) (
 		return false
 	}
 
+	consumedRanges := make([]struct{ start, end int }, 0)
 	isRangeConsumed := func(start, end int) bool {
 		for _, r := range consumedRanges {
 			if (start >= r.start && start < r.end) || (end > r.start && end <= r.end) || (start <= r.start && end >= r.end) {
@@ -466,44 +472,57 @@ func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) (
 		return false
 	}
 
-	// Pass 1: exact matches with word boundaries
-	for _, st := range searchableTerms {
-		if st.isAlias && !isArtistContextValid(st.aliasArtistIDs) {
+	matchedIDs := make(map[int]bool)
+
+	// pass 1: word-boundary matches
+	for _, p := range sorted {
+		if p.IsAlias && !isArtistContextValid(p.AliasArtistIDs) {
 			continue
 		}
-
-		escapedTerm := regexp.QuoteMeta(st.term)
-		re := regexp.MustCompile(`\b` + escapedTerm + `\b`)
-		matches := re.FindAllStringIndex(nameWithoutExt, -1)
-
-		for _, match := range matches {
-			if !isRangeConsumed(match[0], match[1]) {
-				matchedIDs[st.producerID] = true
-				consumedRanges = append(consumedRanges, struct{ start, end int }{match[0], match[1]})
+		if p.Term == "" {
+			continue
+		}
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(p.Term) + `\b`)
+		for _, m := range re.FindAllStringIndex(nameWithoutExt, -1) {
+			if !isRangeConsumed(m[0], m[1]) {
+				matchedIDs[p.ProducerID] = true
+				consumedRanges = append(consumedRanges, struct{ start, end int }{m[0], m[1]})
 			}
 		}
 	}
 
-	// Pass 2: partial matches
-	for _, st := range searchableTerms {
-		if st.isAlias && !isArtistContextValid(st.aliasArtistIDs) {
+	// pass 2: substring fallback
+	for _, p := range sorted {
+		if p.IsAlias && !isArtistContextValid(p.AliasArtistIDs) {
 			continue
 		}
-
-		idx := strings.Index(nameWithoutExt, st.term)
-		if idx != -1 {
-			start := idx
-			end := idx + len(st.term)
-			if !isRangeConsumed(start, end) {
-				matchedIDs[st.producerID] = true
-				consumedRanges = append(consumedRanges, struct{ start, end int }{start, end})
-			}
+		if p.Term == "" {
+			continue
+		}
+		idx := strings.Index(nameWithoutExt, p.Term)
+		if idx == -1 {
+			continue
+		}
+		end := idx + len(p.Term)
+		if !isRangeConsumed(idx, end) {
+			matchedIDs[p.ProducerID] = true
+			consumedRanges = append(consumedRanges, struct{ start, end int }{idx, end})
 		}
 	}
 
-	result := []int{}
+	result := make([]int, 0, len(matchedIDs))
 	for id := range matchedIDs {
 		result = append(result, id)
 	}
-	return result, nil
+	sort.Ints(result)
+	return result
+}
+
+// MatchProducersFromFilename composes LoadProducerPatterns + MatchPatterns.
+func (a *App) MatchProducersFromFilename(filename string, songArtistIDs []int) ([]int, error) {
+	patterns, err := a.LoadProducerPatterns()
+	if err != nil {
+		return nil, err
+	}
+	return MatchPatterns(filename, patterns, songArtistIDs), nil
 }

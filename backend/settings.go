@@ -42,37 +42,29 @@ func (a *App) GetSettings() (*Settings, error) {
 
 func (a *App) UpdateSettings(input UpdateSettingsInput) (*Settings, error) {
 	now := time.Now().Unix()
-	tx, err := a.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-
-	// Build dynamic update
-	if input.ClearTrackNumberOnUpload != nil {
-		if _, err := tx.Exec(`UPDATE settings SET clear_track_number_on_upload = ? WHERE id = 1`, *input.ClearTrackNumberOnUpload); err != nil {
-			tx.Rollback()
-			return nil, err
+	if err := a.InTx(func(tx *sql.Tx) error {
+		// Build dynamic update
+		if input.ClearTrackNumberOnUpload != nil {
+			if _, err := tx.Exec(`UPDATE settings SET clear_track_number_on_upload = ? WHERE id = 1`, *input.ClearTrackNumberOnUpload); err != nil {
+				return err
+			}
 		}
-	}
-	if input.ImportToAppleMusic != nil {
-		importToAppleMusic := runtime.GOOS == "darwin" && *input.ImportToAppleMusic
-		if _, err := tx.Exec(`UPDATE settings SET import_to_apple_music = ? WHERE id = 1`, importToAppleMusic); err != nil {
-			tx.Rollback()
-			return nil, err
+		if input.ImportToAppleMusic != nil {
+			importToAppleMusic := runtime.GOOS == "darwin" && *input.ImportToAppleMusic
+			if _, err := tx.Exec(`UPDATE settings SET import_to_apple_music = ? WHERE id = 1`, importToAppleMusic); err != nil {
+				return err
+			}
 		}
-	}
-	if input.AutomaticallyMakeSingles != nil {
-		if _, err := tx.Exec(`UPDATE settings SET automatically_make_singles = ? WHERE id = 1`, *input.AutomaticallyMakeSingles); err != nil {
-			tx.Rollback()
-			return nil, err
+		if input.AutomaticallyMakeSingles != nil {
+			if _, err := tx.Exec(`UPDATE settings SET automatically_make_singles = ? WHERE id = 1`, *input.AutomaticallyMakeSingles); err != nil {
+				return err
+			}
 		}
-	}
-	if _, err := tx.Exec(`UPDATE settings SET updated_at = ? WHERE id = 1`, now); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	if err := tx.Commit(); err != nil {
+		if _, err := tx.Exec(`UPDATE settings SET updated_at = ? WHERE id = 1`, now); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
