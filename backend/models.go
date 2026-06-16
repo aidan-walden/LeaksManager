@@ -296,12 +296,3 @@ type SyncItemResult struct {
 	AppleMusicID *string `json:"appleMusicId"`
 	ErrorMessage string  `json:"errorMessage,omitempty"`
 }
-
-// SyncError tracks sync errors for future error card display
-type SyncError struct {
-	ID           int    `json:"id"`
-	SongID       int    `json:"songId"`
-	ErrorMessage string `json:"errorMessage"`
-	ErrorType    string `json:"errorType"` // "not_found", "applescript_error", "timeout", etc.
-	OccurredAt   int64  `json:"occurredAt"`
-}
