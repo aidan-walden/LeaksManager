@@ -4,7 +4,6 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import CreateSongCard from '$lib/components/features/create-song-card.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { EditableSong } from '$lib/components/columns';
 	import type { SongReadable } from '$lib/wails';
 
 	let {
@@ -12,7 +11,7 @@
 		onDelete,
 		onSongSaved
 	}: {
-		song: EditableSong;
+		song: SongReadable;
 		onDelete: (id: number) => void | Promise<void>;
 		onSongSaved?: (song: SongReadable) => void | Promise<void>;
 	} = $props();

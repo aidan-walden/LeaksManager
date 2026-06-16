@@ -6,9 +6,6 @@ import SongHover from './table/song-hover.svelte';
 import type { SongReadable } from '$lib/wails';
 import type { WailsActions } from '$lib/services/wails-actions';
 
-// EditableSong mirrors the shape returned by GetSongsReadable from Go
-export type EditableSong = SongReadable;
-
 type SongMutationHandlers = {
 	onSongDeleted?: (songId: number) => void | Promise<void>;
 	onSongSaved?: (song: SongReadable) => void | Promise<void>;
@@ -17,7 +14,7 @@ type SongMutationHandlers = {
 export function createSongColumns(
 	wailsActions: Pick<WailsActions, 'deleteSong'>,
 	handlers: SongMutationHandlers = {}
-): ColumnDef<EditableSong>[] {
+): ColumnDef<SongReadable>[] {
 	async function onDelete(id: number) {
 		await wailsActions.deleteSong(id);
 		await handlers.onSongDeleted?.(id);

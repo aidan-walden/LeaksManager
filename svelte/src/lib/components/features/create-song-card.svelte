@@ -4,7 +4,6 @@
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import CreateCard from '$lib/components/forms/create-card.svelte';
-	import type { EditableSong } from '$lib/components/columns';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
@@ -32,7 +31,7 @@
 		onOpenChange?: (open: boolean) => void;
 		callback?: (recordId: number) => void | Promise<void>;
 		onSongSaved?: (song: SongReadable) => void | Promise<void>;
-		song: EditableSong | null;
+		song: SongReadable | null;
 	} = $props();
 
 	// Get artists from context

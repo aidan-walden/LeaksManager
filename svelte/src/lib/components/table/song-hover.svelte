@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { EditableSong } from '$lib/components/columns';
+	import type { SongReadable } from '$lib/wails';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
 	import { toAssetUrl } from '$lib/utils';
 
-	let { song }: { song: EditableSong } = $props();
+	let { song }: { song: SongReadable } = $props();
 
 	let songProducersString = $derived(song.producers?.map((p) => p.name).join(', ') ?? '');
 
