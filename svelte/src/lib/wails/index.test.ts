@@ -92,7 +92,7 @@ describe('wails wrapper bindings', () => {
 
 		try {
 			await expect(getRawWailsAppBindings().GetInitialData()).rejects.toThrow(
-				'Wails runtime not available'
+				'Desktop runtime not available'
 			);
 		} finally {
 			globalThis.window = originalWindow;

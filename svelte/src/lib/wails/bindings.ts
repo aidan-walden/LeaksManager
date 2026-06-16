@@ -32,11 +32,9 @@ import type {
 
 declare global {
 	interface Window {
-		go: {
-			backend: {
-				App: RawWailsAppBindings;
-			};
-		};
+		// Electron IPC bridge (electron/preload.ts exposes one method per channel,
+		// names matching RawWailsAppBindings). Replaces the old window.go.backend.App.
+		api: RawWailsAppBindings;
 	}
 }
 
@@ -131,7 +129,7 @@ type TransportFactoryMap = {
 };
 
 const missingRuntimeError = () =>
-	new Error('Wails runtime not available. Start the desktop app to use backend bindings.');
+	new Error('Desktop runtime not available. Start the desktop app to use backend bindings.');
 
 const rejectMissingRuntime = <T>() => Promise.reject<T>(missingRuntimeError());
 
@@ -183,8 +181,8 @@ const missingRuntimeBindings = new Proxy({} as RawWailsAppBindings, {
 });
 
 export function getRawWailsAppBindings(): RawWailsAppBindings {
-	if (typeof window !== 'undefined' && window.go?.backend?.App) {
-		return window.go.backend.App;
+	if (typeof window !== 'undefined' && window.api) {
+		return window.api;
 	}
 
 	return missingRuntimeBindings;
