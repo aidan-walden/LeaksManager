@@ -1,10 +1,26 @@
 import { app, BrowserWindow } from 'electron';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import type Database from 'better-sqlite3';
+import { resolveAppPaths } from './paths';
+import { openDatabase } from './db/connection';
+import { migrate } from './db/migrate';
+import { registerAppProtocolScheme, registerAppProtocol } from './assets';
+import { registerIpc } from './ipc';
 
-// ponytail: Phase-1 stub. Custom protocol, migrations, and IPC registration land
-// in Phase 2 (T012–T014). For now this just proves the toolchain boots a window.
+// App lifecycle (replaces main.go + app.go Startup/Shutdown): resolve paths, open
+// the real DB, run migrations, register the app:// asset protocol and the IPC
+// bridge, then load the SvelteKit renderer.
 
 const DEV_SERVER_URL = 'http://localhost:5173';
+let db: Database.Database | null = null;
+
+function migrationsDir(): string {
+	// Dev: reuse backend/migrations verbatim. Prod: bundled into resources (Phase 6).
+	return app.isPackaged
+		? join(process.resourcesPath, 'migrations')
+		: join(app.getAppPath(), 'backend', 'migrations');
+}
 
 function createWindow(): void {
 	const win = new BrowserWindow({
@@ -25,7 +41,25 @@ function createWindow(): void {
 	}
 }
 
+// Privileged scheme registration must happen before the app is ready.
+registerAppProtocolScheme();
+
 app.whenReady().then(() => {
+	const { dbPath, staticPath } = resolveAppPaths({
+		isPackaged: app.isPackaged,
+		userData: app.getPath('userData')
+	});
+
+	mkdirSync(join(staticPath, 'uploads', 'songs'), { recursive: true });
+	mkdirSync(join(staticPath, 'uploads', 'artwork'), { recursive: true });
+	mkdirSync(dirname(dbPath), { recursive: true });
+
+	db = openDatabase(dbPath);
+	migrate(db, migrationsDir());
+
+	registerAppProtocol(staticPath);
+	registerIpc({ db, staticPath });
+
 	createWindow();
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -34,4 +68,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+	db?.close();
+	db = null;
 });
