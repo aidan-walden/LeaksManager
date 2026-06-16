@@ -1,0 +1,134 @@
+import type Database from 'better-sqlite3';
+import type { Song, SongReadable, Artist, Producer, Album, CreateSongInput } from './models';
+import { rowToSong, rowToArtist, rowToProducer, rowToAlbum, now } from './rows';
+import { inTx } from '../db/tx';
+
+// Port of backend/songs.go — create + read paths only. update/delete are US2 (T031).
+
+const SONG_COLS =
+	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id';
+
+export function createSong(db: Database.Database, input: CreateSongInput): Song {
+	const ts = now();
+	return inTx(db, (tx) => {
+		const info = tx
+			.prepare(
+				`INSERT INTO songs (name, filepath, album_id, artwork_path, genre, year, track_number, duration, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.run(
+				input.name,
+				input.filepath,
+				input.albumId ?? null,
+				input.artworkPath ?? null,
+				input.genre ?? null,
+				input.year ?? null,
+				input.trackNumber ?? null,
+				input.duration ?? null,
+				ts,
+				ts
+			);
+		const songId = Number(info.lastInsertRowid);
+
+		const linkArtist = tx.prepare(
+			`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
+		);
+		input.artistIds.forEach((artistId, i) => linkArtist.run(songId, artistId, i, ts));
+
+		const linkProducer = tx.prepare(
+			`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`
+		);
+		input.producerIds.forEach((producerId, i) => linkProducer.run(songId, producerId, i, ts));
+
+		return {
+			id: songId,
+			name: input.name,
+			albumId: input.albumId ?? null,
+			artworkPath: input.artworkPath ?? null,
+			genre: input.genre ?? null,
+			year: input.year ?? null,
+			trackNumber: input.trackNumber ?? null,
+			duration: input.duration ?? null,
+			filepath: input.filepath,
+			fileType: null,
+			createdAt: ts,
+			updatedAt: ts,
+			synced: false
+		};
+	});
+}
+
+export function getSongById(db: Database.Database, songId: number): Song | null {
+	const row = db.prepare(`SELECT ${SONG_COLS} FROM songs WHERE id = ?`).get(songId) as
+		| Record<string, unknown>
+		| undefined;
+	return row ? rowToSong(row) : null;
+}
+
+export function getSongReadable(db: Database.Database, songId: number): SongReadable | null {
+	const song = getSongById(db, songId);
+	return song ? buildSongReadable(db, song) : null;
+}
+
+export function getSongsReadable(
+	db: Database.Database,
+	limit: number,
+	offset: number
+): SongReadable[] {
+	const rows = db
+		.prepare(`SELECT ${SONG_COLS} FROM songs ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+		.all(limit, offset) as Record<string, unknown>[];
+	return rows.map((r) => buildSongReadable(db, rowToSong(r)));
+}
+
+export function getSongsCount(db: Database.Database): number {
+	return (db.prepare(`SELECT COUNT(*) AS c FROM songs`).get() as { c: number }).c;
+}
+
+export function buildSongReadable(db: Database.Database, song: Song): SongReadable {
+	const artists = getArtistsForSong(db, song.id);
+	const producers = getProducersForSong(db, song.id);
+	const album = song.albumId != null ? getAlbumById(db, song.albumId) : null;
+	return {
+		...song,
+		artist: artists.map((a) => a.name).join(', '),
+		artists,
+		producers,
+		album
+	};
+}
+
+export function getArtistsForSong(db: Database.Database, songId: number): Artist[] {
+	const rows = db
+		.prepare(
+			`SELECT ar.id, ar.name, ar.image, ar.career_start_year, ar.career_end_year, ar.created_at, ar.updated_at, ar.synced
+			 FROM artists ar
+			 JOIN song_artists sa ON ar.id = sa.artist_id
+			 WHERE sa.song_id = ?
+			 ORDER BY sa."order"`
+		)
+		.all(songId) as Record<string, unknown>[];
+	return rows.map(rowToArtist);
+}
+
+export function getProducersForSong(db: Database.Database, songId: number): Producer[] {
+	const rows = db
+		.prepare(
+			`SELECT p.id, p.name, p.created_at, p.updated_at
+			 FROM producers p
+			 JOIN song_producers sp ON p.id = sp.producer_id
+			 WHERE sp.song_id = ?
+			 ORDER BY sp."order"`
+		)
+		.all(songId) as Record<string, unknown>[];
+	return rows.map(rowToProducer);
+}
+
+export function getAlbumById(db: Database.Database, albumId: number): Album | null {
+	const row = db
+		.prepare(
+			`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced FROM albums WHERE id = ?`
+		)
+		.get(albumId) as Record<string, unknown> | undefined;
+	return row ? rowToAlbum(row) : null;
+}
