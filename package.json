@@ -5,11 +5,11 @@
   "description": "Music/leak management application with SvelteKit frontend and FastAPI microservice",
   "packageManager": "pnpm@9.14.4",
   "scripts": {
-    "dev": "pnpm --filter svelte dev",
-    "build": "pnpm --filter svelte build",
-    "check": "pnpm --filter svelte check",
-    "test": "pnpm --filter svelte test:run && vitest run && go test ./backend/...",
-    "test:frontend": "pnpm --filter svelte test:run",
+    "dev": "pnpm --filter ./svelte dev",
+    "build": "pnpm --filter ./svelte build",
+    "check": "pnpm --filter ./svelte check",
+    "test": "pnpm --filter ./svelte test:run && vitest run && go test ./backend/...",
+    "test:frontend": "pnpm --filter ./svelte test:run",
     "test:backend": "go test ./backend/...",
     "test:main": "vitest run",
     "electron:dev": "electron-vite dev",
@@ -23,8 +23,11 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.2",
     "electron": "^42.4.0",
     "electron-vite": "^5.0.0",
+    "typescript": "^5.7.2",
     "vitest": "^3.2.4"
   },
   "dependencies": {
