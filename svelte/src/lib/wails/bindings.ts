@@ -178,45 +178,9 @@ const transportFactories = {
 	syncSongsToAppleMusic: (app) => app.SyncSongsToAppleMusic()
 } satisfies TransportFactoryMap;
 
-const missingRuntimeBindings: RawWailsAppBindings = {
-	GetInitialData: () => rejectMissingRuntime(),
-	CreateArtist: () => rejectMissingRuntime(),
-	GetArtists: () => rejectMissingRuntime(),
-	FindArtistByName: () => rejectMissingRuntime(),
-	CreateAlbum: () => rejectMissingRuntime(),
-	UpdateAlbum: () => rejectMissingRuntime(),
-	DeleteAlbum: () => rejectMissingRuntime(),
-	GetAlbumsWithSongs: () => rejectMissingRuntime(),
-	GetAlbumWithArtists: () => rejectMissingRuntime(),
-	FindAlbumByName: () => rejectMissingRuntime(),
-	CreateSong: () => rejectMissingRuntime(),
-	GetSongReadable: () => rejectMissingRuntime(),
-	UpdateSong: () => rejectMissingRuntime(),
-	DeleteSong: () => rejectMissingRuntime(),
-	GetSongsReadable: () => rejectMissingRuntime(),
-	GetSongsCount: () => rejectMissingRuntime(),
-	CreateProducerWithAliases: () => rejectMissingRuntime(),
-	UpdateProducerWithAliases: () => rejectMissingRuntime(),
-	DeleteProducer: () => rejectMissingRuntime(),
-	GetProducersWithAliases: () => rejectMissingRuntime(),
-	MatchProducersFromFilename: () => rejectMissingRuntime(),
-	GetSettings: () => rejectMissingRuntime(),
-	UpdateSettings: () => rejectMissingRuntime(),
-	SaveUploadedFile: () => rejectMissingRuntime(),
-	SaveArtwork: () => rejectMissingRuntime(),
-	DeleteFile: () => rejectMissingRuntime(),
-	CleanupFiles: () => rejectMissingRuntime(),
-	ShowInFileExplorer: () => rejectMissingRuntime(),
-	UploadAlbumArt: () => rejectMissingRuntime(),
-	ExtractMetadata: () => rejectMissingRuntime(),
-	WriteSongMetadata: () => rejectMissingRuntime(),
-	WriteAlbumMetadata: () => rejectMissingRuntime(),
-	WriteProducerMetadata: () => rejectMissingRuntime(),
-	UploadAndExtractMetadata: () => rejectMissingRuntime(),
-	CreateSongsWithMetadata: () => rejectMissingRuntime(),
-	UploadSongs: () => rejectMissingRuntime(),
-	SyncSongsToAppleMusic: () => rejectMissingRuntime()
-};
+const missingRuntimeBindings = new Proxy({} as RawWailsAppBindings, {
+	get: () => () => rejectMissingRuntime()
+});
 
 export function getRawWailsAppBindings(): RawWailsAppBindings {
 	if (typeof window !== 'undefined' && window.go?.backend?.App) {
