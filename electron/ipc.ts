@@ -1,22 +1,24 @@
 import { ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
 import { API_CHANNELS } from './channels';
+import { us1Handlers } from './ipc-handlers';
 
-// IPC bridge skeleton (replaces Wails' auto-bound *App methods). Every channel in
+// IPC bridge (replaces Wails' auto-bound *App methods). Every channel in
 // contracts/ipc-channels.md is registered with a central error-to-reject wrapper;
-// handlers are stubbed until their user story wires real domain logic
-// (US1 T027, US2 T034, US3 T038). A thrown error rejects the invoke and surfaces
-// through the renderer's existing wails-actions.ts notification path.
+// per-story handler maps are merged in (US1 wired, US2 T034 / US3 T038 to come).
+// A thrown error rejects the invoke and surfaces through the renderer's existing
+// wails-actions.ts notification path. args cross the IPC trust boundary untyped.
 
 export interface IpcDeps {
 	db: Database.Database;
 	staticPath: string;
 }
 
-type Handler = (deps: IpcDeps, ...args: unknown[]) => unknown;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Handler = (deps: IpcDeps, ...args: any[]) => unknown;
 
-// Per-story handlers are added here; absent channels reject as "not implemented".
-const handlers: Partial<Record<string, Handler>> = {};
+// Absent channels reject as "not implemented" until their story wires them.
+const handlers: Partial<Record<string, Handler>> = { ...us1Handlers };
 
 export function registerIpc(deps: IpcDeps): void {
 	for (const channel of Object.values(API_CHANNELS)) {
