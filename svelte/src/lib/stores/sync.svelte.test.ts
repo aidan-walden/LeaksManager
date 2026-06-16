@@ -13,16 +13,15 @@ describe('SyncState', () => {
 		expect(state.hasChanges).toBe(true);
 	});
 
-	it('tracks sync progress and clears it on success', () => {
+	it('clears changes on successful sync', () => {
 		const state = new SyncState();
 		state.configure(true, true);
 
 		state.startSync();
-		state.updateProgress(1, 4);
-		expect(state.progressPercent).toBe(25);
+		expect(state.isSyncing).toBe(true);
 
 		state.finishSync(true);
 		expect(state.hasChanges).toBe(false);
-		expect(state.syncProgress).toBeNull();
+		expect(state.isSyncing).toBe(false);
 	});
 });

@@ -49,19 +49,17 @@ export class RuntimeErrorNotifier {
 	}
 }
 
-export type RuntimeErrorNotifierLike = Pick<RuntimeErrorNotifier, 'notify' | 'reset'>;
-
 export function createRuntimeErrorNotifier() {
 	return new RuntimeErrorNotifier();
 }
 
-export function setRuntimeErrorNotifierContext(notifier: RuntimeErrorNotifierLike) {
+export function setRuntimeErrorNotifierContext(notifier: RuntimeErrorNotifier) {
 	setContext(RUNTIME_ERROR_NOTIFIER_KEY, notifier);
 	return notifier;
 }
 
 export function getRuntimeErrorNotifierContext() {
-	const notifier = getContext<RuntimeErrorNotifierLike | undefined>(RUNTIME_ERROR_NOTIFIER_KEY);
+	const notifier = getContext<RuntimeErrorNotifier | undefined>(RUNTIME_ERROR_NOTIFIER_KEY);
 	if (!notifier) {
 		throw new Error('runtime error notifier context is not available');
 	}

@@ -1,6 +1,6 @@
 import { getContext, setContext } from 'svelte';
-import type { RuntimeErrorNotifierLike } from '$lib/errors/runtime-error';
-import type { SyncStateLike } from '$lib/stores/sync.svelte';
+import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
+import type { SyncState } from '$lib/stores/sync.svelte';
 import { wailsTransport } from '$lib/wails';
 import type { Settings } from '$lib/wails';
 
@@ -11,10 +11,7 @@ type AsyncMethod = (...args: any[]) => Promise<any>;
 type ActionConfig<T extends AsyncMethod> = {
 	context?: string;
 	markChanged?: boolean;
-	onSuccess?: (
-		result: Awaited<ReturnType<T>>,
-		dependencies: WailsActionDependencies
-	) => void;
+	onSuccess?: (result: Awaited<ReturnType<T>>, dependencies: WailsActionDependencies) => void;
 };
 
 type ActionConfigMap<TTransport extends Record<string, AsyncMethod>> = {
@@ -22,8 +19,8 @@ type ActionConfigMap<TTransport extends Record<string, AsyncMethod>> = {
 };
 
 export type WailsActionDependencies = {
-	syncState: SyncStateLike;
-	runtimeErrors: RuntimeErrorNotifierLike;
+	syncState: SyncState;
+	runtimeErrors: RuntimeErrorNotifier;
 };
 
 const actionConfig = {

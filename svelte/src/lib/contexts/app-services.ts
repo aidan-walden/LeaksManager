@@ -1,14 +1,18 @@
-import { getWailsActionsContext, setWailsActionsContext, type WailsActions } from '$lib/services/wails-actions';
+import {
+	getWailsActionsContext,
+	setWailsActionsContext,
+	type WailsActions
+} from '$lib/services/wails-actions';
 import {
 	getRuntimeErrorNotifierContext,
 	setRuntimeErrorNotifierContext,
-	type RuntimeErrorNotifierLike
+	type RuntimeErrorNotifier
 } from '$lib/errors/runtime-error';
-import { getSyncStateContext, setSyncStateContext, type SyncStateLike } from '$lib/stores/sync.svelte';
+import { getSyncStateContext, setSyncStateContext, type SyncState } from '$lib/stores/sync.svelte';
 
 type AppServices = {
-	syncState: SyncStateLike;
-	runtimeErrors: RuntimeErrorNotifierLike;
+	syncState: SyncState;
+	runtimeErrors: RuntimeErrorNotifier;
 	wailsActions: WailsActions;
 };
 

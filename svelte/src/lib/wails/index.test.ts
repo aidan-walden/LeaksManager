@@ -17,10 +17,8 @@ vi.mock('./bindings', async (importOriginal) => {
 });
 
 describe('wails wrapper bindings', () => {
-	const runtimeErrors = {
-		notify: vi.fn(),
-		reset: vi.fn()
-	};
+	const runtimeErrors = createRuntimeErrorNotifier();
+	const notifySpy = vi.spyOn(runtimeErrors, 'notify');
 	const syncState = createSyncState();
 	const wailsActions = createWailsActions({ syncState, runtimeErrors }, wailsTransport);
 
@@ -70,7 +68,7 @@ describe('wails wrapper bindings', () => {
 			})
 		).rejects.toThrow('boom');
 
-		expect(runtimeErrors.notify).toHaveBeenCalledWith(error, 'CreateSong');
+		expect(notifySpy).toHaveBeenCalledWith(error, 'CreateSong');
 	});
 
 	it('reconfigures sync state from updated settings', async () => {

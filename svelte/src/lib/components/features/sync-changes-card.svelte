@@ -11,20 +11,21 @@
 
 	async function handleSync() {
 		syncState.startSync();
-		const result = await runAsyncAction(() => wailsActions.syncSongsToAppleMusic(), (error) => {
-			const message = error instanceof Error ? error.message : 'Unknown error';
-			syncState.finishSync(false, {
-				message,
-				failedCount: 0,
-				totalCount: 0,
-				timestamp: Date.now()
-			});
-		});
+		const result = await runAsyncAction(
+			() => wailsActions.syncSongsToAppleMusic(),
+			(error) => {
+				const message = error instanceof Error ? error.message : 'Unknown error';
+				syncState.finishSync(false, {
+					message,
+					failedCount: 0,
+					totalCount: 0,
+					timestamp: Date.now()
+				});
+			}
+		);
 		if (!result) {
 			return;
 		}
-
-		syncState.updateProgress(result.totalSongs, result.totalSongs);
 
 		if (result.failureCount === 0) {
 			syncState.finishSync(true);
@@ -57,10 +58,7 @@
 			<Card.Content>
 				{#if syncState.isSyncing}
 					<p>Syncing changes to Apple Music...</p>
-					<Progress value={syncState.progressPercent} class="mt-2" />
-					<p class="mt-1 text-sm text-muted-foreground">
-						{syncState.syncProgress?.current ?? 0} / {syncState.syncProgress?.total ?? 0}
-					</p>
+					<Progress value={100} class="mt-2 animate-pulse" />
 				{:else if syncState.hasError}
 					<p class="text-destructive">{syncState.lastSyncError?.message}</p>
 					<p class="mt-2 text-sm text-muted-foreground">
