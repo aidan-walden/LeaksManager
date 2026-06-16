@@ -66,3 +66,6 @@ build/
 *.app
 wailsjs/
 frontend/dist/
+
+# electron-vite build output
+out/
