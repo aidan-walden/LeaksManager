@@ -11,42 +11,30 @@ import (
 
 // --- File Operations ---
 
-func (a *App) SaveUploadedFile(filename string, base64Data string) (string, error) {
+func (a *App) saveBase64(dir string, filename string, base64Data string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(base64Data)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64: %v", err)
 	}
 
-	relPath, fullPath, err := a.newUploadPath("songs", filename)
+	relPath, fullPath, err := a.newUploadPath(dir, filename)
 	if err != nil {
 		return "", err
 	}
 
-	err = os.WriteFile(fullPath, data, 0644)
-	if err != nil {
+	if err := os.WriteFile(fullPath, data, 0644); err != nil {
 		return "", fmt.Errorf("failed to write file: %v", err)
 	}
 
 	return relPath, nil
 }
 
+func (a *App) SaveUploadedFile(filename string, base64Data string) (string, error) {
+	return a.saveBase64("songs", filename, base64Data)
+}
+
 func (a *App) SaveArtwork(filename string, base64Data string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(base64Data)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode base64: %v", err)
-	}
-
-	relPath, fullPath, err := a.newUploadPath("artwork", filename)
-	if err != nil {
-		return "", err
-	}
-
-	err = os.WriteFile(fullPath, data, 0644)
-	if err != nil {
-		return "", fmt.Errorf("failed to write file: %v", err)
-	}
-
-	return relPath, nil
+	return a.saveBase64("artwork", filename, base64Data)
 }
 
 func (a *App) DeleteFile(relPath string) error {
