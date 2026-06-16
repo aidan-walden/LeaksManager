@@ -179,12 +179,26 @@ func (a *App) writeSongMetadataInternal(songID int) error {
 	return adapter.Write(fullPath, tags)
 }
 
+func nullStr(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
+func nullInt(ns sql.NullInt32) int32 {
+	if ns.Valid {
+		return ns.Int32
+	}
+	return 0
+}
+
 // buildSongTags assembles SongTags from the DB. Returns the resolved file path too.
 func (a *App) buildSongTags(songID int) (SongTags, string, error) {
 	query := `
     SELECT
         s.name, s.filepath, s.genre, s.year, s.track_number,
-        s.artwork_path, a.name, a.year, a.genre, a.artwork_path,
+        s.artwork_path, a.name, a.genre, a.artwork_path,
         GROUP_CONCAT(ar.name, ', '),
         (
             SELECT GROUP_CONCAT(ar2.name, ', ')
@@ -209,78 +223,41 @@ func (a *App) buildSongTags(songID int) (SongTags, string, error) {
 
 	var sName, sPath string
 	var sGenre, sArt, aName, aGenre, aArt, artists, albumArtists, producers sql.NullString
-	var sYear, sTrack, aYear sql.NullInt32
+	var sYear, sTrack sql.NullInt32
 
 	err := a.db.QueryRow(query, songID).Scan(
 		&sName, &sPath, &sGenre, &sYear, &sTrack,
-		&sArt, &aName, &aYear, &aGenre, &aArt, &artists, &albumArtists, &producers,
+		&sArt, &aName, &aGenre, &aArt, &artists, &albumArtists, &producers,
 	)
 	if err == sql.ErrNoRows {
 		return SongTags{}, "", fmt.Errorf("song not found")
 	} else if err != nil {
 		return SongTags{}, "", err
 	}
-	_ = aYear
 
 	fullPath, err := a.staticFilePath(sPath)
 	if err != nil {
 		return SongTags{}, "", err
 	}
 
-	songGenre := ""
-	if sGenre.Valid {
-		songGenre = sGenre.String
-	}
-	albumGenre := ""
-	if aGenre.Valid {
-		albumGenre = aGenre.String
-	}
-	genreToWrite := songGenre
+	genreToWrite := nullStr(sGenre)
 	if genreToWrite == "" {
-		genreToWrite = albumGenre
+		genreToWrite = nullStr(aGenre)
 	}
 
-	albumName := ""
-	if aName.Valid {
-		albumName = aName.String
-	}
+	albumName := nullStr(aName)
+	songArt := nullStr(sArt)
+	albumArt := nullStr(aArt)
 
-	songArt := ""
-	if sArt.Valid {
-		songArt = sArt.String
-	}
-	albumArt := ""
-	if aArt.Valid {
-		albumArt = aArt.String
-	}
-
-	artistStr := ""
-	if artists.Valid {
-		artistStr = artists.String
-	}
-	albumArtistsStr := ""
-	if albumArtists.Valid {
-		albumArtistsStr = albumArtists.String
-	}
-	albumArtist := albumArtistsStr
+	artistStr := nullStr(artists)
+	albumArtist := nullStr(albumArtists)
 	if albumArtist == "" {
 		albumArtist = artistStr
 	}
 
-	producersStr := ""
-	if producers.Valid {
-		producersStr = producers.String
-	}
-
-	year := int32(0)
-	if sYear.Valid {
-		year = sYear.Int32
-	}
-
-	trackNumber := int32(0)
-	if sTrack.Valid {
-		trackNumber = sTrack.Int32
-	}
+	producersStr := nullStr(producers)
+	year := nullInt(sYear)
+	trackNumber := nullInt(sTrack)
 
 	trackNumberStr := ""
 	trackTotal := int32(0)
