@@ -69,3 +69,10 @@ frontend/dist/
 
 # electron-vite build output
 out/
+
+# graphify
+graphify-out/
+
+# specs
+specs/
+.specify/
