@@ -84,6 +84,42 @@ export interface BatchResult {
 	results: SongProcessingResult[];
 }
 
+// --- Apple Music DTOs (port of backend/models.go) ---
+
+export interface AppleMusicTrack {
+	id: string; // persistent ID
+	databaseId: number;
+	name: string;
+	artist: string;
+	albumArtist: string;
+	album: string;
+	genre: string;
+	year: number;
+	duration: number;
+	trackNumber: number;
+	trackCount: number;
+	discNumber: number;
+	discCount: number;
+}
+
+export interface SyncResult {
+	totalSongs: number;
+	successCount: number;
+	failureCount: number;
+	addedCount: number;
+	updatedCount: number;
+	results: SyncItemResult[];
+	completedAt: number;
+}
+
+export interface SyncItemResult {
+	songId: number;
+	songName: string;
+	status: string; // "success", "failed", "added", "updated"
+	appleMusicId?: string | null;
+	errorMessage?: string;
+}
+
 export interface Producer {
 	id: number;
 	name: string;

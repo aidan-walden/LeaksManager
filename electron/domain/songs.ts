@@ -302,7 +302,7 @@ export function buildSongTags(
 	return { tags, fullPath };
 }
 
-async function writeSongMetadataInternal(
+export async function writeSongMetadataInternal(
 	db: Database.Database,
 	staticPath: string,
 	songId: number
