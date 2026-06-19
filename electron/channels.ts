@@ -52,5 +52,8 @@ export const API_CHANNELS: Record<string, string> = {
 	// Workflows
 	UploadAndExtractMetadata: 'workflow:uploadAndExtract',
 	CreateSongsWithMetadata: 'workflow:createWithMetadata',
-	UploadSongs: 'workflow:uploadSongs'
+	UploadSongs: 'workflow:uploadSongs',
+	// Apple Music (macOS)
+	GetAppleMusicLibrary: 'applemusic:getLibrary',
+	SyncSongsToAppleMusic: 'applemusic:sync'
 };

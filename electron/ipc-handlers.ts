@@ -46,6 +46,7 @@ import {
 	uploadSongs
 } from './domain/workflows';
 import { getInitialData } from './domain/initial-data';
+import { getAppleMusicLibrary, syncSongsToAppleMusic } from './apple-music';
 
 // US1 (import + organize) + US2 (edit + write-back) handler map. Arg order mirrors
 // RawWailsAppBindings so the renderer transport (bindings.ts) reaches these unchanged.
@@ -118,5 +119,11 @@ export const us1Handlers: Partial<Record<string, Handler>> = {
 	[API_CHANNELS.CreateSongsWithMetadata]: (d, input) =>
 		createSongsWithMetadata(d.db, d.staticPath, input),
 	[API_CHANNELS.UploadSongs]: (d, files, albumId) =>
-		uploadSongs(d.db, d.staticPath, files, albumId ?? null)
+		uploadSongs(d.db, d.staticPath, files, albumId ?? null),
+
+	// Apple Music
+	[API_CHANNELS.GetAppleMusicLibrary]: (d) =>
+		getAppleMusicLibrary({ db: d.db, staticPath: d.staticPath, window: d.window }),
+	[API_CHANNELS.SyncSongsToAppleMusic]: (d) =>
+		syncSongsToAppleMusic({ db: d.db, staticPath: d.staticPath, window: d.window })
 };

@@ -22,7 +22,7 @@ function migrationsDir(): string {
 		: join(app.getAppPath(), 'backend', 'migrations');
 }
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
 	const win = new BrowserWindow({
 		width: 1280,
 		height: 800,
@@ -39,6 +39,8 @@ function createWindow(): void {
 	} else {
 		win.loadURL(DEV_SERVER_URL);
 	}
+
+	return win;
 }
 
 // Privileged scheme registration must happen before the app is ready.
@@ -58,9 +60,10 @@ app.whenReady().then(() => {
 	migrate(db, migrationsDir());
 
 	registerAppProtocol(staticPath);
-	registerIpc({ db, staticPath });
 
-	createWindow();
+	const window = createWindow();
+	registerIpc({ db, staticPath, window });
+
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});

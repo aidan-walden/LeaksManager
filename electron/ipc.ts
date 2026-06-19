@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import { API_CHANNELS } from './channels';
 import { us1Handlers } from './ipc-handlers';
@@ -12,6 +12,7 @@ import { us1Handlers } from './ipc-handlers';
 export interface IpcDeps {
 	db: Database.Database;
 	staticPath: string;
+	window: BrowserWindow;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
