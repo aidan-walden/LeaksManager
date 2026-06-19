@@ -5,6 +5,7 @@ import type {
 	ProducerAliasWithArtists,
 	Song,
 	CreateProducerInput,
+	UpdateProducerInput,
 	BatchResult
 } from './models';
 import { rowToProducer, rowToSong, now } from './rows';
@@ -58,6 +59,64 @@ export function createProducerWithAliases(
 
 		return { id: producerId, name: input.name, createdAt: ts, updatedAt: ts };
 	})(db);
+}
+
+export function updateProducerWithAliases(
+	db: Database.Database,
+	input: UpdateProducerInput
+): Producer {
+	const ts = now();
+	return db.transaction((tx) => {
+		const existing = tx
+			.prepare(`SELECT created_at FROM producers WHERE id = ?`)
+			.get(input.id) as { created_at: number } | undefined;
+		if (!existing) throw new Error(`producer ${input.id} not found`);
+
+		// Alias uniqueness (case-insensitive), excluding the current producer.
+		const dupe = tx.prepare(
+			`SELECT COUNT(*) AS c FROM producer_aliases WHERE LOWER(alias) = LOWER(?) AND producer_id != ?`
+		);
+		for (const alias of input.aliases) {
+			if ((dupe.get(alias.name, input.id) as { c: number }).c > 0) {
+				throw new Error(`alias "${alias.name}" already exists for another producer`);
+			}
+		}
+
+		tx.prepare(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`).run(
+			input.name,
+			ts,
+			input.id
+		);
+
+		// Replace existing aliases (and their artist restrictions).
+		const aliasIds = (
+			tx.prepare(`SELECT id FROM producer_aliases WHERE producer_id = ?`).all(input.id) as {
+				id: number;
+			}[]
+		).map((r) => r.id);
+		const delAliasArtist = tx.prepare(`DELETE FROM producer_alias_artists WHERE alias_id = ?`);
+		for (const aliasId of aliasIds) delAliasArtist.run(aliasId);
+		tx.prepare(`DELETE FROM producer_aliases WHERE producer_id = ?`).run(input.id);
+
+		const insAlias = tx.prepare(
+			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`
+		);
+		const insAliasArtist = tx.prepare(
+			`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`
+		);
+		for (const alias of input.aliases) {
+			const aliasId = Number(insAlias.run(input.id, alias.name, ts).lastInsertRowid);
+			for (const artistId of alias.artistIds) {
+				insAliasArtist.run(aliasId, artistId, ts);
+			}
+		}
+
+		return { id: input.id, name: input.name, createdAt: existing.created_at, updatedAt: ts };
+	})(db);
+}
+
+export function deleteProducer(db: Database.Database, producerId: number): void {
+	db.prepare(`DELETE FROM producers WHERE id = ?`).run(producerId);
 }
 
 export function getProducersWithAliases(db: Database.Database): ProducerWithAliases[] {

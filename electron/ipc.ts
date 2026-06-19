@@ -5,7 +5,7 @@ import { us1Handlers } from './ipc-handlers';
 
 // IPC bridge (replaces Wails' auto-bound *App methods). Every channel in
 // contracts/ipc-channels.md is registered with a central error-to-reject wrapper;
-// per-story handler maps are merged in (US1 wired, US2 T034 / US3 T038 to come).
+// per-story handler maps are merged in (US1 + US2 wired, US3 T038 to come).
 // A thrown error rejects the invoke and surfaces through the renderer's existing
 // wails-actions.ts notification path. args cross the IPC trust boundary untyped.
 

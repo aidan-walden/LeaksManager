@@ -9,6 +9,8 @@ export const API_CHANNELS: Record<string, string> = {
 	GetInitialData: 'app:initialData',
 	// Songs
 	CreateSong: 'song:create',
+	UpdateSong: 'song:update',
+	DeleteSong: 'song:delete',
 	GetSongReadable: 'song:get',
 	GetSongsReadable: 'song:list',
 	GetSongsCount: 'song:count',
@@ -26,15 +28,25 @@ export const API_CHANNELS: Record<string, string> = {
 	FindArtistByName: 'artist:findByName',
 	// Producers
 	CreateProducerWithAliases: 'producer:create',
+	UpdateProducerWithAliases: 'producer:update',
+	DeleteProducer: 'producer:delete',
 	GetProducersWithAliases: 'producer:listWithAliases',
+	WriteProducerMetadata: 'producer:writeMetadata',
 	LoadProducerPatterns: 'producer:loadPatterns',
 	MatchProducersFromFilename: 'producer:matchFromFilename',
 	// Settings
 	GetSettings: 'settings:get',
+	UpdateSettings: 'settings:update',
+	// Metadata
+	ExtractMetadata: 'metadata:extract',
+	WriteSongMetadata: 'metadata:writeSong',
+	WriteAlbumMetadata: 'metadata:writeAlbum',
 	// Files
 	SaveUploadedFile: 'file:saveUpload',
 	SaveArtwork: 'file:saveArtwork',
+	DeleteFile: 'file:delete',
 	CleanupFiles: 'file:cleanup',
+	ShowInFileExplorer: 'file:showInExplorer',
 	// Workflows
 	UploadAndExtractMetadata: 'workflow:uploadAndExtract',
 	CreateSongsWithMetadata: 'workflow:createWithMetadata',

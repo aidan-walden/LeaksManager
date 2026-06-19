@@ -1,6 +1,9 @@
+import { shell } from 'electron';
 import type { Handler } from './ipc';
 import { API_CHANNELS } from './channels';
-import { saveBase64, cleanupFiles } from './files';
+import { saveBase64, deleteFile, cleanupFiles } from './files';
+import { staticFilePath, uploadsFilePath } from './paths';
+import { readMetadata } from './metadata';
 import {
 	createArtist,
 	getArtists,
@@ -17,12 +20,24 @@ import {
 } from './domain/albums';
 import {
 	createProducerWithAliases,
+	updateProducerWithAliases,
+	deleteProducer,
 	getProducersWithAliases,
+	writeProducerMetadata,
 	loadProducerPatterns,
 	matchProducersFromFilename
 } from './domain/producers';
-import { createSong, getSongReadable, getSongsReadable, getSongsCount } from './domain/songs';
-import { getSettings } from './domain/settings';
+import {
+	createSong,
+	updateSong,
+	deleteSong,
+	getSongReadable,
+	getSongsReadable,
+	getSongsCount,
+	writeSongMetadata,
+	writeAlbumMetadata
+} from './domain/songs';
+import { getSettings, updateSettings } from './domain/settings';
 import {
 	uploadAndExtractMetadata,
 	createSongsWithMetadata,
@@ -30,8 +45,9 @@ import {
 } from './domain/workflows';
 import { getInitialData } from './domain/initial-data';
 
-// US1 (import + organize) handler map. Arg order mirrors RawWailsAppBindings so the
-// renderer transport (bindings.ts) reaches these unchanged. Keyed by channel string.
+// US1 (import + organize) + US2 (edit + write-back) handler map. Arg order mirrors
+// RawWailsAppBindings so the renderer transport (bindings.ts) reaches these unchanged.
+// Keyed by channel string.
 export const us1Handlers: Partial<Record<string, Handler>> = {
 	// App
 	[API_CHANNELS.GetInitialData]: (d) => getInitialData(d.db),
@@ -54,26 +70,43 @@ export const us1Handlers: Partial<Record<string, Handler>> = {
 
 	// Producers
 	[API_CHANNELS.CreateProducerWithAliases]: (d, input) => createProducerWithAliases(d.db, input),
+	[API_CHANNELS.UpdateProducerWithAliases]: (d, input) => updateProducerWithAliases(d.db, input),
+	[API_CHANNELS.DeleteProducer]: (d, producerId) => deleteProducer(d.db, producerId),
 	[API_CHANNELS.GetProducersWithAliases]: (d) => getProducersWithAliases(d.db),
+	[API_CHANNELS.WriteProducerMetadata]: (d, producerId) =>
+		writeProducerMetadata(d.db, d.staticPath, producerId),
 	[API_CHANNELS.LoadProducerPatterns]: (d) => loadProducerPatterns(d.db),
 	[API_CHANNELS.MatchProducersFromFilename]: (d, filename, songArtistIds) =>
 		matchProducersFromFilename(d.db, filename, songArtistIds),
 
 	// Songs
 	[API_CHANNELS.CreateSong]: (d, input) => createSong(d.db, input),
+	[API_CHANNELS.UpdateSong]: (d, input) => updateSong(d.db, input),
+	[API_CHANNELS.DeleteSong]: (d, songId) => deleteSong(d.db, d.staticPath, songId),
 	[API_CHANNELS.GetSongReadable]: (d, songId) => getSongReadable(d.db, songId),
 	[API_CHANNELS.GetSongsReadable]: (d, limit, offset) => getSongsReadable(d.db, limit, offset),
 	[API_CHANNELS.GetSongsCount]: (d) => getSongsCount(d.db),
 
-	// Settings (read; settings:update is US2 T034)
+	// Metadata
+	[API_CHANNELS.ExtractMetadata]: (d, relPath) =>
+		readMetadata(staticFilePath(d.staticPath, relPath)),
+	[API_CHANNELS.WriteSongMetadata]: (d, songId) => writeSongMetadata(d.db, d.staticPath, songId),
+	[API_CHANNELS.WriteAlbumMetadata]: (d, albumId) =>
+		writeAlbumMetadata(d.db, d.staticPath, albumId),
+
+	// Settings
 	[API_CHANNELS.GetSettings]: (d) => getSettings(d.db),
+	[API_CHANNELS.UpdateSettings]: (d, input) => updateSettings(d.db, input),
 
 	// Files
 	[API_CHANNELS.SaveUploadedFile]: (d, filename, base64Data) =>
 		saveBase64(d.staticPath, 'songs', filename, base64Data),
 	[API_CHANNELS.SaveArtwork]: (d, filename, base64Data) =>
 		saveBase64(d.staticPath, 'artwork', filename, base64Data),
+	[API_CHANNELS.DeleteFile]: (d, relPath) => deleteFile(d.staticPath, relPath),
 	[API_CHANNELS.CleanupFiles]: (d, relPaths) => cleanupFiles(d.staticPath, relPaths),
+	[API_CHANNELS.ShowInFileExplorer]: (d, relPath) =>
+		shell.showItemInFolder(uploadsFilePath(d.staticPath, relPath)),
 
 	// Workflows
 	[API_CHANNELS.UploadAndExtractMetadata]: (d, files, albumId) =>
