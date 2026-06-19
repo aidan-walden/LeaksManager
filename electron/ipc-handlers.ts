@@ -12,6 +12,8 @@ import {
 } from './domain/artists';
 import {
 	createAlbum,
+	updateAlbum,
+	deleteAlbum,
 	getAlbumsWithSongs,
 	getAlbumWithArtists,
 	resolveOrCreateAlbum,
@@ -60,6 +62,8 @@ export const us1Handlers: Partial<Record<string, Handler>> = {
 
 	// Albums
 	[API_CHANNELS.CreateAlbum]: (d, input) => createAlbum(d.db, input),
+	[API_CHANNELS.UpdateAlbum]: (d, input) => updateAlbum(d.db, input),
+	[API_CHANNELS.DeleteAlbum]: (d, albumId) => deleteAlbum(d.db, albumId),
 	[API_CHANNELS.GetAlbumsWithSongs]: (d, limit, offset) => getAlbumsWithSongs(d.db, limit, offset),
 	[API_CHANNELS.GetAlbumWithArtists]: (d, albumId) => getAlbumWithArtists(d.db, albumId),
 	[API_CHANNELS.ResolveOrCreateAlbum]: (d, name, artistIds, opts) =>

@@ -16,6 +16,8 @@ export const API_CHANNELS: Record<string, string> = {
 	GetSongsCount: 'song:count',
 	// Albums
 	CreateAlbum: 'album:create',
+	UpdateAlbum: 'album:update',
+	DeleteAlbum: 'album:delete',
 	GetAlbumsWithSongs: 'album:listWithSongs',
 	GetAlbumWithArtists: 'album:getWithArtists',
 	ResolveOrCreateAlbum: 'album:resolveOrCreate',

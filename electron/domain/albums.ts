@@ -6,12 +6,13 @@ import type {
 	Artist,
 	Song,
 	CreateAlbumInput,
+	UpdateAlbumInput,
 	AlbumResolutionOpts
 } from './models';
 import { rowToAlbum, rowToArtist, rowToSong, now } from './rows';
 import { saveBase64 } from '../files';
 
-// Port of backend/albums.go (+ UploadAlbumArt from files.go). update/delete are US2.
+// Port of backend/albums.go (+ UploadAlbumArt from files.go).
 
 const ALBUM_COLS =
 	'id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced';
@@ -48,6 +49,32 @@ export function createAlbum(db: Database.Database, input: CreateAlbumInput): Alb
 			updatedAt: ts,
 			synced: false
 		};
+	})(db);
+}
+
+export function updateAlbum(db: Database.Database, input: UpdateAlbumInput): void {
+	const ts = now();
+	db.transaction((tx) => {
+		tx.prepare(
+			`UPDATE albums SET name = COALESCE(?, name), genre = ?, year = ?, updated_at = ? WHERE id = ?`
+		).run(input.name ?? null, input.genre ?? null, input.year ?? null, ts, input.id);
+
+		if (input.artistIds.length > 0) {
+			tx.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(input.id);
+			const link = tx.prepare(
+				`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
+			);
+			input.artistIds.forEach((artistId, i) => link.run(input.id, artistId, i, ts));
+		}
+	})(db);
+}
+
+export function deleteAlbum(db: Database.Database, albumId: number): void {
+	db.transaction((tx) => {
+		// Unlink songs (album_id → NULL), then drop artist links and the album.
+		tx.prepare(`UPDATE songs SET album_id = NULL WHERE album_id = ?`).run(albumId);
+		tx.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(albumId);
+		tx.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
 	})(db);
 }
 
