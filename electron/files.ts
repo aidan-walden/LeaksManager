@@ -1,5 +1,4 @@
 import { writeFileSync, rmSync } from 'node:fs';
-import { shell } from 'electron';
 import { newUploadPath, uploadsFilePath } from './paths';
 
 // Port of backend/files.go. Free functions taking staticPath (no App receiver).
@@ -41,10 +40,4 @@ export function cleanupFiles(staticPath: string, relPaths: string[]): number {
 		}
 	}
 	return deleted;
-}
-
-export function showInFileExplorer(staticPath: string, relPath: string): void {
-	// shell.showItemInFolder reveals + selects cross-platform (replaces the
-	// per-OS open/explorer/xdg-open switch in files.go).
-	shell.showItemInFolder(uploadsFilePath(staticPath, relPath));
 }
