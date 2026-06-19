@@ -17,14 +17,6 @@ export function saveBase64(
 	return relPath;
 }
 
-export function saveUploadedFile(staticPath: string, filename: string, base64Data: string): string {
-	return saveBase64(staticPath, 'songs', filename, base64Data);
-}
-
-export function saveArtwork(staticPath: string, filename: string, base64Data: string): string {
-	return saveBase64(staticPath, 'artwork', filename, base64Data);
-}
-
 export function deleteFile(staticPath: string, relPath: string): void {
 	rmSync(uploadsFilePath(staticPath, relPath));
 }

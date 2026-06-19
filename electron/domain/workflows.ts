@@ -10,7 +10,7 @@ import type {
 	CreateSongInput
 } from './models';
 import type { ExtractedMetadata } from '../metadata';
-import { saveUploadedFile, saveArtwork } from '../files';
+import { saveBase64 } from '../files';
 import { staticFilePath } from '../paths';
 import { readMetadata } from '../metadata';
 import { parseArtists, createArtist, findArtistByName } from './artists';
@@ -59,7 +59,7 @@ function resolveUploadArtwork(
 	if (useEmbedded && metadata.artwork) {
 		const ext = metadata.artwork.mimeType === 'image/png' ? 'png' : 'jpg';
 		try {
-			return saveArtwork(staticPath, `artwork.${ext}`, metadata.artwork.data);
+			return saveBase64(staticPath, 'artwork', `artwork.${ext}`, metadata.artwork.data);
 		} catch {
 			return null;
 		}
@@ -121,7 +121,7 @@ export async function uploadAndExtractMetadata(
 	let filesWithArtwork = 0;
 
 	for (const file of files) {
-		const relPath = saveUploadedFile(staticPath, file.filename, file.base64Data);
+		const relPath = saveBase64(staticPath, 'songs', file.filename, file.base64Data);
 
 		let metadata: ExtractedMetadata;
 		try {
@@ -259,7 +259,7 @@ export async function uploadSongs(
 
 	const specs: SongCreationSpec[] = [];
 	for (const file of files) {
-		const relPath = saveUploadedFile(staticPath, file.filename, file.base64Data);
+		const relPath = saveBase64(staticPath, 'songs', file.filename, file.base64Data);
 
 		let metadata: ExtractedMetadata;
 		try {

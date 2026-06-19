@@ -9,7 +9,7 @@ import type {
 	AlbumResolutionOpts
 } from './models';
 import { rowToAlbum, rowToArtist, rowToSong, now } from './rows';
-import { saveArtwork } from '../files';
+import { saveBase64 } from '../files';
 
 // Port of backend/albums.go (+ UploadAlbumArt from files.go). update/delete are US2.
 
@@ -196,6 +196,6 @@ export function uploadAlbumArt(
 	filename: string,
 	base64Data: string
 ): void {
-	const relPath = saveArtwork(staticPath, filename, base64Data);
+	const relPath = saveBase64(staticPath, 'artwork', filename, base64Data);
 	db.prepare(`UPDATE albums SET artwork_path = ? WHERE id = ?`).run(relPath, albumId);
 }

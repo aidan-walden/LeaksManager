@@ -1,6 +1,6 @@
 import type { Handler } from './ipc';
 import { API_CHANNELS } from './channels';
-import { saveUploadedFile, saveArtwork, cleanupFiles } from './files';
+import { saveBase64, cleanupFiles } from './files';
 import {
 	createArtist,
 	getArtists,
@@ -70,9 +70,9 @@ export const us1Handlers: Partial<Record<string, Handler>> = {
 
 	// Files
 	[API_CHANNELS.SaveUploadedFile]: (d, filename, base64Data) =>
-		saveUploadedFile(d.staticPath, filename, base64Data),
+		saveBase64(d.staticPath, 'songs', filename, base64Data),
 	[API_CHANNELS.SaveArtwork]: (d, filename, base64Data) =>
-		saveArtwork(d.staticPath, filename, base64Data),
+		saveBase64(d.staticPath, 'artwork', filename, base64Data),
 	[API_CHANNELS.CleanupFiles]: (d, relPaths) => cleanupFiles(d.staticPath, relPaths),
 
 	// Workflows
