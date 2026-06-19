@@ -4,11 +4,13 @@ import type {
 	ProducerWithAliases,
 	ProducerAliasWithArtists,
 	Song,
-	CreateProducerInput
+	CreateProducerInput,
+	BatchResult
 } from './models';
 import { rowToProducer, rowToSong, now } from './rows';
+import { writeSongMetadata } from './songs';
 
-// Port of backend/producers.go (US1 subset). update/delete + WriteProducerMetadata are US2.
+// Port of backend/producers.go.
 
 // A flat producer-matching term: a producer name or one of its aliases.
 // aliasArtistIds is empty for names and unrestricted aliases.
@@ -199,6 +201,36 @@ export function matchPatterns(
 	}
 
 	return [...matched].sort((a, b) => a - b);
+}
+
+// WriteProducerMetadata writes tags to every song by a producer (re-tagging so each
+// file reflects current state). Mirrors backend/producers.go WriteProducerMetadata.
+// ponytail: the Go oracle's sole point was writing producers into the composer tag,
+// but mediabunny's unified MetadataTags has no composer field (see songs.ts/metadata.ts),
+// so that field is not emitted. The faithful control flow is kept: iterate the producer's
+// songs and write everything the unified engine supports, aggregating per-song results.
+export async function writeProducerMetadata(
+	db: Database.Database,
+	staticPath: string,
+	producerId: number
+): Promise<BatchResult> {
+	const rows = db
+		.prepare(`SELECT song_id FROM song_producers WHERE producer_id = ?`)
+		.all(producerId) as { song_id: number }[];
+
+	const results = await Promise.all(
+		rows.map((r) => writeSongMetadata(db, staticPath, r.song_id))
+	);
+
+	const songsProcessed = results.filter((r) => r.success).length;
+	const songsFailed = results.length - songsProcessed;
+	return {
+		success: true,
+		message: `Processed producer ${producerId}`,
+		songsProcessed,
+		songsFailed,
+		results
+	};
 }
 
 export function matchProducersFromFilename(
