@@ -70,6 +70,20 @@ export interface SongReadable extends Song {
 	album: Album | null;
 }
 
+export interface SongProcessingResult {
+	songId: number;
+	success: boolean;
+	error?: string;
+}
+
+export interface BatchResult {
+	success: boolean;
+	message: string;
+	songsProcessed: number;
+	songsFailed: number;
+	results: SongProcessingResult[];
+}
+
 export interface Producer {
 	id: number;
 	name: string;

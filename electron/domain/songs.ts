@@ -8,10 +8,13 @@ import type {
 	CreateSongInput,
 	UpdateSongInput
 } from './models';
+import type { SongProcessingResult, BatchResult } from './models';
 import { rowToSong, rowToArtist, rowToProducer, rowToAlbum, now } from './rows';
 import { resolveOrCreateAlbum } from './albums';
+import { getSettings } from './settings';
 import { staticFilePath } from '../paths';
-import { rmSync } from 'node:fs';
+import { writeMetadata, type MetadataTags } from '../metadata';
+import { readFileSync, rmSync } from 'node:fs';
 
 // Port of backend/songs.go — create + read paths plus update/delete (US2).
 
@@ -199,4 +202,151 @@ export function getAlbumById(db: Database.Database, albumId: number): Album | nu
 		)
 		.get(albumId) as Record<string, unknown> | undefined;
 	return row ? rowToAlbum(row) : null;
+}
+
+// --- Metadata write-back (port of backend/metadata.go) ---
+
+// buildSongTags assembles a mediabunny MetadataTags payload from the DB, mirroring
+// backend/metadata.go buildSongTags: genre/album-artist fall back song→album, artwork
+// falls back song→album, and the singles/track-number rule (FR-009) is driven by
+// Settings. Returns the tags plus the resolved full path of the audio file to write.
+// ponytail: mediabunny's MetadataTags has no composer/producer field, so producers
+// (the Go oracle wrote them as composer) are not emitted by the unified engine.
+export function buildSongTags(
+	db: Database.Database,
+	staticPath: string,
+	songId: number
+): { tags: MetadataTags; fullPath: string } {
+	const row = db
+		.prepare(
+			`SELECT
+				s.name AS s_name, s.filepath AS s_filepath, s.genre AS s_genre, s.year AS s_year,
+				s.track_number AS s_track, s.artwork_path AS s_artwork,
+				a.name AS a_name, a.genre AS a_genre, a.artwork_path AS a_artwork,
+				(SELECT GROUP_CONCAT(ar.name, ', ') FROM song_artists sa
+				 LEFT JOIN artists ar ON sa.artist_id = ar.id
+				 WHERE sa.song_id = s.id ORDER BY sa."order") AS artists,
+				(SELECT GROUP_CONCAT(ar2.name, ', ') FROM album_artists aa
+				 LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
+				 WHERE aa.album_id = s.album_id ORDER BY aa."order") AS album_artists
+			FROM songs s
+			LEFT JOIN albums a ON s.album_id = a.id
+			WHERE s.id = ?`
+		)
+		.get(songId) as Record<string, unknown> | undefined;
+
+	if (!row) throw new Error('song not found');
+
+	const str = (v: unknown): string => (v == null ? '' : String(v));
+	const num = (v: unknown): number => (v == null ? 0 : Number(v));
+
+	const sName = str(row.s_name);
+	const fullPath = staticFilePath(staticPath, str(row.s_filepath));
+
+	let genre = str(row.s_genre);
+	if (genre === '') genre = str(row.a_genre);
+
+	let albumName = str(row.a_name);
+	const artistStr = str(row.artists);
+	let albumArtist = str(row.album_artists);
+	if (albumArtist === '') albumArtist = artistStr;
+
+	const year = num(row.s_year);
+	let trackNumber = num(row.s_track);
+	let trackTotal = 0;
+
+	const settings = getSettings(db);
+	if (albumName === '') {
+		if (settings.automaticallyMakeSingles) {
+			albumName = `${sName} - Single`;
+			trackNumber = 1;
+			trackTotal = 1;
+		} else {
+			trackNumber = 0;
+		}
+	} else {
+		const count = db
+			.prepare(
+				`SELECT COUNT(*) AS c FROM songs
+				 WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)`
+			)
+			.get(songId) as { c: number };
+		trackTotal = count.c;
+	}
+
+	// artwork: song art preferred, fall back to album art
+	const artRel = str(row.s_artwork) || str(row.a_artwork);
+
+	const tags: MetadataTags = {};
+	if (sName !== '') tags.title = sName;
+	if (artistStr !== '') tags.artist = artistStr;
+	if (albumArtist !== '') tags.albumArtist = albumArtist;
+	if (albumName !== '') tags.album = albumName;
+	if (genre !== '') tags.genre = genre;
+	// Go wrote year as `date=YYYY`; readMetadata derives the year from date.getFullYear().
+	// Use a local mid-year date so the round-tripped year is timezone-stable.
+	if (year > 0) tags.date = new Date(year, 5, 15);
+	if (trackNumber > 0) {
+		tags.trackNumber = trackNumber;
+		if (trackTotal > 0) tags.tracksTotal = trackTotal;
+	}
+
+	if (artRel !== '') {
+		const artFull = staticFilePath(staticPath, artRel);
+		const mimeType = artRel.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+		tags.images = [
+			{ data: new Uint8Array(readFileSync(artFull)), mimeType, kind: 'coverFront' }
+		];
+	}
+
+	return { tags, fullPath };
+}
+
+async function writeSongMetadataInternal(
+	db: Database.Database,
+	staticPath: string,
+	songId: number
+): Promise<void> {
+	const { tags, fullPath } = buildSongTags(db, staticPath, songId);
+	await writeMetadata(fullPath, tags);
+}
+
+// WriteSongMetadata writes the assembled tags back into the song's file. Mirrors the
+// Go oracle: failures are returned as a result, not thrown.
+export async function writeSongMetadata(
+	db: Database.Database,
+	staticPath: string,
+	songId: number
+): Promise<SongProcessingResult> {
+	try {
+		await writeSongMetadataInternal(db, staticPath, songId);
+		return { songId, success: true };
+	} catch (err) {
+		return { songId, success: false, error: err instanceof Error ? err.message : String(err) };
+	}
+}
+
+// WriteAlbumMetadata writes tags to every song in an album.
+export async function writeAlbumMetadata(
+	db: Database.Database,
+	staticPath: string,
+	albumId: number
+): Promise<BatchResult> {
+	const rows = db.prepare(`SELECT id FROM songs WHERE album_id = ?`).all(albumId) as {
+		id: number;
+	}[];
+
+	const results = await Promise.all(
+		rows.map((r) => writeSongMetadata(db, staticPath, r.id))
+	);
+
+	const songsProcessed = results.filter((r) => r.success).length;
+	const songsFailed = results.length - songsProcessed;
+	return {
+		success: true,
+		message: `Processed album ${albumId}`,
+		songsProcessed,
+		songsFailed,
+		results
+	};
 }

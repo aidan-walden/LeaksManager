@@ -40,6 +40,10 @@ export function getSettings(db: Database.Database): Settings {
 
 export function updateSettings(db: Database.Database, input: UpdateSettingsInput): Settings {
 	const ts = now();
+	// Ensure the singleton settings row exists before UPDATE-WHERE-id=1 (the Go app
+	// relied on a prior GetSettings() call to lazily insert it; do it here so updates
+	// don't silently no-op on a fresh DB).
+	getSettings(db);
 	db.transaction((tx) => {
 		if (input.clearTrackNumberOnUpload !== undefined) {
 			tx.prepare(`UPDATE settings SET clear_track_number_on_upload = ? WHERE id = 1`).run(
