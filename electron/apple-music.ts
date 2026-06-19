@@ -9,11 +9,11 @@ import { getSettings } from './domain/settings';
 import { staticFilePath } from './paths';
 import { now } from './domain/rows';
 
-// Port of backend/apple_music.go. AppleScript runs via execFile('osascript', ['-e', script])
+// Port of backend/apple_music.go. AppleScript runs via execFile('osascript', ['-e', script, ...args])
 // (no shell — Go used exec.Command). macOS-only: process.platform replaces runtime.GOOS,
-// and a disabled import setting is a graceful no-op (FR-013 / FR-016). Song titles/paths
-// flow into scripts, so every interpolated value is escaped via escapeAppleScript — this
-// is a trust boundary, mirroring the Go oracle exactly.
+// and a disabled import setting is a graceful no-op (FR-013 / FR-016). Song titles/paths are
+// untrusted, so they are NEVER interpolated into the script source: they are passed to
+// osascript as runtime arguments and read inside an `on run argv` handler as `item N of argv`.
 
 const isMac = (): boolean => process.platform === 'darwin';
 
@@ -23,12 +23,6 @@ export interface AppleMusicDeps {
 	db: Database.Database;
 	staticPath: string;
 	window?: BrowserWindow | null;
-}
-
-// escapeAppleScript escapes backslashes and double quotes for AppleScript string
-// interpolation. Order matters: backslashes first.
-export function escapeAppleScript(s: string): string {
-	return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function isImportEnabled(db: Database.Database): boolean {
@@ -95,14 +89,18 @@ async function ensureAppleMusicRunning(deps: AppleMusicDeps): Promise<void> {
 
 // runAppleScriptCommand mirrors the Go helper: no-op when import disabled, ensures Music
 // is running, then runs osascript. Returns combined stdout (trimmed by callers).
-async function runAppleScriptCommand(deps: AppleMusicDeps, script: string): Promise<string> {
+async function runAppleScriptCommand(
+	deps: AppleMusicDeps,
+	script: string,
+	args: string[] = []
+): Promise<string> {
 	if (!isImportEnabled(deps.db)) {
 		return '';
 	}
 	await ensureAppleMusicRunning(deps);
 
 	try {
-		const { stdout } = await execFileP('osascript', ['-e', script]);
+		const { stdout } = await execFileP('osascript', ['-e', script, ...args]);
 		return stdout;
 	} catch (err) {
 		const e = err as { stderr?: string; message?: string };
@@ -117,12 +115,20 @@ async function runAppleScriptCommand(deps: AppleMusicDeps, script: string): Prom
 	}
 }
 
-async function runAppleScriptOutput(deps: AppleMusicDeps, script: string): Promise<string> {
-	return runAppleScriptCommand(deps, script);
+async function runAppleScriptOutput(
+	deps: AppleMusicDeps,
+	script: string,
+	args: string[] = []
+): Promise<string> {
+	return runAppleScriptCommand(deps, script, args);
 }
 
-async function runAppleScript(deps: AppleMusicDeps, script: string): Promise<void> {
-	await runAppleScriptCommand(deps, script);
+async function runAppleScript(
+	deps: AppleMusicDeps,
+	script: string,
+	args: string[] = []
+): Promise<void> {
+	await runAppleScriptCommand(deps, script, args);
 }
 
 function formatAppleScriptForLog(script: string): string {
@@ -360,19 +366,21 @@ async function syncSingleSong(deps: AppleMusicDeps, songID: number): Promise<Syn
 // verifyAppleMusicTrack checks if a track with the given persistent ID exists.
 async function verifyAppleMusicTrack(deps: AppleMusicDeps, persistentID: string): Promise<boolean> {
 	const script = `
-		tell application "Music"
-			try
-				first track whose persistent ID is "${escapeAppleScript(persistentID)}"
-				return "true"
-			on error
-				return "false"
-			end try
-		end tell
+		on run argv
+			tell application "Music"
+				try
+					first track whose persistent ID is (item 1 of argv)
+					return "true"
+				on error
+					return "false"
+				end try
+			end tell
+		end run
 	`;
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script);
+		out = await runAppleScriptOutput(deps, script, [persistentID]);
 	} catch (err) {
 		throw new Error(`failed to verify track: ${errMsg(err)}`);
 	}
@@ -383,19 +391,21 @@ async function verifyAppleMusicTrack(deps: AppleMusicDeps, persistentID: string)
 // persistent ID if found, empty string if not.
 async function findAppleMusicTrack(deps: AppleMusicDeps, song: SongReadable): Promise<string> {
 	const script = `
-		tell application "Music"
-			set matches to (every track of playlist "Library" whose name is "${escapeAppleScript(song.name)}" and artist is "${escapeAppleScript(song.artist)}")
-			if (count of matches) > 0 then
-				return persistent ID of first item of matches
-			else
-				return ""
-			end if
-		end tell
+		on run argv
+			tell application "Music"
+				set matches to (every track of playlist "Library" whose name is (item 1 of argv) and artist is (item 2 of argv))
+				if (count of matches) > 0 then
+					return persistent ID of first item of matches
+				else
+					return ""
+				end if
+			end tell
+		end run
 	`;
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script);
+		out = await runAppleScriptOutput(deps, script, [song.name, song.artist]);
 	} catch (err) {
 		throw new Error(`failed to search for track: ${errMsg(err)}`);
 	}
@@ -403,16 +413,30 @@ async function findAppleMusicTrack(deps: AppleMusicDeps, song: SongReadable): Pr
 }
 
 // buildMetadataScript builds AppleScript lines to set metadata on a track variable.
-function buildMetadataScript(trackVar: string, song: SongReadable): string {
+// Untrusted text values (name/artist/album/genre) are read from argv: `argStart` is the
+// 1-based argv index of the first value this builder consumes. Returns the joined lines and
+// the raw values to append to the runner's args array, in argv order. Numeric values
+// (year/track number) are safe to interpolate directly.
+function buildMetadataScript(
+	trackVar: string,
+	song: SongReadable,
+	argStart: number
+): { script: string; args: string[] } {
 	const lines: string[] = [];
-	lines.push(`set name of ${trackVar} to "${escapeAppleScript(song.name)}"`);
-	lines.push(`set artist of ${trackVar} to "${escapeAppleScript(song.artist)}"`);
+	const args: string[] = [];
+	const nextArg = (value: string): string => {
+		args.push(value);
+		return `(item ${argStart + args.length - 1} of argv)`;
+	};
+
+	lines.push(`set name of ${trackVar} to ${nextArg(song.name)}`);
+	lines.push(`set artist of ${trackVar} to ${nextArg(song.artist)}`);
 
 	if (song.album != null) {
-		lines.push(`set album of ${trackVar} to "${escapeAppleScript(song.album.name)}"`);
+		lines.push(`set album of ${trackVar} to ${nextArg(song.album.name)}`);
 	}
 	if (song.genre != null) {
-		lines.push(`set genre of ${trackVar} to "${escapeAppleScript(song.genre)}"`);
+		lines.push(`set genre of ${trackVar} to ${nextArg(song.genre)}`);
 	}
 	if (song.year != null) {
 		lines.push(`set year of ${trackVar} to ${song.year}`);
@@ -421,7 +445,7 @@ function buildMetadataScript(trackVar: string, song: SongReadable): string {
 		lines.push(`set track number of ${trackVar} to ${song.trackNumber}`);
 	}
 
-	return lines.join('\n\t\t');
+	return { script: lines.join('\n\t\t'), args };
 }
 
 function resolveAppleMusicArtworkPath(deps: AppleMusicDeps, song: SongReadable): string {
@@ -434,21 +458,34 @@ function resolveAppleMusicArtworkPath(deps: AppleMusicDeps, song: SongReadable):
 	return '';
 }
 
-function buildArtworkScript(deps: AppleMusicDeps, trackVar: string, song: SongReadable): string {
+// buildArtworkScript builds AppleScript lines to set/clear artwork on a track variable.
+// The artwork path is untrusted and read from argv item `argStart` when present.
+function buildArtworkScript(
+	deps: AppleMusicDeps,
+	trackVar: string,
+	song: SongReadable,
+	argStart: number
+): { script: string; args: string[] } {
 	const artworkPath = resolveAppleMusicArtworkPath(deps, song);
 	if (artworkPath === '') {
-		return `if (count of artworks of ${trackVar}) > 0 then delete every artwork of ${trackVar}`;
+		return {
+			script: `if (count of artworks of ${trackVar}) > 0 then delete every artwork of ${trackVar}`,
+			args: []
+		};
 	}
 
-	return `
-		set artworkFile to POSIX file "${escapeAppleScript(artworkPath)}"
+	return {
+		script: `
+		set artworkFile to POSIX file (item ${argStart} of argv)
 		set artworkData to read artworkFile as picture
 		if (count of artworks of ${trackVar}) = 0 then
 			make new artwork at end of artworks of ${trackVar} with properties {data:artworkData}
 		else
 			set data of artwork 1 of ${trackVar} to artworkData
 		end if
-	`;
+	`,
+		args: [artworkPath]
+	};
 }
 
 // updateAppleMusicTrack updates an existing track's metadata + artwork via AppleScript,
@@ -464,18 +501,22 @@ async function updateAppleMusicTrack(
 		throw new Error(`failed to write source metadata before Apple Music sync: ${errMsg(err)}`);
 	}
 
-	const metadataLines = buildMetadataScript('t', song);
-	const artworkLines = buildArtworkScript(deps, 't', song);
+	// argv: item 1 = persistent ID, then metadata values, then the artwork path.
+	const metadata = buildMetadataScript('t', song, 2);
+	const artwork = buildArtworkScript(deps, 't', song, 2 + metadata.args.length);
+	const args = [persistentID, ...metadata.args, ...artwork.args];
 	const script = `
-		tell application "Music"
-			set t to first track whose persistent ID is "${escapeAppleScript(persistentID)}"
-			${metadataLines}
-			${artworkLines}
-		end tell
+		on run argv
+			tell application "Music"
+				set t to first track whose persistent ID is (item 1 of argv)
+				${metadata.script}
+				${artwork.script}
+			end tell
+		end run
 	`;
 
 	try {
-		await runAppleScript(deps, script);
+		await runAppleScript(deps, script, args);
 	} catch (err) {
 		throw new Error(`failed to update track: ${errMsg(err)}`);
 	}
@@ -499,18 +540,22 @@ async function addTrackToAppleMusic(deps: AppleMusicDeps, song: SongReadable): P
 		throw new Error(`failed to resolve filepath: ${errMsg(err)}`);
 	}
 
-	const metadataLines = buildMetadataScript('newTrack', song);
+	// argv: item 1 = POSIX path, then metadata values.
+	const metadata = buildMetadataScript('newTrack', song, 2);
+	const args = [absPath, ...metadata.args];
 	const script = `
-		tell application "Music"
-			set newTrack to add POSIX file "${escapeAppleScript(absPath)}"
-			${metadataLines}
-			return persistent ID of newTrack
-		end tell
+		on run argv
+			tell application "Music"
+				set newTrack to add POSIX file (item 1 of argv)
+				${metadata.script}
+				return persistent ID of newTrack
+			end tell
+		end run
 	`;
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script);
+		out = await runAppleScriptOutput(deps, script, args);
 	} catch (err) {
 		throw new Error(`failed to add track: ${errMsg(err)}`);
 	}
