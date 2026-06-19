@@ -46,6 +46,26 @@ pnpm wails:dev
 wails dev
 ```
 
+### Electron packaging (electron-forge)
+
+The Electron app is packaged with electron-forge on top of the existing
+electron-vite + SvelteKit build. `pnpm make` runs, in order: `electron-vite build`
+-> `svelte build` -> `electron-rebuild` (better-sqlite3 against Electron's ABI) ->
+`electron-forge make`. Output lands in `dist-forge/`.
+
+```bash
+pnpm make       # macOS: builds .app + .zip + .dmg
+pnpm package    # .app only (no installers)
+```
+
+Notes:
+- Use Node 20/22 LTS to run `pnpm make`/`pnpm package`. Node 26 silently breaks
+  `@electron/packager`'s zip extraction; e.g. `PATH="$(brew --prefix node@22)/bin:$PATH" pnpm make`.
+- Only the macOS makers build on a Mac. The Windows (squirrel) and Linux (deb)
+  makers are configured in `forge.config.js` but must be built on their own host/CI.
+- better-sqlite3 is dual-ABI: `pnpm make` leaves it built for Electron. Run
+  `pnpm install` (or `pnpm rebuild better-sqlite3`) before `vitest run`, which needs the Node ABI.
+
 ## Database and Storage
 
 - Migrations are stored in `backend/migrations/*.sql`

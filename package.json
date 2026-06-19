@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Music/leak management application with SvelteKit frontend and FastAPI microservice",
+  "main": "out/main/main.js",
   "packageManager": "pnpm@9.14.4",
   "scripts": {
     "dev": "pnpm --filter ./svelte dev",
@@ -15,6 +16,11 @@
     "electron:dev": "electron-vite dev",
     "electron:build": "electron-vite build",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
+    "electron:prebuild": "pnpm electron:build && pnpm --filter ./svelte build && pnpm electron:rebuild",
+    "prepackage": "pnpm electron:prebuild",
+    "package": "electron-forge package",
+    "premake": "pnpm electron:prebuild",
+    "make": "electron-forge make",
     "wails:dev": "wails dev",
     "wails:build": "wails build",
     "wails:build:darwin": "wails build -platform darwin/universal",
@@ -22,6 +28,12 @@
     "wails:doctor": "wails doctor"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7",
+    "@electron-forge/maker-deb": "^7",
+    "@electron-forge/maker-dmg": "^7",
+    "@electron-forge/maker-squirrel": "^7",
+    "@electron-forge/maker-zip": "^7",
+    "@electron-forge/plugin-auto-unpack-natives": "^7",
     "@electron/rebuild": "^4.0.4",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.10.2",

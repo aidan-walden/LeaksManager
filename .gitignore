@@ -70,6 +70,9 @@ frontend/dist/
 # electron-vite build output
 out/
 
+# electron-forge packaged output
+dist-forge/
+
 # graphify
 graphify-out/
 
