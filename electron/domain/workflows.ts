@@ -3,7 +3,7 @@ import type {
 	Song,
 	Settings,
 	AlbumWithArtists,
-	FileData,
+	SongImportDraft,
 	FileUpload,
 	UploadAndExtractResult,
 	CreateSongsWithMetadataInput,
@@ -115,7 +115,7 @@ export async function uploadAndExtractMetadata(
 	files: FileUpload[],
 	albumId: number | null
 ): Promise<UploadAndExtractResult> {
-	const filesData: FileData[] = [];
+	const filesData: SongImportDraft[] = [];
 	const allArtistNames = new Set<string>();
 	const allAlbumNames = new Set<string>();
 	let filesWithArtwork = 0;

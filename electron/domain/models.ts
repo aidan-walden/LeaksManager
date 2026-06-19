@@ -199,8 +199,6 @@ export interface SongImportDraft {
 	albumId?: number | null;
 }
 
-export type FileData = SongImportDraft;
-
 export interface UploadAndExtractResult {
 	filesData: SongImportDraft[];
 	unmappedArtists: string[];
