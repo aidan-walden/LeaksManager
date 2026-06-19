@@ -7,7 +7,6 @@ import type {
 	CreateProducerInput
 } from './models';
 import { rowToProducer, rowToSong, now } from './rows';
-import { inTx } from '../db/tx';
 
 // Port of backend/producers.go (US1 subset). update/delete + WriteProducerMetadata are US2.
 
@@ -28,7 +27,7 @@ export function createProducerWithAliases(
 	input: CreateProducerInput
 ): Producer {
 	const ts = now();
-	return inTx(db, (tx) => {
+	return db.transaction((tx) => {
 		// Alias uniqueness (case-insensitive, across all producers).
 		const dupe = tx.prepare(`SELECT COUNT(*) AS c FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`);
 		for (const alias of input.aliases) {
@@ -56,7 +55,7 @@ export function createProducerWithAliases(
 		}
 
 		return { id: producerId, name: input.name, createdAt: ts, updatedAt: ts };
-	});
+	})(db);
 }
 
 export function getProducersWithAliases(db: Database.Database): ProducerWithAliases[] {

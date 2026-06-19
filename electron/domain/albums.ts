@@ -9,7 +9,6 @@ import type {
 	AlbumResolutionOpts
 } from './models';
 import { rowToAlbum, rowToArtist, rowToSong, now } from './rows';
-import { inTx } from '../db/tx';
 import { saveArtwork } from '../files';
 
 // Port of backend/albums.go (+ UploadAlbumArt from files.go). update/delete are US2.
@@ -27,7 +26,7 @@ export function createAlbum(db: Database.Database, input: CreateAlbumInput): Alb
 		throw new Error('album must have at least one artist');
 	}
 	const ts = now();
-	return inTx(db, (tx) => {
+	return db.transaction((tx) => {
 		const info = tx
 			.prepare(
 				`INSERT INTO albums (name, genre, year, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
@@ -49,7 +48,7 @@ export function createAlbum(db: Database.Database, input: CreateAlbumInput): Alb
 			updatedAt: ts,
 			synced: false
 		};
-	});
+	})(db);
 }
 
 export function getAlbumsWithSongs(
@@ -131,7 +130,7 @@ export function resolveOrCreateAlbum(
 	if (trimmed === '') return { album: null, created: false };
 	const ts = now();
 
-	return inTx(db, (tx) => {
+	return db.transaction((tx) => {
 		const candidates = (
 			tx
 				.prepare(`SELECT ${ALBUM_COLS} FROM albums WHERE LOWER(name) = LOWER(?)`)
@@ -186,7 +185,7 @@ export function resolveOrCreateAlbum(
 			},
 			created: true
 		};
-	});
+	})(db);
 }
 
 // Save artwork to disk and point the album at it (port of files.go UploadAlbumArt).

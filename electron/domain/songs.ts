@@ -1,7 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Song, SongReadable, Artist, Producer, Album, CreateSongInput } from './models';
 import { rowToSong, rowToArtist, rowToProducer, rowToAlbum, now } from './rows';
-import { inTx } from '../db/tx';
 
 // Port of backend/songs.go — create + read paths only. update/delete are US2 (T031).
 
@@ -10,7 +9,7 @@ const SONG_COLS =
 
 export function createSong(db: Database.Database, input: CreateSongInput): Song {
 	const ts = now();
-	return inTx(db, (tx) => {
+	return db.transaction((tx) => {
 		const info = tx
 			.prepare(
 				`INSERT INTO songs (name, filepath, album_id, artwork_path, genre, year, track_number, duration, created_at, updated_at)
@@ -55,7 +54,7 @@ export function createSong(db: Database.Database, input: CreateSongInput): Song 
 			updatedAt: ts,
 			synced: false
 		};
-	});
+	})(db);
 }
 
 export function getSongById(db: Database.Database, songId: number): Song | null {

@@ -1,7 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Settings, UpdateSettingsInput } from './models';
 import { now } from './rows';
-import { inTx } from '../db/tx';
 
 // Port of backend/settings.go. importToAppleMusic is forced false off macOS
 // (process.platform replaces Go's runtime.GOOS). Booleans stored as 0/1.
@@ -41,7 +40,7 @@ export function getSettings(db: Database.Database): Settings {
 
 export function updateSettings(db: Database.Database, input: UpdateSettingsInput): Settings {
 	const ts = now();
-	inTx(db, (tx) => {
+	db.transaction((tx) => {
 		if (input.clearTrackNumberOnUpload !== undefined) {
 			tx.prepare(`UPDATE settings SET clear_track_number_on_upload = ? WHERE id = 1`).run(
 				input.clearTrackNumberOnUpload ? 1 : 0
@@ -57,6 +56,6 @@ export function updateSettings(db: Database.Database, input: UpdateSettingsInput
 			);
 		}
 		tx.prepare(`UPDATE settings SET updated_at = ? WHERE id = 1`).run(ts);
-	});
+	})(db);
 	return getSettings(db);
 }
