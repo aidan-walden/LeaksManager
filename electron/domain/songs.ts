@@ -1,8 +1,19 @@
 import type Database from 'better-sqlite3';
-import type { Song, SongReadable, Artist, Producer, Album, CreateSongInput } from './models';
+import type {
+	Song,
+	SongReadable,
+	Artist,
+	Producer,
+	Album,
+	CreateSongInput,
+	UpdateSongInput
+} from './models';
 import { rowToSong, rowToArtist, rowToProducer, rowToAlbum, now } from './rows';
+import { resolveOrCreateAlbum } from './albums';
+import { staticFilePath } from '../paths';
+import { rmSync } from 'node:fs';
 
-// Port of backend/songs.go — create + read paths only. update/delete are US2 (T031).
+// Port of backend/songs.go — create + read paths plus update/delete (US2).
 
 const SONG_COLS =
 	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id';
@@ -67,6 +78,64 @@ export function getSongById(db: Database.Database, songId: number): Song | null 
 export function getSongReadable(db: Database.Database, songId: number): SongReadable | null {
 	const song = getSongById(db, songId);
 	return song ? buildSongReadable(db, song) : null;
+}
+
+export function updateSong(db: Database.Database, input: UpdateSongInput): SongReadable | null {
+	const ts = now();
+
+	let albumId = input.albumId ?? null;
+	if (input.albumName != null) {
+		const { album } = resolveOrCreateAlbum(db, input.albumName, input.artistIds, {
+			isSingle: input.isSingle,
+			inheritArtworkFromSongId: input.id
+		});
+		albumId = album ? album.id : null;
+	}
+
+	db.transaction((tx) => {
+		tx.prepare(
+			`UPDATE songs SET name = COALESCE(?, name), album_id = ?, track_number = ?, updated_at = ? WHERE id = ?`
+		).run(input.name ?? null, albumId, input.trackNumber ?? null, ts, input.id);
+
+		if (input.artistIds != null) {
+			tx.prepare(`DELETE FROM song_artists WHERE song_id = ?`).run(input.id);
+			const linkArtist = tx.prepare(
+				`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
+			);
+			input.artistIds.forEach((artistId, i) => linkArtist.run(input.id, artistId, i, ts));
+		}
+
+		if (input.producerIds != null) {
+			tx.prepare(`DELETE FROM song_producers WHERE song_id = ?`).run(input.id);
+			const linkProducer = tx.prepare(
+				`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`
+			);
+			input.producerIds.forEach((producerId, i) => linkProducer.run(input.id, producerId, i, ts));
+		}
+	})(db);
+
+	return getSongReadable(db, input.id);
+}
+
+export function deleteSong(db: Database.Database, staticPath: string, songId: number): void {
+	let songFilepath = '';
+	db.transaction((tx) => {
+		const row = tx.prepare(`SELECT filepath FROM songs WHERE id = ?`).get(songId) as
+			| { filepath: string }
+			| undefined;
+		if (!row) throw new Error(`song ${songId} not found`);
+		songFilepath = row.filepath;
+		tx.prepare(`DELETE FROM songs WHERE id = ?`).run(songId);
+	})(db);
+
+	// Delete file from disk (best-effort, mirror Go)
+	if (songFilepath !== '') {
+		try {
+			rmSync(staticFilePath(staticPath, songFilepath));
+		} catch {
+			// ignore — Go swallows the path/remove error
+		}
+	}
 }
 
 export function getSongsReadable(
