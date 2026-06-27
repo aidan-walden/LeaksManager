@@ -38,6 +38,11 @@ function createWindow(): BrowserWindow {
 		win.loadFile(join(__dirname, '../../svelte/build/index.html'));
 	} else {
 		win.loadURL(DEV_SERVER_URL);
+		// ponytail: retry until the SvelteKit dev server is up, so a combined
+		// `dev` script can launch Electron and Vite together without wait-on.
+		win.webContents.on('did-fail-load', () => {
+			setTimeout(() => win.loadURL(DEV_SERVER_URL), 300);
+		});
 	}
 
 	return win;
