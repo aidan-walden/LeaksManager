@@ -53,7 +53,7 @@ func (a *App) GetAppleMusicLibrary() ([]AppleMusicTrack, error) {
 		end tell
 	`
 
-	out, err := a.runAppleScriptOutput(script)
+	out, err := a.runAppleScriptCommand(script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute AppleScript: %w", err)
 	}
@@ -315,10 +315,6 @@ func escapeAppleScript(s string) string {
 	return s
 }
 
-func (a *App) runAppleScriptOutput(script string) ([]byte, error) {
-	return a.runAppleScriptCommand(script)
-}
-
 func (a *App) runAppleScript(script string) error {
 	_, err := a.runAppleScriptCommand(script)
 	return err
@@ -335,21 +331,13 @@ func (a *App) runAppleScriptCommand(script string) ([]byte, error) {
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("[AppleScript] osascript failed: %v\n[AppleScript] output:\n%s\n[AppleScript] script:\n%s", err, strings.TrimSpace(string(output)), formatAppleScriptForLog(script))
+		log.Printf("[AppleScript] osascript failed: %v\n[AppleScript] output:\n%s\n[AppleScript] script:\n%s", err, strings.TrimSpace(string(output)), script)
 		if len(output) > 0 {
 			return output, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 		}
 		return output, err
 	}
 	return output, nil
-}
-
-func formatAppleScriptForLog(script string) string {
-	lines := strings.Split(script, "\n")
-	for i, line := range lines {
-		lines[i] = fmt.Sprintf("%02d: %s", i+1, line)
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (a *App) ensureAppleMusicRunning() error {
@@ -427,7 +415,7 @@ func (a *App) verifyAppleMusicTrack(persistentID string) (bool, error) {
 		end tell
 	`, escapeAppleScript(persistentID))
 
-	out, err := a.runAppleScriptOutput(script)
+	out, err := a.runAppleScriptCommand(script)
 	if err != nil {
 		return false, fmt.Errorf("failed to verify track: %w", err)
 	}
@@ -449,7 +437,7 @@ func (a *App) findAppleMusicTrack(song SongReadable) (string, error) {
 		end tell
 	`, escapeAppleScript(song.Name), escapeAppleScript(song.Artist))
 
-	out, err := a.runAppleScriptOutput(script)
+	out, err := a.runAppleScriptCommand(script)
 	if err != nil {
 		return "", fmt.Errorf("failed to search for track: %w", err)
 	}
@@ -559,7 +547,7 @@ func (a *App) addTrackToAppleMusic(song SongReadable) (string, error) {
 		end tell
 	`, escapeAppleScript(absPath), metadataLines)
 
-	out, err := a.runAppleScriptOutput(script)
+	out, err := a.runAppleScriptCommand(script)
 	if err != nil {
 		return "", fmt.Errorf("failed to add track: %w", err)
 	}

@@ -24,7 +24,7 @@ func newTestApp(t *testing.T) *App {
 		}
 	}
 
-	db, err := sql.Open("sqlite3_custom", dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}

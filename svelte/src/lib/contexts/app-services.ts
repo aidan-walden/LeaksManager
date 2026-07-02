@@ -1,14 +1,9 @@
-import {
-	getWailsActionsContext,
-	setWailsActionsContext,
-	type WailsActions
-} from '$lib/services/wails-actions';
-import {
-	getRuntimeErrorNotifierContext,
-	setRuntimeErrorNotifierContext,
-	type RuntimeErrorNotifier
-} from '$lib/errors/runtime-error';
-import { getSyncStateContext, setSyncStateContext, type SyncState } from '$lib/stores/sync.svelte';
+import { getContext, setContext } from 'svelte';
+import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
+import type { WailsActions } from '$lib/services/wails-actions';
+import type { SyncState } from '$lib/stores/sync.svelte';
+
+const APP_SERVICES_KEY = Symbol('app-services');
 
 type AppServices = {
 	syncState: SyncState;
@@ -17,16 +12,12 @@ type AppServices = {
 };
 
 export function setAppServicesContext(services: AppServices) {
-	setSyncStateContext(services.syncState);
-	setRuntimeErrorNotifierContext(services.runtimeErrors);
-	setWailsActionsContext(services.wailsActions);
+	setContext(APP_SERVICES_KEY, services);
 	return services;
 }
 
 export function getAppServicesContext(): AppServices {
-	return {
-		syncState: getSyncStateContext(),
-		runtimeErrors: getRuntimeErrorNotifierContext(),
-		wailsActions: getWailsActionsContext()
-	};
+	const services = getContext<AppServices | undefined>(APP_SERVICES_KEY);
+	if (!services) throw new Error('app services context is not available');
+	return services;
 }

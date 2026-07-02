@@ -1,102 +1,124 @@
-import { getContext, setContext } from 'svelte';
 import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
 import type { SyncState } from '$lib/stores/sync.svelte';
-import { wailsTransport } from '$lib/wails';
-import type { Settings } from '$lib/wails';
-
-const WAILS_ACTIONS_KEY = Symbol('wails-actions');
-
-type AsyncMethod = (...args: any[]) => Promise<any>;
-
-type ActionConfig<T extends AsyncMethod> = {
-	context?: string;
-	markChanged?: boolean;
-	onSuccess?: (result: Awaited<ReturnType<T>>, dependencies: WailsActionDependencies) => void;
-};
-
-type ActionConfigMap<TTransport extends Record<string, AsyncMethod>> = {
-	[K in keyof TTransport]?: ActionConfig<TTransport[K]>;
-};
+import { getRawWailsAppBindings } from '$lib/wails';
+import type {
+	AlbumArtUploadRequest,
+	CreateAlbumInput,
+	CreateArtistInput,
+	CreateProducerInput,
+	CreateSongInput,
+	CreateSongsWithMetadataInput,
+	PageRequest,
+	SongBatchUploadRequest,
+	UpdateAlbumInput,
+	UpdateProducerInput,
+	UpdateSettingsInput,
+	UpdateSongInput
+} from '$lib/wails';
 
 export type WailsActionDependencies = {
 	syncState: SyncState;
 	runtimeErrors: RuntimeErrorNotifier;
 };
 
-const actionConfig = {
-	createSong: { markChanged: true },
-	updateSong: { markChanged: true },
-	deleteSong: { markChanged: true },
-	writeSongMetadata: { markChanged: true },
-	createSongsWithMetadata: { markChanged: true },
-	uploadSongs: { markChanged: true },
-	updateSettings: {
-		onSuccess: (settings: Settings, { syncState }) => {
-			syncState.configure(settings.importToAppleMusic);
-		}
-	}
-} satisfies ActionConfigMap<typeof wailsTransport>;
+type ActionOptions<T> = {
+	markChanged?: boolean;
+	onSuccess?: (result: T) => void;
+};
 
-function formatActionContext(key: string) {
-	return key.charAt(0).toUpperCase() + key.slice(1);
+async function runAction<T>(
+	{ syncState, runtimeErrors }: WailsActionDependencies,
+	context: string,
+	call: () => Promise<T>,
+	options: ActionOptions<T> = {}
+) {
+	try {
+		const result = await call();
+		if (options.markChanged) syncState.markChanged();
+		options.onSuccess?.(result);
+		return result;
+	} catch (error) {
+		runtimeErrors.notify(error, context);
+		throw error;
+	}
 }
 
-function buildActions<TTransport extends Record<string, AsyncMethod>>(
-	transport: TTransport,
-	config: ActionConfigMap<TTransport>,
-	dependencies: WailsActionDependencies
-) {
-	const actions = {} as {
-		[K in keyof TTransport]: (
-			...args: Parameters<TTransport[K]>
-		) => Promise<Awaited<ReturnType<TTransport[K]>>>;
+export function createWailsActions(dependencies: WailsActionDependencies) {
+	const api = () => getRawWailsAppBindings();
+
+	return {
+		createArtist: (input: CreateArtistInput) =>
+			runAction(dependencies, 'CreateArtist', () => api().CreateArtist(input)),
+		createAlbum: (input: CreateAlbumInput) =>
+			runAction(dependencies, 'CreateAlbum', () => api().CreateAlbum(input)),
+		updateAlbum: (input: UpdateAlbumInput) =>
+			runAction(dependencies, 'UpdateAlbum', () => api().UpdateAlbum(input)),
+		deleteAlbum: (albumId: number) =>
+			runAction(dependencies, 'DeleteAlbum', () => api().DeleteAlbum(albumId)),
+		createSong: (input: CreateSongInput) =>
+			runAction(dependencies, 'CreateSong', () => api().CreateSong(input), { markChanged: true }),
+		updateSong: (input: UpdateSongInput) =>
+			runAction(dependencies, 'UpdateSong', () => api().UpdateSong(input), { markChanged: true }),
+		deleteSong: (songId: number) =>
+			runAction(dependencies, 'DeleteSong', () => api().DeleteSong(songId), { markChanged: true }),
+		getSongsReadable: ({ limit, offset }: PageRequest) =>
+			runAction(dependencies, 'GetSongsReadable', () => api().GetSongsReadable(limit, offset)),
+		getSongsCount: () => runAction(dependencies, 'GetSongsCount', () => api().GetSongsCount()),
+		createProducerWithAliases: (input: CreateProducerInput) =>
+			runAction(dependencies, 'CreateProducerWithAliases', () =>
+				api().CreateProducerWithAliases(input)
+			),
+		updateProducerWithAliases: (input: UpdateProducerInput) =>
+			runAction(dependencies, 'UpdateProducerWithAliases', () =>
+				api().UpdateProducerWithAliases(input)
+			),
+		deleteProducer: (producerId: number) =>
+			runAction(dependencies, 'DeleteProducer', () => api().DeleteProducer(producerId)),
+		getProducersWithAliases: () =>
+			runAction(dependencies, 'GetProducersWithAliases', () => api().GetProducersWithAliases()),
+		matchProducersFromFilename: (filename: string, songArtistIds: number[]) =>
+			runAction(dependencies, 'MatchProducersFromFilename', () =>
+				api().MatchProducersFromFilename(filename, songArtistIds)
+			),
+		updateSettings: (input: UpdateSettingsInput) =>
+			runAction(dependencies, 'UpdateSettings', () => api().UpdateSettings(input), {
+				onSuccess: (settings) => dependencies.syncState.configure(settings.importToAppleMusic)
+			}),
+		cleanupFiles: (relPaths: string[]) =>
+			runAction(dependencies, 'CleanupFiles', () => api().CleanupFiles(relPaths)),
+		showInFileExplorer: (relPath: string) =>
+			runAction(dependencies, 'ShowInFileExplorer', () => api().ShowInFileExplorer(relPath)),
+		uploadAlbumArt: ({ albumId, filename, base64Data }: AlbumArtUploadRequest) =>
+			runAction(dependencies, 'UploadAlbumArt', () =>
+				api().UploadAlbumArt(albumId, filename, base64Data)
+			),
+		extractMetadata: (relPath: string) =>
+			runAction(dependencies, 'ExtractMetadata', () => api().ExtractMetadata(relPath)),
+		writeSongMetadata: (songId: number) =>
+			runAction(dependencies, 'WriteSongMetadata', () => api().WriteSongMetadata(songId), {
+				markChanged: true
+			}),
+		writeAlbumMetadata: (albumId: number) =>
+			runAction(dependencies, 'WriteAlbumMetadata', () => api().WriteAlbumMetadata(albumId)),
+		writeProducerMetadata: (producerId: number) =>
+			runAction(dependencies, 'WriteProducerMetadata', () =>
+				api().WriteProducerMetadata(producerId)
+			),
+		uploadAndExtractMetadata: ({ files, albumId }: SongBatchUploadRequest) =>
+			runAction(dependencies, 'UploadAndExtractMetadata', () =>
+				api().UploadAndExtractMetadata(files, albumId ?? null)
+			),
+		createSongsWithMetadata: (input: CreateSongsWithMetadataInput) =>
+			runAction(dependencies, 'CreateSongsWithMetadata', () => api().CreateSongsWithMetadata(input), {
+				markChanged: true
+			}),
+		uploadSongs: ({ files, albumId }: SongBatchUploadRequest) =>
+			runAction(dependencies, 'UploadSongs', () => api().UploadSongs(files, albumId ?? null), {
+				markChanged: true
+			}),
+		syncSongsToAppleMusic: () =>
+			runAction(dependencies, 'SyncSongsToAppleMusic', () => api().SyncSongsToAppleMusic())
 	};
-
-	for (const key of Object.keys(transport) as (keyof TTransport)[]) {
-		const method = transport[key];
-		actions[key] = (async (...args: Parameters<TTransport[typeof key]>) => {
-			try {
-				const result = await method(...args);
-				const options = config[key];
-				if (options?.markChanged) {
-					dependencies.syncState.markChanged();
-				}
-				options?.onSuccess?.(result, dependencies);
-				return result;
-			} catch (error) {
-				dependencies.runtimeErrors.notify(
-					error,
-					config[key]?.context ?? formatActionContext(String(key))
-				);
-				throw error;
-			}
-		}) as (
-			...args: Parameters<TTransport[typeof key]>
-		) => Promise<Awaited<ReturnType<TTransport[typeof key]>>>;
-	}
-
-	return actions;
 }
 
 export type WailsActions = ReturnType<typeof createWailsActions>;
-
-export function createWailsActions(
-	dependencies: WailsActionDependencies,
-	transport = wailsTransport
-) {
-	return buildActions(transport, actionConfig, dependencies);
-}
-
-export function setWailsActionsContext(wailsActions: WailsActions) {
-	setContext(WAILS_ACTIONS_KEY, wailsActions);
-	return wailsActions;
-}
-
-export function getWailsActionsContext() {
-	const wailsActions = getContext<WailsActions | undefined>(WAILS_ACTIONS_KEY);
-	if (!wailsActions) {
-		throw new Error('wails actions context is not available');
-	}
-
-	return wailsActions;
-}

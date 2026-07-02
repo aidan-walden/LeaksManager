@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-
-	"github.com/dhowden/tag"
 )
 
 // mp4Adapter handles M4A/MP4 via ffmpeg shell-out. ffmpeg dependency is
@@ -85,46 +82,4 @@ func (mp4Adapter) Write(path string, tags SongTags) error {
 		return fmt.Errorf("failed to replace original file: %w", err)
 	}
 	return nil
-}
-
-func (mp4Adapter) Read(path string) (SongTags, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return SongTags{}, err
-	}
-	defer f.Close()
-
-	m, err := tag.ReadFrom(f)
-	if err != nil {
-		return SongTags{}, err
-	}
-
-	out := SongTags{
-		Title:       m.Title(),
-		Artist:      m.Artist(),
-		Album:       m.Album(),
-		AlbumArtist: m.AlbumArtist(),
-		Genre:       m.Genre(),
-		Year:        int32(m.Year()),
-	}
-	if raw := m.Raw(); raw != nil {
-		if v, ok := raw["\xa9wrt"]; ok {
-			out.Producers = fmt.Sprint(v)
-		}
-	}
-	track, total := m.Track()
-	out.TrackNumber = int32(track)
-	out.TrackTotal = int32(total)
-	if track > 0 {
-		if total > 0 {
-			out.TrackNumberStr = strconv.Itoa(track) + "/" + strconv.Itoa(total)
-		} else {
-			out.TrackNumberStr = strconv.Itoa(track)
-		}
-	}
-	if pic := m.Picture(); pic != nil && len(pic.Data) > 0 {
-		out.ArtworkPath = "embedded"
-		out.ArtworkMimeType = pic.MIMEType
-	}
-	return out, nil
 }

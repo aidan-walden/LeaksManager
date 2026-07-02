@@ -35,7 +35,6 @@ type SongTags struct {
 // MetadataWriter is the seam each container format implements.
 type MetadataWriter interface {
 	Write(path string, tags SongTags) error
-	Read(path string) (SongTags, error)
 }
 
 // pickAdapter chooses the writer for an extension. Returns nil if unsupported.

@@ -201,8 +201,6 @@ export function loadProducerPatterns(db: Database.Database): Pattern[] {
 	return patterns;
 }
 
-const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 // Pure matching algorithm: word-boundary scan then substring fallback, longest
 // term first, artist-restriction filter, range-tracking to avoid overlaps.
 export function matchPatterns(
@@ -235,7 +233,7 @@ export function matchPatterns(
 	for (const p of sorted) {
 		if (p.isAlias && !isArtistContextValid(p.aliasArtistIds)) continue;
 		if (p.term === '') continue;
-		const re = new RegExp(`\\b${escapeRegExp(p.term)}\\b`, 'g');
+		const re = new RegExp(`\\b${(RegExp as { escape: (s: string) => string }).escape(p.term)}\\b`, 'g');
 		for (const m of nameWithoutExt.matchAll(re)) {
 			const start = m.index ?? 0;
 			const end = start + m[0].length;

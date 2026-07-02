@@ -4,13 +4,10 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import type { Component } from 'svelte';
-	import type { Artist } from '$lib/wails';
 
 	let {
 		data,
-		artists,
 		entityType,
-		showImages = true,
 		defaultThumbnail = '/images/default-album.png',
 		createCardComponent: CreateCardComponent,
 		resolveImage,
@@ -18,9 +15,7 @@
 		onDelete
 	}: {
 		data: T[];
-		artists?: Artist[];
 		entityType: string;
-		showImages?: boolean;
 		defaultThumbnail?: string;
 		createCardComponent: Component<any>;
 		resolveImage?: (entity: T) => string | null | undefined;
@@ -29,14 +24,8 @@
 	} = $props();
 
 	let creatingEntity = $state(false);
-	let resolvedArtists = $state<Artist[]>(artists ?? []);
-
-	$effect(() => {
-		resolvedArtists = artists ?? [];
-	});
 
 	function getEntityImage(entity: T): string {
-		if (!showImages) return '';
 		if (resolveImage) {
 			return resolveImage(entity) ?? defaultThumbnail;
 		}
@@ -51,7 +40,6 @@
 <CreateCardComponent
 	bind:open={creatingEntity}
 	onOpenChange={(value: boolean) => (creatingEntity = value)}
-	artists={resolvedArtists}
 />
 
 {#snippet actions(entity: T)}
@@ -86,13 +74,11 @@
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each data as entity (entity.id)}
 		<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
-			{#if showImages}
-				<AspectRatio ratio={1 / 1} class="bg-muted">
-					<img src={getEntityImage(entity)} alt={entity.name} class="rounded-md object-cover" />
-				</AspectRatio>
-			{/if}
+			<AspectRatio ratio={1 / 1} class="bg-muted">
+				<img src={getEntityImage(entity)} alt={entity.name} class="rounded-md object-cover" />
+			</AspectRatio>
 			<div class="flex flex-row justify-between">
-				<p class="block text-sm font-medium" class:mt-2={showImages}>{entity.name}</p>
+				<p class="mt-2 block text-sm font-medium">{entity.name}</p>
 				{@render actions(entity)}
 			</div>
 		</div>

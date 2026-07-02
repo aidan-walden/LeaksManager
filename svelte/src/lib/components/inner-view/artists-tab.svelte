@@ -47,7 +47,6 @@
 <EntityGrid
 	data={artists}
 	entityType="artist"
-	showImages={true}
 	{defaultThumbnail}
 	createCardComponent={CreateArtistCard}
 	resolveImage={resolveArtistImage}

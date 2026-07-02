@@ -26,9 +26,9 @@
 
 	// Set context with a getter function to maintain reactivity
 	// Context must be set during component initialization
-	setArtistsContext<ArtistForContext>(() => resolvedArtists);
-	setAlbumsContext<AlbumElement>(() => resolvedAlbums);
-	setProducersContext<ProducerElement>(() => resolvedProducers);
+	setArtistsContext(() => resolvedArtists);
+	setAlbumsContext(() => resolvedAlbums);
+	setProducersContext(() => resolvedProducers);
 	const { wailsActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';

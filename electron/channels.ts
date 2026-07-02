@@ -2,7 +2,7 @@
 // Maps the renderer-facing method name (window.api.<Name>) → channel string.
 // preload.ts builds window.api from this; ipc.ts registers a handler per channel.
 // Names are PascalCase to match the existing RawWailsAppBindings shape so the
-// renderer transport (bindings.ts) needs only a source swap, not a rename.
+// renderer reaches the preload bridge without a rename.
 
 export const API_CHANNELS: Record<string, string> = {
 	// App
@@ -11,42 +11,29 @@ export const API_CHANNELS: Record<string, string> = {
 	CreateSong: 'song:create',
 	UpdateSong: 'song:update',
 	DeleteSong: 'song:delete',
-	GetSongReadable: 'song:get',
 	GetSongsReadable: 'song:list',
 	GetSongsCount: 'song:count',
 	// Albums
 	CreateAlbum: 'album:create',
 	UpdateAlbum: 'album:update',
 	DeleteAlbum: 'album:delete',
-	GetAlbumsWithSongs: 'album:listWithSongs',
-	GetAlbumWithArtists: 'album:getWithArtists',
-	ResolveOrCreateAlbum: 'album:resolveOrCreate',
-	FindAlbumByName: 'album:findByName',
 	UploadAlbumArt: 'album:uploadArt',
 	// Artists
 	CreateArtist: 'artist:create',
-	GetArtists: 'artist:list',
-	GetArtistsWithRelations: 'artist:listWithRelations',
-	FindArtistByName: 'artist:findByName',
 	// Producers
 	CreateProducerWithAliases: 'producer:create',
 	UpdateProducerWithAliases: 'producer:update',
 	DeleteProducer: 'producer:delete',
 	GetProducersWithAliases: 'producer:listWithAliases',
 	WriteProducerMetadata: 'producer:writeMetadata',
-	LoadProducerPatterns: 'producer:loadPatterns',
 	MatchProducersFromFilename: 'producer:matchFromFilename',
 	// Settings
-	GetSettings: 'settings:get',
 	UpdateSettings: 'settings:update',
 	// Metadata
 	ExtractMetadata: 'metadata:extract',
 	WriteSongMetadata: 'metadata:writeSong',
 	WriteAlbumMetadata: 'metadata:writeAlbum',
 	// Files
-	SaveUploadedFile: 'file:saveUpload',
-	SaveArtwork: 'file:saveArtwork',
-	DeleteFile: 'file:delete',
 	CleanupFiles: 'file:cleanup',
 	ShowInFileExplorer: 'file:showInExplorer',
 	// Workflows

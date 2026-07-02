@@ -109,7 +109,6 @@ type SongReadable struct {
 // AppleMusicTrack represents a track in the user's Apple Music library
 type AppleMusicTrack struct {
 	ID          string  `json:"id"` // Persistent ID
-	DatabaseID  int     `json:"databaseId"`
 	Name        string  `json:"name"`
 	Artist      string  `json:"artist"`
 	AlbumArtist string  `json:"albumArtist"`

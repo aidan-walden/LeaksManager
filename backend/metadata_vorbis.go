@@ -101,31 +101,6 @@ func (flacAdapter) Write(path string, tags SongTags) error {
 	return f.Save(path)
 }
 
-func (flacAdapter) Read(path string) (SongTags, error) {
-	f, err := flac.ParseFile(path)
-	if err != nil {
-		return SongTags{}, err
-	}
-	out := SongTags{}
-	for _, m := range f.Meta {
-		if m.Type == flac.VorbisComment {
-			cmt, perr := flacvorbis.ParseFromMetaDataBlock(*m)
-			if perr != nil {
-				return SongTags{}, perr
-			}
-			fillFromVorbis(&out, cmt.Comments)
-		}
-		if m.Type == flac.Picture {
-			pic, perr := flacpicture.ParseFromMetaDataBlock(*m)
-			if perr == nil && len(pic.ImageData) > 0 {
-				out.ArtworkPath = "embedded"
-				out.ArtworkMimeType = pic.MIME
-			}
-		}
-	}
-	return out, nil
-}
-
 // oggAdapter handles OGG Vorbis via ambeloe/oggv. Vorbis comment semantics
 // match FLAC, but the container format and write strategy differ (temp swap).
 type oggAdapter struct{}
@@ -219,69 +194,4 @@ func (oggAdapter) Write(path string, tags SongTags) error {
 		return fmt.Errorf("failed to replace original file: %w", err)
 	}
 	return nil
-}
-
-func (oggAdapter) Read(path string) (SongTags, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return SongTags{}, err
-	}
-	defer file.Close()
-
-	comments, err := vorbiscomment.ReadOggVorbis(file)
-	if err != nil {
-		return SongTags{}, err
-	}
-
-	out := SongTags{}
-	fillFromVorbis(&out, comments.Comments)
-	return out, nil
-}
-
-// fillFromVorbis populates SongTags from a slice of "KEY=VALUE" strings.
-func fillFromVorbis(out *SongTags, comments []string) {
-	for _, c := range comments {
-		eq := strings.IndexByte(c, '=')
-		if eq < 0 {
-			continue
-		}
-		key := strings.ToUpper(c[:eq])
-		val := c[eq+1:]
-		switch key {
-		case "TITLE":
-			out.Title = val
-		case "ARTIST":
-			out.Artist = val
-		case "ALBUMARTIST":
-			out.AlbumArtist = val
-		case "ALBUM":
-			out.Album = val
-		case "GENRE":
-			out.Genre = val
-		case "DATE":
-			if y, err := strconv.Atoi(val); err == nil {
-				out.Year = int32(y)
-			}
-		case "TRACKNUMBER":
-			out.TrackNumberStr = val
-			parts := strings.SplitN(val, "/", 2)
-			if n, err := strconv.Atoi(parts[0]); err == nil {
-				out.TrackNumber = int32(n)
-			}
-			if len(parts) == 2 {
-				if n, err := strconv.Atoi(parts[1]); err == nil {
-					out.TrackTotal = int32(n)
-				}
-			}
-		case "PRODUCER":
-			out.Producers = val
-		case "METADATA_BLOCK_PICTURE":
-			if val != "" {
-				out.ArtworkPath = "embedded"
-				if out.ArtworkMimeType == "" {
-					out.ArtworkMimeType = "image/jpeg"
-				}
-			}
-		}
-	}
 }

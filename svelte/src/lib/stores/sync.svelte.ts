@@ -1,7 +1,3 @@
-import { getContext, setContext } from 'svelte';
-
-const SYNC_STATE_KEY = Symbol('sync-state');
-
 export class SyncState {
 	hasChanges = $state(false);
 	isDismissed = $state(false);
@@ -65,21 +61,3 @@ type SyncErrorState = {
 	totalCount: number;
 	timestamp: number;
 };
-
-export function createSyncState() {
-	return new SyncState();
-}
-
-export function setSyncStateContext(syncState: SyncState) {
-	setContext(SYNC_STATE_KEY, syncState);
-	return syncState;
-}
-
-export function getSyncStateContext() {
-	const syncState = getContext<SyncState | undefined>(SYNC_STATE_KEY);
-	if (!syncState) {
-		throw new Error('sync state context is not available');
-	}
-
-	return syncState;
-}

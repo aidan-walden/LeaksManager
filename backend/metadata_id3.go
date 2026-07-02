@@ -3,8 +3,6 @@ package backend
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/bogem/id3v2"
 )
@@ -65,49 +63,4 @@ func (id3Adapter) Write(path string, tags SongTags) error {
 	}
 
 	return t.Save()
-}
-
-func (id3Adapter) Read(path string) (SongTags, error) {
-	t, err := id3v2.Open(path, id3v2.Options{Parse: true})
-	if err != nil {
-		return SongTags{}, err
-	}
-	defer t.Close()
-
-	out := SongTags{
-		Title:       t.Title(),
-		Artist:      t.Artist(),
-		Album:       t.Album(),
-		Genre:       t.Genre(),
-		AlbumArtist: t.GetTextFrame(t.CommonID("Band/Orchestra/Accompaniment")).Text,
-	}
-	if y, err := strconv.Atoi(t.Year()); err == nil {
-		out.Year = int32(y)
-	}
-	out.TrackNumberStr = t.GetTextFrame(t.CommonID("Track number/Position in set")).Text
-	if out.TrackNumberStr != "" {
-		// parse "n" or "n/total"
-		parts := strings.SplitN(out.TrackNumberStr, "/", 2)
-		if n, err := strconv.Atoi(parts[0]); err == nil {
-			out.TrackNumber = int32(n)
-		}
-		if len(parts) == 2 {
-			if n, err := strconv.Atoi(parts[1]); err == nil {
-				out.TrackTotal = int32(n)
-			}
-		}
-	}
-	out.Producers = t.GetTextFrame(t.CommonID("Composer")).Text
-
-	if pics := t.GetFrames(t.CommonID("Attached picture")); len(pics) > 0 {
-		if pf, ok := pics[0].(id3v2.PictureFrame); ok {
-			out.ArtworkMimeType = pf.MimeType
-			// store length-indicator via path-less marker; embedded payload is in pf.Picture
-			// callers comparing equality rely on Read returning non-empty MIME when art exists
-			if len(pf.Picture) > 0 {
-				out.ArtworkPath = "embedded"
-			}
-		}
-	}
-	return out, nil
 }

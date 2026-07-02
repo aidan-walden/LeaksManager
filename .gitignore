@@ -79,3 +79,7 @@ graphify-out/
 # specs
 specs/
 .specify/
+
+.agents/
+.codex/
+.serena/

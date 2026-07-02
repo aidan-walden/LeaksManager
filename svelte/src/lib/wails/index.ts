@@ -1,2 +1,3 @@
 export * from './types';
-export { wailsTransport } from './bindings';
+export { getRawWailsAppBindings } from './bindings';
+export type { RawWailsAppBindings } from './bindings';

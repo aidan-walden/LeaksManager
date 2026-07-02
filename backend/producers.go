@@ -28,7 +28,7 @@ func (a *App) CreateProducerWithAliases(input CreateProducerInput) (*Producer, e
 		// Check alias uniqueness
 		for _, alias := range input.Aliases {
 			var exists int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`, alias.Name).Scan(&exists); err != nil {
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM producer_aliases WHERE alias = ? COLLATE NOCASE`, alias.Name).Scan(&exists); err != nil {
 				return err
 			}
 			if exists > 0 {
@@ -101,7 +101,7 @@ func (a *App) UpdateProducerWithAliases(input UpdateProducerInput) (*Producer, e
 			var conflictID int
 			err := tx.QueryRow(`
 				SELECT pa.producer_id FROM producer_aliases pa
-				WHERE LOWER(pa.alias) = LOWER(?) AND pa.producer_id != ?
+				WHERE pa.alias = ? COLLATE NOCASE AND pa.producer_id != ?
 			`, alias.Name, input.ID).Scan(&conflictID)
 			if err == nil {
 				return fmt.Errorf("alias \"%s\" already exists for another producer", alias.Name)

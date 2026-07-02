@@ -106,7 +106,7 @@ async function runAppleScriptCommand(
 		const e = err as { stderr?: string; message?: string };
 		const out = (e.stderr ?? '').trim();
 		console.error(
-			`[AppleScript] osascript failed: ${e.message}\n[AppleScript] output:\n${out}\n[AppleScript] script:\n${formatAppleScriptForLog(script)}`
+			`[AppleScript] osascript failed: ${e.message}\n[AppleScript] output:\n${out}\n[AppleScript] script:\n${script}`
 		);
 		if (out.length > 0) {
 			throw new Error(`${e.message}: ${out}`);
@@ -115,27 +115,12 @@ async function runAppleScriptCommand(
 	}
 }
 
-async function runAppleScriptOutput(
-	deps: AppleMusicDeps,
-	script: string,
-	args: string[] = []
-): Promise<string> {
-	return runAppleScriptCommand(deps, script, args);
-}
-
 async function runAppleScript(
 	deps: AppleMusicDeps,
 	script: string,
 	args: string[] = []
 ): Promise<void> {
 	await runAppleScriptCommand(deps, script, args);
-}
-
-function formatAppleScriptForLog(script: string): string {
-	return script
-		.split('\n')
-		.map((line, i) => `${String(i + 1).padStart(2, '0')}: ${line}`)
-		.join('\n');
 }
 
 function errMsg(err: unknown): string {
@@ -183,7 +168,7 @@ export async function getAppleMusicLibrary(deps: AppleMusicDeps): Promise<AppleM
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script);
+		out = await runAppleScriptCommand(deps, script);
 	} catch (err) {
 		throw new Error(`failed to execute AppleScript: ${errMsg(err)}`);
 	}
@@ -380,7 +365,7 @@ async function verifyAppleMusicTrack(deps: AppleMusicDeps, persistentID: string)
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script, [persistentID]);
+		out = await runAppleScriptCommand(deps, script, [persistentID]);
 	} catch (err) {
 		throw new Error(`failed to verify track: ${errMsg(err)}`);
 	}
@@ -405,7 +390,7 @@ async function findAppleMusicTrack(deps: AppleMusicDeps, song: SongReadable): Pr
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script, [song.name, song.artist]);
+		out = await runAppleScriptCommand(deps, script, [song.name, song.artist]);
 	} catch (err) {
 		throw new Error(`failed to search for track: ${errMsg(err)}`);
 	}
@@ -555,7 +540,7 @@ async function addTrackToAppleMusic(deps: AppleMusicDeps, song: SongReadable): P
 
 	let out: string;
 	try {
-		out = await runAppleScriptOutput(deps, script, args);
+		out = await runAppleScriptCommand(deps, script, args);
 	} catch (err) {
 		throw new Error(`failed to add track: ${errMsg(err)}`);
 	}

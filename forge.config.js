@@ -87,19 +87,7 @@ module.exports = {
 	makers: [
 		// macOS — built on this host. zip is the lazy must-have; dmg is the nicety.
 		{ name: '@electron-forge/maker-zip', platforms: ['darwin'] },
-		{ name: '@electron-forge/maker-dmg', platforms: ['darwin'], config: {} },
-		// Windows — configured, NOT built here. Needs a Windows host/CI.
-		{
-			name: '@electron-forge/maker-squirrel',
-			platforms: ['win32'],
-			config: { name: 'leaks_manager' }
-		},
-		// Linux — configured, NOT built here. Needs a Linux host/CI.
-		{
-			name: '@electron-forge/maker-deb',
-			platforms: ['linux'],
-			config: {}
-		}
+		{ name: '@electron-forge/maker-dmg', platforms: ['darwin'], config: {} }
 	],
 	plugins: [
 		// Unpacks *.node out of the asar (better-sqlite3's prebuilt binary) into

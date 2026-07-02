@@ -83,7 +83,7 @@ func (a *App) FindArtistByName(name string) (*Artist, error) {
 	var art Artist
 	var createdAt, updatedAt sql.NullInt64
 	err := a.db.QueryRow(
-		`SELECT id, name, image, career_start_year, career_end_year, created_at, updated_at, synced FROM artists WHERE LOWER(name) = LOWER(?)`,
+		`SELECT id, name, image, career_start_year, career_end_year, created_at, updated_at, synced FROM artists WHERE name = ? COLLATE NOCASE`,
 		name,
 	).Scan(&art.ID, &art.Name, &art.Image, &art.CareerStartYear, &art.CareerEndYear, &createdAt, &updatedAt, &art.Synced)
 	if err == sql.ErrNoRows {

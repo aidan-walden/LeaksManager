@@ -8,29 +8,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	sqlite3driver "github.com/mattn/go-sqlite3"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
-
-func init() {
-	sql.Register("sqlite3_custom", &sqlite3driver.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3driver.SQLiteConn) error {
-			if err := conn.RegisterFunc("LOWER", func(s string) string {
-				return strings.ToLower(s)
-			}, true); err != nil {
-				return err
-			}
-			return nil
-		},
-	})
-}
 
 // --- App Structure ---
 
@@ -94,7 +79,7 @@ func (a *App) Startup(ctx context.Context) {
 
 	// initialize SQLite connection
 	// go's sql.DB handles connection pooling automatically (replaces python's thread_local)
-	a.db, err = sql.Open("sqlite3_custom", a.dbPath)
+	a.db, err = sql.Open("sqlite3", a.dbPath)
 	if err != nil {
 		panic("Failed to connect to database: " + err.Error())
 	}

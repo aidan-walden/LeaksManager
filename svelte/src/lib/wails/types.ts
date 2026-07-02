@@ -50,6 +50,22 @@ export interface SyncItemResult {
 	errorMessage?: string;
 }
 
+export interface AppleMusicTrack {
+	id: string;
+	databaseId: number;
+	name: string;
+	artist: string;
+	albumArtist: string;
+	album: string;
+	genre: string;
+	year: number;
+	duration: number;
+	trackNumber: number;
+	trackCount: number;
+	discNumber: number;
+	discCount: number;
+}
+
 export interface Artist {
 	id: number;
 	name: string;
@@ -244,8 +260,6 @@ export interface SongImportDraft {
 	albumId?: number;
 }
 
-export type FileData = SongImportDraft;
-
 export interface UploadAndExtractResult {
 	filesData: SongImportDraft[];
 	unmappedArtists: string[];
@@ -263,8 +277,6 @@ export interface FileUpload {
 	filename: string;
 	base64Data: string;
 }
-
-export interface FileUploadRequest extends FileUpload {}
 
 export interface AlbumArtUploadRequest extends FileUpload {
 	albumId: number;

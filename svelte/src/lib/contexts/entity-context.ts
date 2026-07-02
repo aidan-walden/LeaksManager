@@ -6,7 +6,7 @@ export function createEntityContext<TBase>(label: string) {
 
 	type Ctx<T extends TBase> = { get current(): T[] };
 
-	function set<T extends TBase>(getValue: () => T[]) {
+	function set<T extends TBase = TBase>(getValue: () => T[]) {
 		setContext(KEY, {
 			get current() {
 				return getValue();
@@ -14,7 +14,7 @@ export function createEntityContext<TBase>(label: string) {
 		} satisfies Ctx<T>);
 	}
 
-	function get<T extends TBase>(): T[] {
+	function get<T extends TBase = TBase>(): T[] {
 		const ctx = getContext<Ctx<T>>(KEY);
 		if (!ctx) {
 			throw new Error(missing);

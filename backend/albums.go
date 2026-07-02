@@ -259,7 +259,7 @@ func (a *App) ResolveOrCreateAlbum(name string, artistIDs []int, opts AlbumResol
 		// gather candidates by case-insensitive name
 		rows, err := tx.Query(
 			`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced
-			 FROM albums WHERE LOWER(name) = LOWER(?)`,
+			 FROM albums WHERE name = ? COLLATE NOCASE`,
 			trimmedName,
 		)
 		if err != nil {
@@ -390,7 +390,7 @@ func (a *App) FindAlbumByName(name string) (*Album, error) {
 	var alb Album
 	var createdAt, updatedAt sql.NullInt64
 	err := a.db.QueryRow(
-		`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced FROM albums WHERE LOWER(name) = LOWER(?)`,
+		`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced FROM albums WHERE name = ? COLLATE NOCASE`,
 		name,
 	).Scan(&alb.ID, &alb.Name, &alb.ArtworkPath, &alb.Genre, &alb.Year, &alb.IsSingle, &createdAt, &updatedAt, &alb.Synced)
 	if err == sql.ErrNoRows {
