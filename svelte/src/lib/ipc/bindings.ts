@@ -29,11 +29,11 @@ import type {
 
 declare global {
 	interface Window {
-		api: RawWailsAppBindings;
+		api: RawIpcBindings;
 	}
 }
 
-export type RawWailsAppBindings = {
+export type RawIpcBindings = {
 	GetInitialData(): Promise<InitialData>;
 	CreateArtist(input: CreateArtistInput): Promise<Artist>;
 	CreateAlbum(input: CreateAlbumInput): Promise<Album>;
@@ -67,6 +67,6 @@ export type RawWailsAppBindings = {
 	SyncSongsToAppleMusic(): Promise<SyncResult>;
 };
 
-export function getRawWailsAppBindings(): RawWailsAppBindings {
+export function getRawIpcBindings(): RawIpcBindings {
 	return window.api;
 }

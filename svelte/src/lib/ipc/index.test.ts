@@ -1,30 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getRawWailsAppBindings, type RawWailsAppBindings } from './bindings';
+import { getRawIpcBindings, type RawIpcBindings } from './bindings';
 import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-import { createWailsActions } from '$lib/services/wails-actions';
+import { createIpcActions } from '$lib/services/ipc-actions';
 import { SyncState } from '$lib/stores/sync.svelte';
 
-describe('wails actions', () => {
-	let api: RawWailsAppBindings;
+describe('ipc actions', () => {
+	let api: RawIpcBindings;
 	let runtimeErrors: RuntimeErrorNotifier;
 	let notifySpy: ReturnType<typeof vi.spyOn>;
 	let syncState: SyncState;
-	let wailsActions: ReturnType<typeof createWailsActions>;
+	let ipcActions: ReturnType<typeof createIpcActions>;
 
 	beforeEach(() => {
 		api = {
 			CreateSong: vi.fn(),
-			UpdateSettings: vi.fn()
-		} as unknown as RawWailsAppBindings;
+			UpdateSettings: vi.fn(),
+			GetAppleMusicLibrary: vi.fn()
+		} as unknown as RawIpcBindings;
 		window.api = api;
 		runtimeErrors = new RuntimeErrorNotifier();
 		notifySpy = vi.spyOn(runtimeErrors, 'notify');
 		syncState = new SyncState();
-		wailsActions = createWailsActions({ syncState, runtimeErrors });
+		ipcActions = createIpcActions({ syncState, runtimeErrors });
 	});
 
 	it('uses the Electron preload bindings directly', () => {
-		expect(getRawWailsAppBindings()).toBe(api);
+		expect(getRawIpcBindings()).toBe(api);
 	});
 
 	it('marks sync state as changed after successful mutating calls', async () => {
@@ -45,7 +46,7 @@ describe('wails actions', () => {
 		});
 		syncState.configure(true, false);
 
-		await wailsActions.createSong({
+		await ipcActions.createSong({
 			name: 'Track',
 			filepath: 'uploads/songs/track.mp3',
 			artistIds: [],
@@ -60,7 +61,7 @@ describe('wails actions', () => {
 		vi.mocked(api.CreateSong).mockRejectedValue(error);
 
 		await expect(
-			wailsActions.createSong({
+			ipcActions.createSong({
 				name: 'Track',
 				filepath: 'uploads/songs/track.mp3',
 				artistIds: [],
@@ -80,9 +81,32 @@ describe('wails actions', () => {
 			updatedAt: 1
 		});
 
-		await wailsActions.updateSettings({ importToAppleMusic: true });
+		await ipcActions.updateSettings({ importToAppleMusic: true });
 
 		expect(syncState.isAppleMusicEnabled).toBe(true);
 		expect(syncState.hasChanges).toBe(false);
+	});
+
+	it('exposes Apple Music library fetch through the actions wrapper', async () => {
+		vi.mocked(api.GetAppleMusicLibrary).mockResolvedValue([
+			{
+				id: 'abc',
+				databaseId: 0,
+				name: 'Track',
+				artist: 'Artist',
+				albumArtist: '',
+				album: 'Album',
+				genre: '',
+				year: 2026,
+				duration: 123,
+				trackNumber: 1,
+				trackCount: 1,
+				discNumber: 1,
+				discCount: 1
+			}
+		]);
+
+		await expect(ipcActions.getAppleMusicLibrary()).resolves.toHaveLength(1);
+		expect(api.GetAppleMusicLibrary).toHaveBeenCalledOnce();
 	});
 });

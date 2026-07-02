@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { load, prerender, ssr, trailingSlash } from '../../routes/+layout';
 
-vi.mock('$lib/wails', () => ({
-	getRawWailsAppBindings: vi.fn()
+vi.mock('$lib/ipc', () => ({
+	getRawIpcBindings: vi.fn()
 }));
 
-import { getRawWailsAppBindings } from '$lib/wails';
+import { getRawIpcBindings } from '$lib/ipc';
 
 describe('+layout load', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it('loads initial Wails data without mutating app stores', async () => {
-		vi.mocked(getRawWailsAppBindings).mockReturnValue({
+	it('loads initial IPC data without mutating app stores', async () => {
+		vi.mocked(getRawIpcBindings).mockReturnValue({
 			GetInitialData: vi.fn().mockResolvedValue({
 				songs: [],
 				songsCount: 0,

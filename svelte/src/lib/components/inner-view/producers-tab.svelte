@@ -22,7 +22,7 @@
 	let dialogOpen = $state(false);
 	let currentProducer = $state<EditableProducer | null>(null);
 	let resolvedArtists = $state<ArtistElement[]>(artists);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	function openCreateModal() {
 		currentProducer = null;
@@ -52,7 +52,7 @@
 	}
 
 	async function onDelete(id: number) {
-		await wailsActions.deleteProducer(id);
+		await ipcActions.deleteProducer(id);
 		await invalidateAll();
 	}
 </script>

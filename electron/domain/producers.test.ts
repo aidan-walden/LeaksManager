@@ -12,7 +12,7 @@ import {
 } from './producers';
 import { createArtist } from './artists';
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../backend/migrations');
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 function freshDb(): Database.Database {
 	const db = new Database(':memory:');

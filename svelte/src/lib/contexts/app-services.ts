@@ -1,6 +1,6 @@
 import { getContext, setContext } from 'svelte';
 import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-import type { WailsActions } from '$lib/services/wails-actions';
+import type { IpcActions } from '$lib/services/ipc-actions';
 import type { SyncState } from '$lib/stores/sync.svelte';
 
 const APP_SERVICES_KEY = Symbol('app-services');
@@ -8,7 +8,7 @@ const APP_SERVICES_KEY = Symbol('app-services');
 type AppServices = {
 	syncState: SyncState;
 	runtimeErrors: RuntimeErrorNotifier;
-	wailsActions: WailsActions;
+	ipcActions: IpcActions;
 };
 
 export function setAppServicesContext(services: AppServices) {

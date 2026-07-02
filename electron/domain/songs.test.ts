@@ -15,7 +15,7 @@ import { updateSettings } from './settings';
 // plus the resolved file path, mirroring the Go (SongTags, fullPath, error) return.
 import { buildSongTags } from './songs';
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../backend/migrations');
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 // FR-009 — single vs. album track-number rule (oracle: backend/metadata.go buildSongTags).
 //   no album + automaticallyMakeSingles  -> album "<name> - Single", trackNumber 1, tracksTotal 1

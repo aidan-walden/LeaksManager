@@ -8,11 +8,11 @@ import { createArtist } from './artists';
 import { createAlbum } from './albums';
 import { createSong } from './songs';
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../backend/migrations');
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 // SC-003 / data-model sync invariant: editing a metadata-affecting column must flip
 // synced=0 for exactly the affected row(s), driven by the triggers in
-// backend/migrations/000002_sync_triggers.up.sql (reused verbatim by db/migrate.ts).
+// electron/migrations/000002_sync_triggers.up.sql.
 //
 // We seed two songs (and, where relevant, an album/artist), set everyone synced=1,
 // then perform a single trigger-watched edit and assert exactly the right rows dirty.

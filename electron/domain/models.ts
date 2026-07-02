@@ -1,4 +1,4 @@
-// Domain DTOs — TS mirror of backend/models.go and svelte/src/lib/wails/types.ts.
+// Domain DTOs shared with the renderer shape in svelte/src/lib/ipc/types.ts.
 // The renderer and main process are separate pnpm packages; these interfaces are
 // duplicated rather than cross-imported (same approach metadata.ts took).
 

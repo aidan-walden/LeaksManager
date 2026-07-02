@@ -1,7 +1,7 @@
 // Single source of truth for the IPC surface (contracts/ipc-channels.md).
 // Maps the renderer-facing method name (window.api.<Name>) → channel string.
 // preload.ts builds window.api from this; ipc.ts registers a handler per channel.
-// Names are PascalCase to match the existing RawWailsAppBindings shape so the
+// Names are PascalCase to match the existing RawIpcBindings shape so the
 // renderer reaches the preload bridge without a rename.
 
 export const API_CHANNELS: Record<string, string> = {

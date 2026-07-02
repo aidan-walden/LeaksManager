@@ -1,4 +1,4 @@
-import type { Artist } from '$lib/wails';
+import type { Artist } from '$lib/ipc';
 import { createEntityContext } from './entity-context';
 
 const ctx = createEntityContext<Artist>('artists');

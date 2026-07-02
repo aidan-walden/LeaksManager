@@ -1,4 +1,4 @@
-import type { Producer } from '$lib/wails';
+import type { Producer } from '$lib/ipc';
 import { createEntityContext } from './entity-context';
 
 const ctx = createEntityContext<Producer>('producers');

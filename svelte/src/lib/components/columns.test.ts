@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WailsActions } from '$lib/services/wails-actions';
+import type { IpcActions } from '$lib/services/ipc-actions';
 
 vi.mock('./ui/data-table/render-helpers.js', () => ({
 	renderComponent: vi.fn((_component, props) => props)
@@ -13,11 +13,11 @@ import { invalidateAll } from '$app/navigation';
 import { createSongColumns } from './columns';
 
 describe('song table columns', () => {
-	const wailsActions = {
+	const ipcActions = {
 		deleteSong: vi.fn().mockResolvedValue(undefined)
-	} satisfies Pick<WailsActions, 'deleteSong'>;
+	} satisfies Pick<IpcActions, 'deleteSong'>;
 	const onSongDeleted = vi.fn().mockResolvedValue(undefined);
-	const columns = createSongColumns(wailsActions, { onSongDeleted });
+	const columns = createSongColumns(ipcActions, { onSongDeleted });
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -47,7 +47,7 @@ describe('song table columns', () => {
 
 		await props.onDelete(7);
 
-		expect(wailsActions.deleteSong).toHaveBeenCalledWith(7);
+		expect(ipcActions.deleteSong).toHaveBeenCalledWith(7);
 		expect(invalidateAll).toHaveBeenCalled();
 		expect(onSongDeleted).toHaveBeenCalledWith(7);
 	});

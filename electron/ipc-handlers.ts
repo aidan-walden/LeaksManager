@@ -38,7 +38,7 @@ import { getInitialData } from './domain/initial-data';
 import { getAppleMusicLibrary, syncSongsToAppleMusic } from './apple-music';
 
 // US1 (import + organize) + US2 (edit + write-back) handler map. Arg order mirrors
-// RawWailsAppBindings so the renderer reaches these unchanged.
+// RawIpcBindings so the renderer reaches these unchanged.
 // Keyed by channel string.
 export const us1Handlers: Partial<Record<string, Handler>> = {
 	// App

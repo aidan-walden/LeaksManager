@@ -12,7 +12,7 @@ import { createAlbum } from './albums';
 import { getSongsReadable } from './songs';
 import type { ExtractedMetadata } from '../metadata';
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../backend/migrations');
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 function emptyMeta(over: Partial<ExtractedMetadata> = {}): ExtractedMetadata {
 	return {

@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 
-// Runs backend/migrations/*.up.sql (reused verbatim), tracked compatibly with
-// golang-migrate's existing schema_migrations table — which is SINGLE-ROW
+// Runs electron/migrations/*.up.sql, tracked compatibly with golang-migrate's
+// existing schema_migrations table — which is SINGLE-ROW
 // (latest version only), not one row per migration. An existing macOS prod DB
 // already has it populated, so we read it rather than recreate a conflicting one.
 

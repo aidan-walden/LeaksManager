@@ -8,7 +8,7 @@
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import type { Album, Song } from '$lib/wails';
+	import type { Album, Song } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -16,7 +16,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
-	import type { SongReadable } from '$lib/wails';
+	import type { SongReadable } from '$lib/ipc';
 
 	type AlbumWithSongs = Album & { songs: Song[] };
 
@@ -38,7 +38,7 @@
 	const artists = $derived(getArtistsContext());
 	const producers = $derived(getProducersContext());
 	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
@@ -248,7 +248,7 @@
 		}
 
 		// update existing song
-		const updatedSong = await wailsActions.updateSong({
+		const updatedSong = await ipcActions.updateSong({
 			id: song.id,
 			name: songName,
 			albumName: albumName.trim() || undefined,
@@ -259,7 +259,7 @@
 		});
 
 		// write metadata to disk
-		await wailsActions.writeSongMetadata(song.id);
+		await ipcActions.writeSongMetadata(song.id);
 		if (updatedSong) {
 			await onSongSaved?.(updatedSong);
 		}

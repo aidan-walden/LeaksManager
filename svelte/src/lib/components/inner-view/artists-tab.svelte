@@ -2,7 +2,7 @@
 	import EntityGrid from '$lib/components/shared/entity-grid.svelte';
 	import CreateArtistCard from '$lib/components/features/create-artist-card.svelte';
 	import { editableArtistSchema, type EditableArtist } from '$lib/schema';
-	import type { Artist } from '$lib/wails';
+	import type { Artist } from '$lib/ipc';
 	import type { TabViewData } from '$lib/view-models/tab-data';
 
 	type ArtistElement = TabViewData['artists'][number] extends infer T

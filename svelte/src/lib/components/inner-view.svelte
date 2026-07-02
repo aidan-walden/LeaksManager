@@ -29,12 +29,12 @@
 	setArtistsContext(() => resolvedArtists);
 	setAlbumsContext(() => resolvedAlbums);
 	setProducersContext(() => resolvedProducers);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';
 	const songImport = new SongImportController({
 		onComplete: () => invalidateAll(),
-		wailsActions
+		ipcActions
 	});
 
 	$effect(() => {

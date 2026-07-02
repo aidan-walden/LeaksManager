@@ -17,13 +17,12 @@ import {
 	type OutputFormat
 } from 'mediabunny';
 
-// Single metadata engine — replaces metadata*.go adapters + ffmpeg + dhowden/tag
-// + bogem/id3v2 (constitution I: collapse the per-format adapter interface).
+// Single metadata engine replacing the legacy per-format adapter stack.
 // File-level only: DB → tags (buildSongTags, inheritance/singles) lives in US2/T032.
 
 export { type MetadataTags } from 'mediabunny';
 
-// Mirror of backend ExtractedMetadata DTO (svelte/src/lib/wails/types.ts).
+// Mirror of backend ExtractedMetadata DTO (svelte/src/lib/IPC/types.ts).
 export interface ExtractedMetadata {
 	title: string | null;
 	artist: string | null;

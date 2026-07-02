@@ -34,7 +34,7 @@
 
 	let aliases = $state<Alias[]>([]);
 	let name = $state('');
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	function addAlias() {
 		aliases = [...aliases, { name: '', artistIds: [] }];
@@ -77,19 +77,19 @@
 
 		if (producer) {
 			// update existing producer
-			const updated = await wailsActions.updateProducerWithAliases({
+			const updated = await ipcActions.updateProducerWithAliases({
 				id: producer.id,
 				name: producerName,
 				aliases: validAliases
 			});
 
 			// write metadata to all songs by this producer
-			await wailsActions.writeProducerMetadata(producer.id);
+			await ipcActions.writeProducerMetadata(producer.id);
 
 			return { id: updated.id };
 		} else {
 			// create new producer
-			const newProducer = await wailsActions.createProducerWithAliases({
+			const newProducer = await ipcActions.createProducerWithAliases({
 				name: producerName,
 				aliases: validAliases
 			});

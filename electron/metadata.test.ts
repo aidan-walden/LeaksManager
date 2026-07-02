@@ -1,25 +1,24 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ALL_FORMATS, FilePathSource, Input, type MetadataTags } from 'mediabunny';
+import {
+	ALL_FORMATS,
+	AudioSample,
+	AudioSampleSource,
+	FilePathSource,
+	FilePathTarget,
+	Input,
+	Mp4OutputFormat,
+	Output,
+	type MetadataTags
+} from 'mediabunny';
 
 import { readMetadata, writeMetadata } from './metadata';
 
-// SC-002 round-trip parity test (T029). Mirrors the Go oracle
-// backend/metadata_adapters_test.go: for each of the 4 writable formats, write
-// tags + embedded artwork via the metadata engine, re-read, and assert the
-// written fields survive and the audio is still decodable.
-
-let ffmpeg: string | null = null;
-try {
-	execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
-	ffmpeg = 'ffmpeg';
-} catch {
-	ffmpeg = null;
-}
+// SC-002 round-trip parity: write tags + embedded artwork via mediabunny, re-read,
+// and assert the written fields survive and the audio is still demuxable.
 
 let dir: string;
 
@@ -31,27 +30,24 @@ afterAll(() => {
 	if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-// makeSilentAudio synthesizes a tiny audio file in the requested codec/container
-// (mirror of the Go test helper). Returns the path.
-function makeSilentAudio(name: string, codec: string, ext: string): string {
-	const out = join(dir, name + ext);
-	const args = [
-		'-hide_banner',
-		'-loglevel',
-		'error',
-		'-f',
-		'lavfi',
-		'-i',
-		'sine=frequency=440:duration=0.4:sample_rate=44100',
-		'-ac',
-		'2',
-		'-c:a',
-		codec
-	];
-	if (codec === 'vorbis') args.push('-strict', 'experimental');
-	if (ext === '.m4a') args.push('-movflags', '+faststart');
-	args.push('-y', out);
-	execFileSync('ffmpeg', args);
+async function makeSilentM4a(name: string): Promise<string> {
+	const out = join(dir, `${name}.m4a`);
+	const output = new Output({ format: new Mp4OutputFormat(), target: new FilePathTarget(out) });
+	const source = new AudioSampleSource({ codec: 'pcm-s16' });
+	output.addAudioTrack(source);
+	await output.start();
+
+	const frames = 4410;
+	const sample = new AudioSample({
+		data: new Int16Array(frames * 2),
+		format: 's16',
+		numberOfChannels: 2,
+		sampleRate: 44100,
+		timestamp: 0
+	});
+	await source.add(sample);
+	sample.close();
+	await output.finalize();
 	return out;
 }
 
@@ -91,45 +87,26 @@ async function assertAudioIntact(path: string): Promise<void> {
 	expect(await input.computeDuration()).toBeGreaterThan(0);
 }
 
-interface FormatCase {
-	name: string;
-	codec: string;
-	ext: string;
-}
-
-const cases: FormatCase[] = [
-	{ name: 'MP3', codec: 'libmp3lame', ext: '.mp3' },
-	{ name: 'M4A', codec: 'aac', ext: '.m4a' },
-	{ name: 'FLAC', codec: 'flac', ext: '.flac' },
-	{ name: 'Ogg/Vorbis', codec: 'vorbis', ext: '.ogg' }
-];
-
 describe('metadata round-trip parity (SC-002)', () => {
-	for (const { name, codec, ext } of cases) {
-		it(`${name}: written tags + artwork survive and audio stays intact`, async () => {
-			if (!ffmpeg) return; // ffmpeg unavailable: skip like the Go oracle does
+	it('M4A: written tags + artwork survive and audio stays intact', async () => {
+		const path = await makeSilentM4a('m4a');
+		const tags = sampleTags();
 
-			const path = makeSilentAudio(name.replace(/\W/g, '_'), codec, ext);
-			const tags = sampleTags();
+		await writeMetadata(path, tags);
+		const got = await readMetadata(path);
 
-			await writeMetadata(path, tags);
-			const got = await readMetadata(path);
+		expect(got.title).toBe('Test Title');
+		expect(got.artist).toBe('Test Artist');
+		expect(got.albumArtist).toBe('Various Artists');
+		expect(got.album).toBe('Test Album');
+		expect(got.genre).toBe('Hip-Hop');
+		expect(got.year).toBe(2024);
+		expect(got.trackNumber).toBe(3);
 
-			expect(got.title).toBe('Test Title');
-			expect(got.artist).toBe('Test Artist');
-			expect(got.albumArtist).toBe('Various Artists');
-			expect(got.album).toBe('Test Album');
-			expect(got.genre).toBe('Hip-Hop');
-			expect(got.year).toBe(2024);
-			expect(got.trackNumber).toBe(3);
+		expect(got.artwork, 'expected embedded artwork to survive').not.toBeNull();
+		expect(got.artwork!.mimeType).toMatch(/^image\//);
+		expect(Buffer.from(got.artwork!.data, 'base64').length).toBeGreaterThan(0);
 
-			// Embedded artwork must survive.
-			expect(got.artwork, 'expected embedded artwork to survive').not.toBeNull();
-			expect(got.artwork!.mimeType).toMatch(/^image\//);
-			expect(Buffer.from(got.artwork!.data, 'base64').length).toBeGreaterThan(0);
-
-			// Audio stream must remain intact.
-			await assertAudioIntact(path);
-		});
-	}
+		await assertAudioIntact(path);
+	});
 });

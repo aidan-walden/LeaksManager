@@ -23,8 +23,7 @@ const path = require('node:path');
 // Everything else is excluded via the ignore() predicate below.
 //
 // Migrations: electron/main.ts reads them from process.resourcesPath/migrations in
-// prod. backend/ is excluded from the app bundle, so the migrations are copied in as
-// an extraResource (lands next to the .app's Resources, i.e. resourcesPath).
+// prod, so copy electron/migrations next to the .app's Resources.
 
 // Runtime deps that MUST ship (better-sqlite3 + transitive, mediabunny). With a
 // hoisted/flat node_modules we keep these top-level trees and everything they pull
@@ -50,11 +49,12 @@ module.exports = {
 		// so we don't need npm's prune (which doesn't understand pnpm anyway).
 		prune: false,
 		derefSymlinks: true,
-		extraResource: [path.resolve(__dirname, 'backend', 'migrations')],
+		extraResource: [path.resolve(__dirname, 'electron', 'migrations')],
 		// ignore is an ALLOWLIST: return true to EXCLUDE a path. We keep only the
-		// runtime payload and exclude everything else (backend/, electron/ source,
+		// runtime payload and exclude everything else (electron/ source,
 		// svelte/src, specs/, *.go, build/, dev node_modules, the .pnpm store, etc.).
-		ignore: (file) => {
+		ignore: (rawFile) => {
+			const file = rawFile === '' || rawFile.startsWith('/') ? rawFile : `/${rawFile}`;
 			if (file === '') return false; // project root
 
 			// Runtime payload.

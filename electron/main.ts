@@ -8,18 +8,17 @@ import { migrate } from './db/migrate';
 import { registerAppProtocolScheme, registerAppProtocol } from './assets';
 import { registerIpc } from './ipc';
 
-// App lifecycle (replaces main.go + app.go Startup/Shutdown): resolve paths, open
-// the real DB, run migrations, register the app:// asset protocol and the IPC
-// bridge, then load the SvelteKit renderer.
+// App lifecycle: resolve paths, open the real DB, run migrations, register the
+// app:// asset protocol and the IPC bridge, then load the SvelteKit renderer.
 
 const DEV_SERVER_URL = 'http://localhost:5173';
 let db: Database.Database | null = null;
 
 function migrationsDir(): string {
-	// Dev: reuse backend/migrations verbatim. Prod: bundled into resources (Phase 6).
+	// Dev: read repo migrations. Prod: bundled into resources.
 	return app.isPackaged
 		? join(process.resourcesPath, 'migrations')
-		: join(app.getAppPath(), 'backend', 'migrations');
+		: join(app.getAppPath(), 'electron', 'migrations');
 }
 
 function createWindow(): BrowserWindow {

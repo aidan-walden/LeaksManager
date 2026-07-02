@@ -1,6 +1,6 @@
 import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
 import type { SyncState } from '$lib/stores/sync.svelte';
-import { getRawWailsAppBindings } from '$lib/wails';
+import { getRawIpcBindings } from '$lib/ipc';
 import type {
 	AlbumArtUploadRequest,
 	CreateAlbumInput,
@@ -14,9 +14,9 @@ import type {
 	UpdateProducerInput,
 	UpdateSettingsInput,
 	UpdateSongInput
-} from '$lib/wails';
+} from '$lib/ipc';
 
-export type WailsActionDependencies = {
+export type IpcActionDependencies = {
 	syncState: SyncState;
 	runtimeErrors: RuntimeErrorNotifier;
 };
@@ -27,7 +27,7 @@ type ActionOptions<T> = {
 };
 
 async function runAction<T>(
-	{ syncState, runtimeErrors }: WailsActionDependencies,
+	{ syncState, runtimeErrors }: IpcActionDependencies,
 	context: string,
 	call: () => Promise<T>,
 	options: ActionOptions<T> = {}
@@ -43,8 +43,8 @@ async function runAction<T>(
 	}
 }
 
-export function createWailsActions(dependencies: WailsActionDependencies) {
-	const api = () => getRawWailsAppBindings();
+export function createIpcActions(dependencies: IpcActionDependencies) {
+	const api = () => getRawIpcBindings();
 
 	return {
 		createArtist: (input: CreateArtistInput) =>
@@ -116,9 +116,11 @@ export function createWailsActions(dependencies: WailsActionDependencies) {
 			runAction(dependencies, 'UploadSongs', () => api().UploadSongs(files, albumId ?? null), {
 				markChanged: true
 			}),
+		getAppleMusicLibrary: () =>
+			runAction(dependencies, 'GetAppleMusicLibrary', () => api().GetAppleMusicLibrary()),
 		syncSongsToAppleMusic: () =>
 			runAction(dependencies, 'SyncSongsToAppleMusic', () => api().SyncSongsToAppleMusic())
 	};
 }
 
-export type WailsActions = ReturnType<typeof createWailsActions>;
+export type IpcActions = ReturnType<typeof createIpcActions>;

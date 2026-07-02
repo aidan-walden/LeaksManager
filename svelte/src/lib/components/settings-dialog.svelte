@@ -8,7 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { runAsyncAction } from '$lib/errors/async-action';
-	import type { Settings } from '$lib/wails';
+	import type { Settings } from '$lib/ipc';
 	import { invalidateAll } from '$app/navigation';
 
 	let {
@@ -27,7 +27,7 @@
 	let clearTrackNumber = $state(settings.clearTrackNumberOnUpload);
 	let autoMakeSingles = $state(settings.automaticallyMakeSingles);
 	let importToAppleMusic = $state(settings.importToAppleMusic);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	// sync state when settings prop changes
 	$effect(() => {
@@ -40,7 +40,7 @@
 		isSubmitting = true;
 		try {
 			const updatedSettings = await runAsyncAction(() =>
-				wailsActions.updateSettings({
+				ipcActions.updateSettings({
 					clearTrackNumberOnUpload: clearTrackNumber,
 					automaticallyMakeSingles: autoMakeSingles,
 					importToAppleMusic: importToAppleMusic

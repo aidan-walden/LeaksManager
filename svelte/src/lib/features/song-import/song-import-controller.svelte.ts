@@ -1,5 +1,5 @@
-import type { WailsActions } from '$lib/services/wails-actions';
-import type { FileUpload, SongImportDraft } from '$lib/wails';
+import type { IpcActions } from '$lib/services/ipc-actions';
+import type { FileUpload, SongImportDraft } from '$lib/ipc';
 
 type StagedSongImport = {
 	filesData: SongImportDraft[];
@@ -9,8 +9,8 @@ type StagedSongImport = {
 
 type SongImportControllerOptions = {
 	onComplete: () => Promise<void> | void;
-	wailsActions: Pick<
-		WailsActions,
+	ipcActions: Pick<
+		IpcActions,
 		'cleanupFiles' | 'createSongsWithMetadata' | 'uploadAndExtractMetadata'
 	>;
 };
@@ -30,16 +30,16 @@ export class SongImportController {
 	#pendingCompletion: PendingImportCompletion | null = null;
 	#pendingCompletionPromise: Promise<number> | null = null;
 	#onComplete: SongImportControllerOptions['onComplete'];
-	#wailsActions: SongImportControllerOptions['wailsActions'];
+	#ipcActions: SongImportControllerOptions['ipcActions'];
 
 	constructor(options: SongImportControllerOptions) {
 		this.#onComplete = options.onComplete;
-		this.#wailsActions = options.wailsActions;
+		this.#ipcActions = options.ipcActions;
 	}
 
 	async handleUpload(files: File[], albumId?: number): Promise<number> {
 		const fileUploads = await Promise.all(files.map(this.#fileToUpload));
-		const result = await this.#wailsActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
+		const result = await this.#ipcActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
 
 		this.#stagedImport = {
 			filesData: result.filesData,
@@ -90,7 +90,7 @@ export class SongImportController {
 			const filesToDelete = this.#stagedImport.filesData.filter((file) => file.hasUnmappedArtists);
 
 			if (filesToDelete.length > 0) {
-				await this.#wailsActions.cleanupFiles(filesToDelete.map((file) => file.filepath));
+				await this.#ipcActions.cleanupFiles(filesToDelete.map((file) => file.filepath));
 			}
 
 			if (filesToKeep.length > 0) {
@@ -148,7 +148,7 @@ export class SongImportController {
 		if (!this.#stagedImport) return 0;
 
 		try {
-			const createdSongs = await this.#wailsActions.createSongsWithMetadata({
+			const createdSongs = await this.#ipcActions.createSongsWithMetadata({
 				filesData: this.#stagedImport.filesData,
 				artistMapping,
 				albumId: this.#stagedImport.albumId,

@@ -3,11 +3,11 @@ import type Database from 'better-sqlite3';
 import { API_CHANNELS } from './channels';
 import { us1Handlers } from './ipc-handlers';
 
-// IPC bridge (replaces Wails' auto-bound *App methods). Every channel in
+// IPC bridge. Every channel in
 // contracts/ipc-channels.md is registered with a central error-to-reject wrapper;
 // per-story handler maps are merged in (US1 + US2 wired, US3 T038 to come).
 // A thrown error rejects the invoke and surfaces through the renderer's existing
-// wails-actions.ts notification path. args cross the IPC trust boundary untyped.
+// ipc-actions.ts notification path. args cross the IPC trust boundary untyped.
 
 export interface IpcDeps {
 	db: Database.Database;
