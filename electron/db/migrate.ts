@@ -51,14 +51,15 @@ export function migrate(db: Database.Database, migrationsDir: string): void {
 			throw new Error(`database is in a dirty migration state at version ${row.version}`);
 		}
 		current = row?.version ?? 0;
-	} else if (tableExists(db, CORE_TABLE)) {
-		// DB predates our tracking but already has the schema → mark all applied,
-		// run nothing. Reproduces golang-migrate's no-op on existing data.
-		db.exec('CREATE TABLE schema_migrations (version BIGINT NOT NULL, dirty BOOLEAN NOT NULL)');
-		setVersion(db, latest);
-		return;
 	} else {
+		// No tracking table yet. A DB that already has CORE_TABLE predates our
+		// tracking (golang-migrate era) and holds migration 1's schema, so stamp
+		// it at version 1 and let the loop apply everything after it. A truly
+		// fresh DB starts at 0 and runs the whole set.
+		// ponytail: assumes legacy DB predates is_single; add a column guard if that ceiling breaks
+		current = tableExists(db, CORE_TABLE) ? 1 : 0;
 		db.exec('CREATE TABLE schema_migrations (version BIGINT NOT NULL, dirty BOOLEAN NOT NULL)');
+		setVersion(db, current);
 	}
 
 	for (const m of migrations) {

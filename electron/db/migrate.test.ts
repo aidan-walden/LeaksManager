@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { migrate } from './migrate';
@@ -42,16 +43,26 @@ describe('migrate', () => {
 		expect((db.prepare(`SELECT name FROM artists`).get() as { name: string }).name).toBe('Keef');
 	});
 
-	it('zero-migration: a pre-tracking DB with existing schema is marked applied, not rebuilt', () => {
-		// Simulate a legacy DB (golang-migrate era) that has the schema but no
-		// schema_migrations row our code recognizes — must NOT re-run migration 1.
+	it('zero-migration: a pre-tracking DB gets later migrations applied, not re-run from scratch', () => {
+		// Simulate a legacy DB (golang-migrate era) that already has migration 1's
+		// schema but no schema_migrations row our code recognizes. We must NOT
+		// re-run migration 1, but we MUST still apply migrations 2 and 3.
 		const db = new Database(':memory:');
-		db.exec('CREATE TABLE songs (id INTEGER PRIMARY KEY, name TEXT)');
-		db.prepare(`INSERT INTO songs (id, name) VALUES (1, 'leak')`).run();
+		db.exec(readFileSync(join(MIGRATIONS_DIR, '000001_initial_schema.up.sql'), 'utf8'));
+		db.prepare(`INSERT INTO songs (id, name, filepath) VALUES (1, 'leak', 'uploads/songs/1-leak.mp3')`).run();
 
 		expect(() => migrate(db, MIGRATIONS_DIR)).not.toThrow();
 
 		expect(version(db)).toBe(LATEST);
 		expect((db.prepare('SELECT COUNT(*) AS c FROM songs').get() as { c: number }).c).toBe(1);
+
+		// Migration 3 must have run: the is_single column exists on albums.
+		const albumCols = (
+			db.prepare(`PRAGMA table_info(albums)`).all() as { name: string }[]
+		).map((c) => c.name);
+		expect(albumCols).toContain('is_single');
+
+		// Migration 2 must have run: at least one sync trigger exists.
+		expect(names(db, 'trigger').length).toBeGreaterThan(0);
 	});
 });
