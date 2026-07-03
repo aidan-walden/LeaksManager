@@ -16,12 +16,13 @@ import { readMetadata } from '../metadata';
 import { parseArtists, createArtist, findArtistByName } from './artists';
 import { findAlbumByName, getAlbumWithArtists } from './albums';
 import { matchProducersFromFilename } from './producers';
-import { createSong } from './songs';
+import { createSong, writeSongMetadata } from './songs';
 import { getSettings } from './settings';
 
-// Port of backend/workflows.go. NOTE (US1/US2 boundary): createSongsFromSpecs does
-// NOT write tags back to files here — buildSongTags + write-back is US2 (T032).
-// Song records + artwork resolution are created; the embedded-tag write is deferred.
+// Port of backend/workflows.go. createSongsFromSpecs creates each song record and then
+// writes the assembled tags (resolved artists, inherited album+artwork, matched
+// producers) back into the audio file. Per the Go oracle, a per-file write failure is
+// logged and skipped, never aborting the batch.
 
 function emptyMeta(): ExtractedMetadata {
 	return {
@@ -70,13 +71,14 @@ function resolveUploadArtwork(
 	return null;
 }
 
-// Shared core of both upload flows: create a song per spec. A metadata write
-// failure does not abort the batch in Go; in US1 the write-back is deferred (T032).
-function createSongsFromSpecs(
+// Shared core of both upload flows: create a song per spec, then write its tags back
+// to the file. A metadata write failure does not abort the batch (mirrors Go).
+async function createSongsFromSpecs(
 	db: Database.Database,
+	staticPath: string,
 	specs: SongCreationSpec[],
 	settings: Settings
-): Song[] {
+): Promise<Song[]> {
 	const created: Song[] = [];
 	for (const spec of specs) {
 		const producerIds = spec.matchProducers
@@ -101,8 +103,20 @@ function createSongsFromSpecs(
 			duration: (spec.metadata.duration ?? 0) > 0 ? spec.metadata.duration : null
 		};
 
-		created.push(createSong(db, input));
-		// US2: write metadata back to file here (buildSongTags + writeMetadata, T032).
+		const song = createSong(db, input);
+		created.push(song);
+
+		// Write-back: persist the resolved DB state into the file's embedded tags.
+		// writeSongMetadata catches internally and returns a result; guard anyway so
+		// one bad file can never abort the whole batch.
+		try {
+			const result = await writeSongMetadata(db, staticPath, song.id);
+			if (!result.success) {
+				console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
+			}
+		} catch (err) {
+			console.error(`metadata write-back threw for song ${song.id}:`, err);
+		}
 	}
 	return created;
 }
@@ -179,11 +193,11 @@ export async function uploadAndExtractMetadata(
 
 // Second step: resolve the artist mapping (CREATE_NEW → new artist), inherit album
 // artists/artwork, and create songs.
-export function createSongsWithMetadata(
+export async function createSongsWithMetadata(
 	db: Database.Database,
 	staticPath: string,
 	input: CreateSongsWithMetadataInput
-): Song[] {
+): Promise<Song[]> {
 	const settings = getSettings(db);
 
 	const artistIdMap = new Map<string, number>();
@@ -238,7 +252,7 @@ export function createSongsWithMetadata(
 		};
 	});
 
-	return createSongsFromSpecs(db, specs, settings);
+	return createSongsFromSpecs(db, staticPath, specs, settings);
 }
 
 // Simple upload without metadata preview.
@@ -279,5 +293,5 @@ export async function uploadSongs(
 		});
 	}
 
-	return createSongsFromSpecs(db, specs, settings);
+	return createSongsFromSpecs(db, staticPath, specs, settings);
 }
