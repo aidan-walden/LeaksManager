@@ -100,7 +100,8 @@ async function runAppleScriptCommand(
 	await ensureAppleMusicRunning(deps);
 
 	try {
-		const { stdout } = await execFileP('osascript', ['-e', script, ...args]);
+		// ponytail: 64 MiB covers ~300k tracks; raise if larger
+		const { stdout } = await execFileP('osascript', ['-e', script, ...args], { maxBuffer: 64 * 1024 * 1024 });
 		return stdout;
 	} catch (err) {
 		const e = err as { stderr?: string; message?: string };
