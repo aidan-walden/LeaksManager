@@ -6,7 +6,7 @@ import { resolveAppPaths } from './paths';
 import { openDatabase } from './db/connection';
 import { migrate } from './db/migrate';
 import { registerAppProtocolScheme, registerAppProtocol } from './assets';
-import { registerIpc } from './ipc';
+import { registerIpc, type IpcDeps } from './ipc';
 
 // App lifecycle: resolve paths, open the real DB, run migrations, register the
 // app:// asset protocol and the IPC bridge, then load the SvelteKit renderer.
@@ -65,11 +65,17 @@ app.whenReady().then(() => {
 
 	registerAppProtocol(staticPath);
 
-	const window = createWindow();
-	registerIpc({ db, staticPath, window });
+	// Hoist deps so the `activate` handler can refresh the window reference that
+	// registerIpc's closure sees. On macOS, closing then reopening the window
+	// (Dock click) creates a new BrowserWindow; without this, IPC handlers would
+	// keep dialoging on the destroyed original window.
+	const deps: IpcDeps = { db, staticPath, window: createWindow() };
+	registerIpc(deps);
 
 	app.on('activate', () => {
-		if (BrowserWindow.getAllWindows().length === 0) createWindow();
+		if (BrowserWindow.getAllWindows().length === 0) {
+			deps.window = createWindow();
+		}
 	});
 });
 
