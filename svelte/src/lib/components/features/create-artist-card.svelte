@@ -14,7 +14,7 @@
 	let blob: Blob | null = $derived.by(() => {
 		return file ? new Blob([file], { type: file.type }) : null;
 	});
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
@@ -26,7 +26,7 @@
 		const careerStartStr = formData.get('career-start') as string;
 		const careerEndStr = formData.get('career-end') as string;
 
-		const artist = await wailsActions.createArtist({
+		const artist = await ipcActions.createArtist({
 			name,
 			careerStartYear: careerStartStr ? parseInt(careerStartStr) : undefined,
 			careerEndYear: careerEndStr ? parseInt(careerEndStr) : undefined

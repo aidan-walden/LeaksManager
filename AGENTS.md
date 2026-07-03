@@ -1,159 +1,78 @@
-**Note: `microservice-py/` is deprecated** - all metadata extraction/writing functionality has been migrated to Go.
+# AGENTS.md
 
-## Project Overview
+## What This Is
 
-Leaks Manager is a desktop application for managing music leaks and audio metadata, built with **Wails v2** (Go backend + SvelteKit frontend).
+Leaks Manager is an **Electron desktop app**: a TypeScript Electron main process (`electron/`) with a SvelteKit/Svelte 5 renderer (`svelte/`) and an embedded SQLite database. It manages songs, albums, artists, and producers, reads/writes audio metadata, stores uploaded audio/artwork, and can sync to Apple Music on macOS.
 
-## Architecture
+## Commands
 
-### Backend (Go)
-- **Entry Point**: `main.go` initializes Wails app, embeds `svelte/build` assets
-- **Core App**: `backend/app.go` contains the main application logic with SQLite database access
-- **Domain Layer**: Organized into separate files by domain:
-  - `models.go` - All type definitions and structs
-  - `songs.go` - Song CRUD operations
-  - `albums.go` - Album CRUD operations
-  - `artists.go` - Artist CRUD operations
-  - `producers.go` - Producer CRUD and alias matching
-  - `metadata.go` - Audio metadata extraction/writing (ID3, Vorbis, MP4)
-  - `workflows.go` - Complex multi-step operations (upload & extract, create with metadata)
-  - `files.go` - File upload and storage
-  - `data.go` - Initial data loading for frontend
-  - `settings.go` - Application settings
-  - `apple_music.go` - Apple Music library integration (macOS only)
-  - `utils.go` - Helper functions (artist parsing, etc.)
+Run all commands from the repo root unless noted.
 
-### Database Migrations
-- **Tool**: golang-migrate (embedded in Go binary)
-- **Location**: `backend/migrations/*.sql`
-- **Execution**: Migrations run automatically on app startup
-- **Format**: Versioned SQL files (up/down pairs)
-- **Tracking**: golang-migrate creates `schema_migrations` table to track version
-
-**Adding new migrations:**
-1. Create numbered migration files: `backend/migrations/000002_description.up.sql` and `.down.sql`
-2. Write SQL in up file (forward migration)
-3. Write SQL in down file (rollback migration)
-4. Restart app - migration runs automatically
-
-### Frontend (SvelteKit)
-- **Location**: `svelte/` directory
-- **Framework**: Svelte 5 with Runes (SPA mode, `ssr = false`)
-- **UI**: shadcn-svelte components (TailwindCSS) via jsrepo
-- **Wails Integration**: Auto-generated bindings in `src/lib/wails/` provide TypeScript access to Go methods
-- **Routes**: Main interface at `src/routes/[tab]/` with dynamic tab routing
-
-### Data Model
-- Songs belong to one album (nullable)
-- Songs/Albums have many-to-many with Artists (ordered via junction tables)
-- Songs have many-to-many with Producers (ordered via junction table)
-- Artwork inheritance: Songs inherit album artwork if none specified
-- Producer aliases support artist-specific matching (e.g., "Metro" → "Metro Boomin" only for certain artists)
-
-### Legacy
-- **`microservice-py/`**: DEPRECATED Python/FastAPI service - do not use or modify
-
-## Key Commands
-
-### Development
 ```bash
-# Start Wails dev server (Go backend + SvelteKit frontend with hot-reload)
-pnpm wails:dev
-# or
-wails dev
+pnpm install              # install workspace deps
+pnpm dev:app              # run SvelteKit + Electron in dev mode
+pnpm package              # package the Electron app
+pnpm make                 # build platform installers
 
-# Frontend only (for UI work without rebuilding Go)
-cd svelte && pnpm dev
+pnpm test                 # Svelte vitest + Electron vitest
+pnpm test:frontend        # Svelte vitest only
+pnpm test:main            # Electron/main-process vitest only
 
-# Type checking
-cd svelte && pnpm check
+cd svelte && pnpm check   # svelte-check type-check
+cd svelte && pnpm lint    # prettier --check
 ```
 
-### Building
-```bash
-# Build for current platform (output: build/bin/)
-pnpm wails:build
+## Architecture: Electron Main, Preload, Renderer
 
-# Platform-specific builds
-pnpm wails:build:darwin     # macOS universal binary
-pnpm wails:build:windows    # Windows amd64
+Data does not flow over HTTP. The renderer calls `window.api.MethodName(...)`, which is exposed by `electron/preload.ts` and handled in the Electron main process.
 
-# Check Wails setup
-pnpm wails:doctor
-```
+**Transport layering** (each layer wraps the one below):
+1. `svelte/src/lib/ipc/bindings.ts` defines `RawIpcBindings`, the typed `window.api` surface.
+2. `svelte/src/lib/services/ipc-actions.ts` provides the camelCased component-facing API, wraps raw calls with error notification, and applies side effects such as marking songs as needing Apple Music re-sync.
+3. `svelte/src/lib/contexts/app-services.ts` provides the app-services context (`syncState`, `runtimeErrors`, `ipcActions`) consumed through `getAppServicesContext()`.
 
-### Frontend
-```bash
-cd svelte
-pnpm format        # Format with Prettier
-pnpm lint          # Check formatting
-```
+The PascalCase `window.api` method names mirror `electron/channels.ts` and should stay stable unless the IPC channel itself changes. When adding an exposed capability, update `electron/channels.ts`, `electron/ipc-handlers.ts`, `electron/preload.ts` if needed, `svelte/src/lib/ipc/bindings.ts`, and `svelte/src/lib/services/ipc-actions.ts`.
 
-## Development Patterns
+## Architecture: Electron Main Process
 
-### Frontend-Backend Communication
-- Frontend calls Go methods defined in `backend/app.go`
-- Methods automatically exposed via Wails bindings at `window.go.backend.App.*`
-- TypeScript types generated in `svelte/src/lib/wails/wailsjs/go/backend/App.d.ts`
-- Models auto-generated in `svelte/src/lib/wails/wailsjs/go/models.ts`
+- `electron/main.ts` handles lifecycle: resolve paths, open SQLite, run migrations, register `app://` assets, register IPC, and load the renderer.
+- `electron/db/` opens SQLite and runs migrations.
+- `electron/domain/` contains CRUD, workflows, settings, and initial data.
+- `electron/metadata.ts` and related domain write paths read and write audio metadata with Mediabunny.
+- `electron/apple-music.ts` handles macOS Apple Music integration via `osascript`.
+- `electron/assets.ts` and `electron/paths.ts` serve uploaded files through `app://uploads/...` with traversal guards.
 
-### Metadata Extraction Workflow
-1. **Upload & Extract**: `UploadAndExtractMetadata(files, albumID?)`
-   - Saves files to `uploads/songs/`
-   - Extracts metadata using native Go libraries (ID3v2, Vorbis, MP4 atoms)
-   - Parses artist strings using `ParseArtists()` (handles feat., ft., &, commas)
-   - Returns unmapped artists/albums and extracted metadata
-2. **Artist/Album Mapping**: Frontend presents choices
-   - User maps unmapped artists to existing or "CREATE_NEW"
-   - Mapping: `map[string]any` where value is artist ID or "CREATE_NEW"
-3. **Song Creation**: `CreateSongsWithMetadata(input)`
-   - Creates new artists as needed
-   - Associates songs with albums
-   - Handles artwork (embedded or inherited from album)
-   - Matches producers from filename via `MatchProducersFromFilename()`
-   - Writes metadata back to files via `WriteSongMetadata(songID)`
+Static/uploaded files are not IPC methods. The frontend stores relative paths such as `uploads/songs/123-file.mp3`; Electron resolves and serves them through the app protocol.
 
-### Database Paths
-- **Development**: `svelte/local.db` (relative path)
-- **Production**: User data directory
-  - macOS: `~/Library/Application Support/leaks-manager/`
-  - Windows: `%APPDATA%/leaks-manager/`
-  - Linux: `~/.local/share/leaks-manager/`
+## Metadata Upload Workflow
 
-### File Storage
-- Songs: `uploads/songs/` (relative to database path)
-- Artwork: `uploads/artwork/` (relative to database path)
+The artist-mapping upload flow is two-phase by design:
+1. `UploadAndExtractMetadata(files, albumID?)` saves files, extracts metadata, parses artist strings, and returns unmapped artists.
+2. The frontend collects mapping decisions.
+3. `CreateSongsWithMetadata(input)` resolves/creates artists, applies album/artwork inheritance, matches producers from filename, creates songs, and writes metadata back.
 
-### Artist Parsing
-- `ParseArtists()` in `backend/utils.go` splits artist strings
-- Handles: commas, `&`, `feat.`, `ft.`, `featuring`, semicolons
-- Returns deduplicated array of trimmed artist names
+`UploadSongs` is the simpler one-shot path. Metadata is handled by Mediabunny. Supported metadata writing targets are MP3, FLAC, M4A, and OGG/Vorbis.
 
-### Producer Alias Matching
-- Producers can have multiple aliases with optional artist restrictions
-- `MatchProducersFromFilename()` finds producers in filename using aliases
-- Case-insensitive matching
-- Returns producer IDs for song association
+## Database & Migrations
 
-## Code Conventions
+SQLite schema migrations live in `electron/migrations/*.sql`. Dev startup reads them from the repo; packaged apps read the copied resource at `process.resourcesPath/migrations`. The migration runner preserves the existing single-row `schema_migrations` contract.
 
-### Go Backend
-- Use direct SQL queries with `database/sql` package
-- Custom SQLite driver registered with `LOWER()` function for case-insensitive comparisons supporting unicode
-- All methods on `*App` struct can be called from frontend
-- Return `(result, error)` - Wails handles error serialization
+Core tables include `songs`, `albums`, `artists`, `producers`, `producer_aliases`, `settings`, and ordered many-to-many junctions such as `song_artists`, `album_artists`, `song_producers`, and `producer_alias_artists`.
 
-### Svelte Frontend
-- **Import Alias**: `$lib/` for SvelteKit imports
-- **Validation**: Zod schemas in `src/lib/schema/` (validate before sending to backend)
-- **jsrepo**: Check `.cursor/rules/shadcn-svelte-extras.mdc` before creating UI components
-  - Prefer existing components from `@ieedan/shadcn-svelte-extras`
-  - Use pinned version from `jsrepo.json` when fetching
-- **Styling**: TailwindCSS v4, use shadcn-svelte patterns
-- **State**: Contexts in `src/lib/contexts/` for global state
-- **Comments**: Lowercase, no JSDoc, keep concise
+Migration `000002_sync_triggers` resets `synced = 0` when relevant metadata changes. Keep that invariant in mind when editing metadata-affecting columns.
 
-### General
-- TypeScript only (no untyped JavaScript)
-- Minimize logging
-- Keep comments short and lowercase
+To add a migration, create matching `00000N_name.up.sql` and `00000N_name.down.sql` files in `electron/migrations/`, then restart the app.
+
+## Frontend
+
+- Svelte 5 (runes), SvelteKit with `adapter-static`, SSR disabled under `svelte/src/routes/`.
+- Routing is tab-based under `routes/[tab]/`; entity views live in `lib/components/inner-view/`.
+- Per-entity Svelte contexts in `lib/contexts/` act as caches; `lib/stores/sync.svelte.ts` tracks Apple Music sync state.
+- UI uses shadcn-svelte-extras (jsrepo) + Tailwind v4. Prefer an existing component from `@ieedan/shadcn-svelte-extras` via jsrepo before hand-writing a new one.
+- Domain helpers worth knowing: `lib/utils/artist-parser.ts` and producer alias matching mirror Electron main-process logic. Keep them consistent.
+
+## Conventions
+
+- Tests are colocated as `*.test.ts` and use real in-memory/temp SQLite where useful.
+- Run `pnpm test` before considering Electron+frontend changes done, and `cd svelte && pnpm check` for renderer type changes.
+- When changing an IPC method signature, propagate through `electron/channels.ts` and handlers, `svelte/src/lib/ipc/bindings.ts`, `ipc-actions.ts`, and all call sites.

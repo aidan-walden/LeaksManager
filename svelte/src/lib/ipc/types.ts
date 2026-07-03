@@ -1,0 +1,288 @@
+// types matching Go structs in app.go
+
+export interface ArtworkData {
+	data: string; // base64
+	mimeType: string;
+}
+
+export interface ExtractedMetadata {
+	title: string | null;
+	artist: string | null;
+	albumArtist: string | null;
+	album: string | null;
+	year: number | null;
+	genre: string | null;
+	trackNumber: number | null;
+	producer: string | null;
+	duration: number | null;
+	artwork: ArtworkData | null;
+}
+
+export interface BatchResult {
+	success: boolean;
+	message: string;
+	songsProcessed: number;
+	songsFailed: number;
+	results: SongProcessingResult[];
+}
+
+export interface SongProcessingResult {
+	songId: number;
+	success: boolean;
+	error?: string;
+}
+
+export interface SyncResult {
+	totalSongs: number;
+	successCount: number;
+	failureCount: number;
+	addedCount: number;
+	updatedCount: number;
+	results: SyncItemResult[];
+	completedAt: number;
+}
+
+export interface SyncItemResult {
+	songId: number;
+	songName: string;
+	status: 'failed' | 'added' | 'updated';
+	appleMusicId?: string;
+	errorMessage?: string;
+}
+
+export interface AppleMusicTrack {
+	id: string;
+	databaseId: number;
+	name: string;
+	artist: string;
+	albumArtist: string;
+	album: string;
+	genre: string;
+	year: number;
+	duration: number;
+	trackNumber: number;
+	trackCount: number;
+	discNumber: number;
+	discCount: number;
+}
+
+export interface Artist {
+	id: number;
+	name: string;
+	image: string | null;
+	careerStartYear: number | null;
+	careerEndYear: number | null;
+	createdAt: number;
+	updatedAt: number;
+	synced: boolean;
+}
+
+export interface ArtistWithRelations extends Artist {
+	albums: Album[];
+	songs: Song[];
+}
+
+export interface Album {
+	id: number;
+	name: string;
+	artworkPath: string | null;
+	genre: string | null;
+	year: number | null;
+	isSingle: boolean;
+	createdAt: number;
+	updatedAt: number;
+	synced: boolean;
+}
+
+export interface AlbumWithArtists extends Album {
+	artists: Artist[];
+}
+
+export interface AlbumWithSongs extends Album {
+	artists: Artist[];
+	songs: Song[];
+}
+
+export interface Song {
+	id: number;
+	name: string;
+	albumId: number | null;
+	artworkPath: string | null;
+	genre: string | null;
+	year: number | null;
+	trackNumber: number | null;
+	duration: number | null;
+	filepath: string;
+	fileType: string | null;
+	appleMusicId?: string;
+	createdAt: number;
+	updatedAt: number;
+	synced: boolean;
+}
+
+export interface SongReadable extends Song {
+	artist: string;
+	artists: Artist[];
+	producers: Producer[];
+	album: Album | null;
+}
+
+export interface Producer {
+	id: number;
+	name: string;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface ProducerAlias {
+	id: number;
+	producerId: number;
+	alias: string;
+	createdAt: number;
+}
+
+export interface ProducerAliasWithArtists extends ProducerAlias {
+	artistIds: number[];
+}
+
+export interface ProducerWithAliases extends Producer {
+	aliases: ProducerAliasWithArtists[];
+	songs: Song[];
+}
+
+export interface Settings {
+	id: number;
+	clearTrackNumberOnUpload: boolean;
+	importToAppleMusic: boolean;
+	automaticallyMakeSingles: boolean;
+	updatedAt: number;
+}
+
+export interface Limits {
+	songsPerPage: number;
+	albumsPerPage: number;
+}
+
+export interface InitialData {
+	songs: SongReadable[];
+	songsCount: number;
+	albums: AlbumWithSongs[];
+	artists: ArtistWithRelations[];
+	producers: ProducerWithAliases[];
+	settings: Settings;
+	isMac: boolean;
+	limits: Limits;
+	hasUnsyncedChanges: boolean;
+}
+
+// input types
+
+export interface CreateArtistInput {
+	name: string;
+	careerStartYear?: number;
+	careerEndYear?: number;
+}
+
+export interface CreateAlbumInput {
+	name: string;
+	artistIds: number[];
+	year?: number;
+	genre?: string;
+	isSingle?: boolean;
+}
+
+export interface UpdateAlbumInput {
+	id: number;
+	name?: string;
+	year?: number;
+	genre?: string;
+	artistIds: number[];
+}
+
+export interface CreateSongInput {
+	name: string;
+	filepath: string;
+	artistIds: number[];
+	producerIds: number[];
+	albumId?: number;
+	artworkPath?: string;
+	genre?: string;
+	year?: number;
+	trackNumber?: number;
+	duration?: number;
+}
+
+export interface UpdateSongInput {
+	id: number;
+	name?: string;
+	albumId?: number;
+	albumName?: string;
+	artistIds: number[];
+	producerIds: number[];
+	trackNumber?: number;
+	isSingle?: boolean;
+}
+
+export interface AliasInput {
+	name: string;
+	artistIds: number[];
+}
+
+export interface CreateProducerInput {
+	name: string;
+	aliases: AliasInput[];
+}
+
+export interface UpdateProducerInput {
+	id: number;
+	name: string;
+	aliases: AliasInput[];
+}
+
+export interface UpdateSettingsInput {
+	clearTrackNumberOnUpload?: boolean;
+	importToAppleMusic?: boolean;
+	automaticallyMakeSingles?: boolean;
+}
+
+export interface PageRequest {
+	limit: number;
+	offset: number;
+}
+
+export interface SongImportDraft {
+	originalFilename: string;
+	filepath: string;
+	metadata: ExtractedMetadata;
+	parsedArtists: string[];
+	parsedProducers?: string[];
+	hasUnmappedArtists: boolean;
+	albumId?: number;
+}
+
+export interface UploadAndExtractResult {
+	filesData: SongImportDraft[];
+	unmappedArtists: string[];
+	filesWithArtwork: number;
+}
+
+export interface CreateSongsWithMetadataInput {
+	filesData: SongImportDraft[];
+	artistMapping: Record<string, number | 'CREATE_NEW'>;
+	albumId?: number;
+	useEmbeddedArtwork: boolean;
+}
+
+export interface FileUpload {
+	filename: string;
+	base64Data: string;
+}
+
+export interface AlbumArtUploadRequest extends FileUpload {
+	albumId: number;
+}
+
+export interface SongBatchUploadRequest {
+	files: FileUpload[];
+	albumId?: number;
+}

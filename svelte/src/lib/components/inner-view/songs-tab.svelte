@@ -10,7 +10,7 @@
 		removeSongFromPage,
 		replaceSongInPage
 	} from './songs-table';
-	import type { SongReadable } from '$lib/wails';
+	import type { SongReadable } from '$lib/ipc';
 
 	let {
 		songs: initialSongs,
@@ -29,8 +29,8 @@
 	let localSongsCount = $state<number | null>(null);
 	let refreshRequestId = 0;
 	let previousPageProps: { songs: SongReadable[]; songsCount: number } | null = null;
-	const { wailsActions } = getAppServicesContext();
-	const columns = createSongColumns(wailsActions, {
+	const { ipcActions } = getAppServicesContext();
+	const columns = createSongColumns(ipcActions, {
 		onSongDeleted: handleSongDeleted,
 		onSongSaved: handleSongSaved
 	});
@@ -40,10 +40,10 @@
 	async function refreshSongs(page = currentPage) {
 		const requestId = refreshRequestId + 1;
 		refreshRequestId = requestId;
-		const nextSongsCount = await wailsActions.getSongsCount();
+		const nextSongsCount = await ipcActions.getSongsCount();
 		const nextPage = clampSongsPage(page, nextSongsCount, songsPerPage);
 		const offset = nextPage * songsPerPage;
-		const nextSongs = await wailsActions.getSongsReadable({ limit: songsPerPage, offset });
+		const nextSongs = await ipcActions.getSongsReadable({ limit: songsPerPage, offset });
 
 		if (requestId !== refreshRequestId) {
 			return;
@@ -73,7 +73,7 @@
 			return;
 		}
 
-		const replacementRows = await wailsActions.getSongsReadable({ limit: 1, offset: replacementOffset });
+		const replacementRows = await ipcActions.getSongsReadable({ limit: 1, offset: replacementOffset });
 		localSongs = [...nextVisibleSongs, ...replacementRows];
 	}
 
@@ -90,7 +90,7 @@
 		localSongsCount = totalSongsCount + createdCount;
 
 		const pageOffset = currentPage * songsPerPage;
-		const incomingRows = await wailsActions.getSongsReadable({
+		const incomingRows = await ipcActions.getSongsReadable({
 			limit: Math.min(createdCount, songsPerPage),
 			offset: pageOffset
 		});

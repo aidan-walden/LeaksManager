@@ -1,11 +1,11 @@
-import { wailsTransport } from '$lib/wails';
+import { getRawIpcBindings } from '$lib/ipc';
 
 export const ssr = false;
 export const prerender = false;
 export const trailingSlash = 'always';
 
 export const load = async () => {
-	const data = await wailsTransport.getInitialData();
+	const data = await getRawIpcBindings().GetInitialData();
 
 	return {
 		songs: data.songs,

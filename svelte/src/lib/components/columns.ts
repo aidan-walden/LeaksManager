@@ -3,8 +3,8 @@ import { renderComponent } from './ui/data-table/render-helpers.js';
 import SongRowActions from '$lib/components/features/song-row-actions.svelte';
 import { invalidateAll } from '$app/navigation';
 import SongHover from './table/song-hover.svelte';
-import type { SongReadable } from '$lib/wails';
-import type { WailsActions } from '$lib/services/wails-actions';
+import type { SongReadable } from '$lib/ipc';
+import type { IpcActions } from '$lib/services/ipc-actions';
 
 type SongMutationHandlers = {
 	onSongDeleted?: (songId: number) => void | Promise<void>;
@@ -12,11 +12,11 @@ type SongMutationHandlers = {
 };
 
 export function createSongColumns(
-	wailsActions: Pick<WailsActions, 'deleteSong'>,
+	ipcActions: Pick<IpcActions, 'deleteSong'>,
 	handlers: SongMutationHandlers = {}
 ): ColumnDef<SongReadable>[] {
 	async function onDelete(id: number) {
-		await wailsActions.deleteSong(id);
+		await ipcActions.deleteSong(id);
 		await handlers.onSongDeleted?.(id);
 		void invalidateAll();
 	}

@@ -1,3 +1,7 @@
 packages:
   - 'svelte'
-  - 'microservice'
+
+# node-linker=hoisted nests a separate acorn per svelte-ecosystem dep, breaking
+# @sveltejs/acorn-typescript because Svelte parses with a different acorn instance.
+overrides:
+  acorn: 8.17.0

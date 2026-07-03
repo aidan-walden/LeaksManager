@@ -26,7 +26,6 @@
 		title,
 		formId,
 		submitLabel = 'Create',
-		metadataTabLabel = 'Metadata',
 		upload,
 		formFields,
 		beforeSubmit,
@@ -38,7 +37,6 @@
 		title: string;
 		formId: string;
 		submitLabel?: string;
-		metadataTabLabel?: string;
 		upload?: UploadConfig;
 		formFields: Snippet<[loading: boolean]>;
 		beforeSubmit?: () => boolean;
@@ -89,7 +87,7 @@
 {#snippet tabs()}
 	<Tabs.Root value="metadata" class="flex h-full w-full flex-col">
 		<Tabs.List>
-			<Tabs.Trigger value="metadata">{metadataTabLabel}</Tabs.Trigger>
+			<Tabs.Trigger value="metadata">Metadata</Tabs.Trigger>
 			{#if upload}
 				<Tabs.Trigger value="upload">{upload.tabLabel}</Tabs.Trigger>
 			{/if}

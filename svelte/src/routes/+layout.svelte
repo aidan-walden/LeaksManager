@@ -2,14 +2,9 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { setAppServicesContext } from '$lib/contexts/app-services';
-	import {
-		createRuntimeErrorNotifier
-	} from '$lib/errors/runtime-error';
-	import {
-		createWailsActions
-	} from '$lib/services/wails-actions';
-	import { createSyncState } from '$lib/stores/sync.svelte';
-	import { wailsTransport } from '$lib/wails';
+	import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
+	import { createIpcActions } from '$lib/services/ipc-actions';
+	import { SyncState } from '$lib/stores/sync.svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import Toaster from '$lib/components/ui/sonner/sonner.svelte';
 	import { onMount } from 'svelte';
@@ -17,11 +12,11 @@
 	import type { LayoutData } from './$types';
 
 	let { children, data }: { children?: Snippet; data: LayoutData } = $props();
-	const syncState = createSyncState();
-	const runtimeErrors = createRuntimeErrorNotifier();
-	const wailsActions = createWailsActions({ syncState, runtimeErrors }, wailsTransport);
+	const syncState = new SyncState();
+	const runtimeErrors = new RuntimeErrorNotifier();
+	const ipcActions = createIpcActions({ syncState, runtimeErrors });
 
-	setAppServicesContext({ syncState, runtimeErrors, wailsActions });
+	setAppServicesContext({ syncState, runtimeErrors, ipcActions });
 
 	$effect(() => {
 		syncState.configure(data.settings.importToAppleMusic, data.hasUnsyncedChanges);

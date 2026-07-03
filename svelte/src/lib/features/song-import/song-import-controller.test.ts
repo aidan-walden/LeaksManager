@@ -18,7 +18,7 @@ class MockFileReader {
 }
 
 describe('SongImportController', () => {
-	const wailsActions = {
+	const ipcActions = {
 		uploadAndExtractMetadata: vi.fn(),
 		createSongsWithMetadata: vi.fn(),
 		cleanupFiles: vi.fn()
@@ -29,11 +29,11 @@ describe('SongImportController', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		globalThis.FileReader = MockFileReader as unknown as typeof FileReader;
-		wailsActions.createSongsWithMetadata.mockResolvedValue([{ id: 1 }]);
+		ipcActions.createSongsWithMetadata.mockResolvedValue([{ id: 1 }]);
 	});
 
 	it('creates songs immediately when no follow-up dialogs are needed', async () => {
-		wailsActions.uploadAndExtractMetadata.mockResolvedValue({
+		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
 			filesData: [
 				{
 					originalFilename: 'track.mp3',
@@ -45,13 +45,13 @@ describe('SongImportController', () => {
 			unmappedArtists: [],
 			filesWithArtwork: 0
 		});
-		const controller = new SongImportController({ onComplete, wailsActions });
+		const controller = new SongImportController({ onComplete, ipcActions });
 
 		const createdCount = await controller.handleUpload([
 			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
 		]);
 
-		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith({
+		expect(ipcActions.createSongsWithMetadata).toHaveBeenCalledWith({
 			filesData: [
 				expect.objectContaining({
 					filepath: 'uploads/songs/track.mp3'
@@ -68,7 +68,7 @@ describe('SongImportController', () => {
 	});
 
 	it('stages artwork choice before creating songs when artwork can be inherited', async () => {
-		wailsActions.uploadAndExtractMetadata.mockResolvedValue({
+		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
 			filesData: [
 				{
 					originalFilename: 'track.mp3',
@@ -81,7 +81,7 @@ describe('SongImportController', () => {
 			unmappedArtists: [],
 			filesWithArtwork: 1
 		});
-		const controller = new SongImportController({ onComplete, wailsActions });
+		const controller = new SongImportController({ onComplete, ipcActions });
 
 		const uploadPromise = controller.handleUpload([
 			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
@@ -90,12 +90,12 @@ describe('SongImportController', () => {
 			expect(controller.showArtworkChoiceDialog).toBe(true);
 		});
 
-		expect(wailsActions.createSongsWithMetadata).not.toHaveBeenCalled();
+		expect(ipcActions.createSongsWithMetadata).not.toHaveBeenCalled();
 
 		await controller.handleArtworkChoice(true);
 		expect(await uploadPromise).toBe(1);
 
-		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith(
+		expect(ipcActions.createSongsWithMetadata).toHaveBeenCalledWith(
 			expect.objectContaining({
 				useEmbeddedArtwork: true
 			})
@@ -103,7 +103,7 @@ describe('SongImportController', () => {
 	});
 
 	it('cleans up cancelled unmapped files and imports the rest', async () => {
-		wailsActions.uploadAndExtractMetadata.mockResolvedValue({
+		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
 			filesData: [
 				{
 					originalFilename: 'keep.mp3',
@@ -121,7 +121,7 @@ describe('SongImportController', () => {
 			unmappedArtists: ['Guest Artist'],
 			filesWithArtwork: 0
 		});
-		const controller = new SongImportController({ onComplete, wailsActions });
+		const controller = new SongImportController({ onComplete, ipcActions });
 
 		const uploadPromise = controller.handleUpload([
 			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
@@ -133,8 +133,8 @@ describe('SongImportController', () => {
 		expect(await controller.handleArtistMappingCancel()).toBe(1);
 		expect(await uploadPromise).toBe(1);
 
-		expect(wailsActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
-		expect(wailsActions.createSongsWithMetadata).toHaveBeenCalledWith(
+		expect(ipcActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
+		expect(ipcActions.createSongsWithMetadata).toHaveBeenCalledWith(
 			expect.objectContaining({
 				filesData: [expect.objectContaining({ filepath: 'uploads/songs/keep.mp3' })]
 			})
@@ -142,7 +142,7 @@ describe('SongImportController', () => {
 	});
 
 	it('resets staged state when every unmapped file is cancelled', async () => {
-		wailsActions.uploadAndExtractMetadata.mockResolvedValue({
+		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
 			filesData: [
 				{
 					originalFilename: 'drop.mp3',
@@ -154,7 +154,7 @@ describe('SongImportController', () => {
 			unmappedArtists: ['Guest Artist'],
 			filesWithArtwork: 0
 		});
-		const controller = new SongImportController({ onComplete, wailsActions });
+		const controller = new SongImportController({ onComplete, ipcActions });
 
 		const uploadPromise = controller.handleUpload([
 			new File(['track'], 'track.mp3', { type: 'audio/mpeg' })
@@ -165,8 +165,8 @@ describe('SongImportController', () => {
 		expect(await controller.handleArtistMappingCancel()).toBe(0);
 		expect(await uploadPromise).toBe(0);
 
-		expect(wailsActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
-		expect(wailsActions.createSongsWithMetadata).not.toHaveBeenCalled();
+		expect(ipcActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/drop.mp3']);
+		expect(ipcActions.createSongsWithMetadata).not.toHaveBeenCalled();
 		expect(controller.showArtistMappingDialog).toBe(false);
 		expect(onComplete).toHaveBeenCalled();
 	});

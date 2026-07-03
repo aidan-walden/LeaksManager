@@ -8,15 +8,15 @@
 	import { invalidateAll } from '$app/navigation';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import { editableAlbumSchema, type EditableAlbum } from '$lib/schema';
-	import type { AlbumWithSongs } from '$lib/wails';
+	import type { AlbumWithSongs } from '$lib/ipc';
 	import { toAssetUrl } from '$lib/utils';
 
 	let creatingAlbum = $state(false);
 	let currentAlbum = $state<EditableAlbum | null>(null);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	async function onDelete(id: number) {
-		await wailsActions.deleteAlbum(id);
+		await ipcActions.deleteAlbum(id);
 		await invalidateAll();
 	}
 

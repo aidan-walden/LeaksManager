@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function toAssetUrl(path?: string | null) {
 	if (!path) return path;
-	return path.startsWith("/") ? path : `/${path}`;
+	return `app://${path.replace(/^\/+/, "")}`;
 }
 
 export type WithoutChild<T> = T extends { child?: unknown } ? Omit<T, "child"> : T;

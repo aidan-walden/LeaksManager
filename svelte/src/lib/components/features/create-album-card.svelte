@@ -22,7 +22,7 @@
 	let loading = $state(false);
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	const artists = $derived(getArtistsContext());
 
@@ -150,7 +150,7 @@
 			const base64 = btoa(
 				new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
 			);
-			await wailsActions.uploadAlbumArt({
+			await ipcActions.uploadAlbumArt({
 				albumId,
 				filename: currentFile.name,
 				base64Data: base64
@@ -170,7 +170,7 @@
 
 		if (album) {
 			// update existing album
-			await wailsActions.updateAlbum({
+			await ipcActions.updateAlbum({
 				id: album.id,
 				name,
 				year,
@@ -179,12 +179,12 @@
 			});
 
 			// write metadata to all songs in album
-			await wailsActions.writeAlbumMetadata(album.id);
+			await ipcActions.writeAlbumMetadata(album.id);
 
 			return { id: album.id };
 		} else {
 			// create new album
-			const newAlbum = await wailsActions.createAlbum({
+			const newAlbum = await ipcActions.createAlbum({
 				name,
 				artistIds: selectedArtistIds,
 				year,

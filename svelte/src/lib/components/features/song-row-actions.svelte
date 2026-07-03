@@ -4,7 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import CreateSongCard from '$lib/components/features/create-song-card.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { SongReadable } from '$lib/wails';
+	import type { SongReadable } from '$lib/ipc';
 
 	let {
 		song,
@@ -16,14 +16,14 @@
 		onSongSaved?: (song: SongReadable) => void | Promise<void>;
 	} = $props();
 	let editingSong = $state(false);
-	const { wailsActions } = getAppServicesContext();
+	const { ipcActions } = getAppServicesContext();
 
 	function onClickEdit() {
 		editingSong = true;
 	}
 
 	async function onClickShowInFileExplorer() {
-		await wailsActions.showInFileExplorer(song.filepath);
+		await ipcActions.showInFileExplorer(song.filepath);
 	}
 </script>
 

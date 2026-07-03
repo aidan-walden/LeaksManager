@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SongReadable } from '$lib/wails';
+	import type { SongReadable } from '$lib/ipc';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
 	import { toAssetUrl } from '$lib/utils';
 

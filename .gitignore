@@ -66,3 +66,20 @@ build/
 *.app
 wailsjs/
 frontend/dist/
+
+# electron-vite build output
+out/
+
+# electron-forge packaged output
+dist-forge/
+
+# graphify
+graphify-out/
+
+# specs
+specs/
+.specify/
+
+.agents/
+.codex/
+.serena/

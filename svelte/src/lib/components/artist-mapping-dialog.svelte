@@ -7,7 +7,7 @@
 		createArtistSelectionState,
 		type ArtistMappingValue
 	} from '$lib/components/artist-mapping';
-	import type { Artist } from '$lib/wails';
+	import type { Artist } from '$lib/ipc';
 
 	let {
 		open = $bindable(),

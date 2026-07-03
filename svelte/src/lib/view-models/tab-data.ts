@@ -4,7 +4,7 @@ import type {
 	InitialData,
 	ProducerWithAliases,
 	SongReadable
-} from '$lib/wails';
+} from '$lib/ipc';
 
 export type TabViewData = {
 	songs: SongReadable[];

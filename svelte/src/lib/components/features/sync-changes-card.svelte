@@ -7,12 +7,12 @@
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 
-	const { syncState, wailsActions } = getAppServicesContext();
+	const { syncState, ipcActions } = getAppServicesContext();
 
 	async function handleSync() {
 		syncState.startSync();
 		const result = await runAsyncAction(
-			() => wailsActions.syncSongsToAppleMusic(),
+			() => ipcActions.syncSongsToAppleMusic(),
 			(error) => {
 				const message = error instanceof Error ? error.message : 'Unknown error';
 				syncState.finishSync(false, {

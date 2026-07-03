@@ -26,15 +26,15 @@
 
 	// Set context with a getter function to maintain reactivity
 	// Context must be set during component initialization
-	setArtistsContext<ArtistForContext>(() => resolvedArtists);
-	setAlbumsContext<AlbumElement>(() => resolvedAlbums);
-	setProducersContext<ProducerElement>(() => resolvedProducers);
-	const { wailsActions } = getAppServicesContext();
+	setArtistsContext(() => resolvedArtists);
+	setAlbumsContext(() => resolvedAlbums);
+	setProducersContext(() => resolvedProducers);
+	const { ipcActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';
 	const songImport = new SongImportController({
 		onComplete: () => invalidateAll(),
-		wailsActions
+		ipcActions
 	});
 
 	$effect(() => {
