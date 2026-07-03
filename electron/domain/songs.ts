@@ -210,8 +210,10 @@ export function getAlbumById(db: Database.Database, albumId: number): Album | nu
 // backend/metadata.go buildSongTags: genre/album-artist fall back song→album, artwork
 // falls back song→album, and the singles/track-number rule (FR-009) is driven by
 // Settings. Returns the tags plus the resolved full path of the audio file to write.
-// ponytail: mediabunny's MetadataTags has no composer/producer field, so producers
-// (the Go oracle wrote them as composer) are not emitted by the unified engine.
+// mediabunny's MetadataTags has no composer/producer field, so producers are emitted
+// through `raw` under each format's native composer/producer key (as the Go oracle did:
+// ID3 TCOM, MP4 ©wrt, Vorbis PRODUCER). mediabunny only writes the key that matches the
+// output format, so setting all three on every write is safe.
 export function buildSongTags(
 	db: Database.Database,
 	staticPath: string,
@@ -228,7 +230,10 @@ export function buildSongTags(
 				 WHERE sa.song_id = s.id ORDER BY sa."order") AS artists,
 				(SELECT GROUP_CONCAT(ar2.name, ', ') FROM album_artists aa
 				 LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
-				 WHERE aa.album_id = s.album_id ORDER BY aa."order") AS album_artists
+				 WHERE aa.album_id = s.album_id ORDER BY aa."order") AS album_artists,
+				(SELECT GROUP_CONCAT(p.name, ', ') FROM song_producers sp
+				 LEFT JOIN producers p ON sp.producer_id = p.id
+				 WHERE sp.song_id = s.id ORDER BY sp."order") AS producers
 			FROM songs s
 			LEFT JOIN albums a ON s.album_id = a.id
 			WHERE s.id = ?`
@@ -297,6 +302,15 @@ export function buildSongTags(
 		tags.images = [
 			{ data: new Uint8Array(readFileSync(artFull)), mimeType, kind: 'coverFront' }
 		];
+	}
+
+	// Producers have no normalized MetadataTags field. Emit the `, `-joined names via
+	// `raw` under all three format-native composer/producer keys (ID3 TCOM, MP4 ©wrt
+	// (U+00A9), Vorbis PRODUCER); mediabunny writes only the key matching the output
+	// format. Mirrors the Go oracle, which wrote producers as the format's composer tag.
+	const producers = str(row.producers);
+	if (producers !== '') {
+		tags.raw = { ...tags.raw, TCOM: producers, '©wrt': producers, PRODUCER: producers };
 	}
 
 	return { tags, fullPath };

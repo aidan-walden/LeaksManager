@@ -8,6 +8,7 @@ import { migrate } from '../db/migrate';
 import { registerLower } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum } from './albums';
+import { createProducerWithAliases } from './producers';
 import { createSong } from './songs';
 import { updateSettings } from './settings';
 // buildSongTags is the T032 write-path port of backend/metadata.go buildSongTags.
@@ -68,6 +69,34 @@ describe('buildSongTags single-vs-album track-number rule (FR-009)', () => {
 		// Go sets trackNumber=0 and leaves TrackNumberStr empty: no track tag written.
 		expect(tags.trackNumber ?? 0).toBe(0);
 		expect(tags.album ?? '').toBe('');
+	});
+
+	it('emits producers under all three format-native raw keys (TCOM/©wrt/PRODUCER)', () => {
+		const artist = createArtist(db, { name: 'Solo Artist' });
+		const p1 = createProducerWithAliases(db, { name: 'Alpha', aliases: [] });
+		const p2 = createProducerWithAliases(db, { name: 'Beta', aliases: [] });
+		const songId = createSong(db, {
+			name: 'Produced Track',
+			filepath: 'uploads/songs/produced.mp3',
+			artistIds: [artist.id],
+			producerIds: [p1.id, p2.id],
+			albumId: null
+		}).id;
+
+		const { tags } = buildSongTags(db, staticPath, songId);
+
+		// `, `-joined in song_producers order, under each format's composer/producer key.
+		expect(tags.raw?.TCOM).toBe('Alpha, Beta');
+		expect(tags.raw?.['©wrt']).toBe('Alpha, Beta');
+		expect(tags.raw?.PRODUCER).toBe('Alpha, Beta');
+	});
+
+	it('omits producer raw keys when a song has none', () => {
+		const songId = seedSong(null);
+		const { tags } = buildSongTags(db, staticPath, songId);
+		expect(tags.raw?.TCOM).toBeUndefined();
+		expect(tags.raw?.['©wrt']).toBeUndefined();
+		expect(tags.raw?.PRODUCER).toBeUndefined();
 	});
 
 	it('has album → trackNumber / album song count, regardless of singles setting', () => {
