@@ -67,6 +67,30 @@ describe('SongImportController', () => {
 		expect(onComplete).toHaveBeenCalled();
 	});
 
+	it('cleans up saved files when song creation fails outright', async () => {
+		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
+			filesData: [
+				{
+					originalFilename: 'track.mp3',
+					filepath: 'uploads/songs/track.mp3',
+					metadata: { artwork: null },
+					hasUnmappedArtists: false
+				}
+			],
+			unmappedArtists: [],
+			filesWithArtwork: 0
+		});
+		ipcActions.createSongsWithMetadata.mockRejectedValue(new Error('boom'));
+		const controller = new SongImportController({ onComplete, ipcActions });
+
+		await expect(
+			controller.handleUpload([new File(['track'], 'track.mp3', { type: 'audio/mpeg' })])
+		).rejects.toThrow('boom');
+
+		expect(ipcActions.cleanupFiles).toHaveBeenCalledWith(['uploads/songs/track.mp3']);
+		expect(onComplete).not.toHaveBeenCalled();
+	});
+
 	it('stages artwork choice before creating songs when artwork can be inherited', async () => {
 		ipcActions.uploadAndExtractMetadata.mockResolvedValue({
 			filesData: [

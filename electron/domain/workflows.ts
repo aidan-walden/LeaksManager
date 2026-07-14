@@ -10,7 +10,7 @@ import type {
 	CreateSongInput
 } from './models';
 import type { ExtractedMetadata } from '../metadata';
-import { saveBase64 } from '../files';
+import { saveBase64, deleteFile } from '../files';
 import { staticFilePath } from '../paths';
 import { readMetadata } from '../metadata';
 import { parseArtists, createArtist, findArtistByName } from './artists';
@@ -103,12 +103,29 @@ async function createSongsFromSpecs(
 			duration: (spec.metadata.duration ?? 0) > 0 ? spec.metadata.duration : null
 		};
 
-		const song = createSong(db, input);
+		// Guard the row creation itself, not just the write-back. Each createSong is its
+		// own committed transaction, so an unguarded throw on spec N would abort the whole
+		// call after specs 0..N-1 were persisted, stranding the remaining saved files. On
+		// failure, drop this spec's already-saved upload so it doesn't orphan, and continue.
+		let song: Song;
+		try {
+			song = createSong(db, input);
+		} catch (err) {
+			console.error(`createSong failed for ${spec.originalFilename}:`, err);
+			try {
+				deleteFile(staticPath, spec.filepath);
+			} catch {
+				// best-effort cleanup of the orphaned upload
+			}
+			continue;
+		}
 		created.push(song);
 
 		// Write-back: persist the resolved DB state into the file's embedded tags.
 		// writeSongMetadata catches internally and returns a result; guard anyway so
-		// one bad file can never abort the whole batch.
+		// one bad file can never abort the whole batch. A failure here (e.g. an
+		// unsupported output format) leaves the song row created but its file tags
+		// unwritten — logged rather than surfaced, mirroring the Go oracle.
 		try {
 			const result = await writeSongMetadata(db, staticPath, song.id);
 			if (!result.success) {
