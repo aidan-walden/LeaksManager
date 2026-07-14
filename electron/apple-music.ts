@@ -424,11 +424,15 @@ function buildMetadataScript(
 	if (song.genre != null) {
 		lines.push(`set genre of ${trackVar} to ${nextArg(song.genre)}`);
 	}
-	if (song.year != null) {
-		lines.push(`set year of ${trackVar} to ${song.year}`);
+	// year/track number are interpolated into the script source (not passed via argv),
+	// so coerce to a finite integer first. This upholds the "these are numeric" contract
+	// at runtime rather than trusting the type — a non-numeric value would otherwise be
+	// injected verbatim into the AppleScript. A non-finite value is simply skipped.
+	if (song.year != null && Number.isFinite(Number(song.year))) {
+		lines.push(`set year of ${trackVar} to ${Math.trunc(Number(song.year))}`);
 	}
-	if (song.trackNumber != null) {
-		lines.push(`set track number of ${trackVar} to ${song.trackNumber}`);
+	if (song.trackNumber != null && Number.isFinite(Number(song.trackNumber))) {
+		lines.push(`set track number of ${trackVar} to ${Math.trunc(Number(song.trackNumber))}`);
 	}
 
 	return { script: lines.join('\n\t\t'), args };
