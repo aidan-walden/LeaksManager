@@ -1,6 +1,5 @@
 import type {
 	Album,
-	AlbumArtUploadRequest,
 	AppleMusicTrack,
 	Artist,
 	BatchResult,
