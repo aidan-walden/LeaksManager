@@ -2,7 +2,7 @@ import { shell } from 'electron';
 import type { Handler } from './ipc';
 import { API_CHANNELS } from './channels';
 import { cleanupFiles } from './files';
-import { staticFilePath, uploadsFilePath } from './paths';
+import { uploadsFilePath } from './paths';
 import { readMetadata } from './metadata';
 import { createArtist } from './domain/artists';
 import {
@@ -72,8 +72,12 @@ export const us1Handlers: Partial<Record<string, Handler>> = {
 	[API_CHANNELS.GetSongsCount]: (d) => getSongsCount(d.db),
 
 	// Metadata
+	// uploadsFilePath (not staticFilePath): the untrusted renderer relPath must be
+	// confined to the uploads/ subtree. staticFilePath only blocks ../ and absolute
+	// paths, which would still let a relPath like "local.db" read files elsewhere
+	// under userData. Callers already pass "uploads/..." paths.
 	[API_CHANNELS.ExtractMetadata]: (d, relPath) =>
-		readMetadata(staticFilePath(d.staticPath, relPath)),
+		readMetadata(uploadsFilePath(d.staticPath, relPath)),
 	[API_CHANNELS.WriteSongMetadata]: (d, songId) => writeSongMetadata(d.db, d.staticPath, songId),
 	[API_CHANNELS.WriteAlbumMetadata]: (d, albumId) =>
 		writeAlbumMetadata(d.db, d.staticPath, albumId),
