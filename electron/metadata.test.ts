@@ -154,6 +154,8 @@ describe('metadata round-trip parity (SC-002)', () => {
 			expect(got.genre).toBe('Hip-Hop');
 			expect(got.year).toBe(2024);
 			expect(got.trackNumber).toBe(3);
+			// readMetadata now computes duration (fractional seconds) rather than null.
+			expect(got.duration).toBeGreaterThan(0);
 
 			expect(got.artwork, 'expected embedded artwork to survive').not.toBeNull();
 			expect(got.artwork!.mimeType).toMatch(/^image\//);
