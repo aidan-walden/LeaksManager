@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { migrate } from '../db/migrate';
-import { registerLower } from '../db/connection';
+import { configureConnection } from '../db/connection';
 import { uploadAndExtractMetadata, createSongsWithMetadata } from './workflows';
 import { createArtist, findArtistByName } from './artists';
 import { createAlbum } from './albums';
@@ -36,7 +36,7 @@ describe('workflows', () => {
 
 	beforeEach(() => {
 		db = new Database(':memory:');
-		registerLower(db);
+		configureConnection(db);
 		migrate(db, MIGRATIONS_DIR);
 		staticPath = mkdtempSync(join(tmpdir(), 'leaks-wf-'));
 		mkdirSync(join(staticPath, 'uploads', 'songs'), { recursive: true });

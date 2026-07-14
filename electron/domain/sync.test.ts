@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { migrate } from '../db/migrate';
-import { registerLower } from '../db/connection';
+import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum } from './albums';
 import { createSong } from './songs';
@@ -21,7 +21,7 @@ describe('sync triggers flip synced=0 for exactly the affected rows (SC-003)', (
 
 	beforeEach(() => {
 		db = new Database(':memory:');
-		registerLower(db);
+		configureConnection(db);
 		migrate(db, MIGRATIONS_DIR);
 	});
 
