@@ -1,4 +1,5 @@
 import { posix, resolve, sep } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 // Port of backend/paths.go — dev/prod path resolution + upload-path traversal guards.
 // Trust boundary (FR-015): keep every guard. Stored relpaths use forward slashes
@@ -62,16 +63,20 @@ export function uploadsFilePath(staticPath: string, relPath: string): string {
 	return staticFilePath(staticPath, cleaned);
 }
 
-// newUploadPath generates a timestamped relpath under uploads/{category}/ and its
-// resolved full path. Returns both (relPath stored in DB, fullPath for writes).
+// newUploadPath generates a unique relpath under uploads/{category}/ and its resolved
+// full path. Returns both (relPath stored in DB, fullPath for writes). The timestamp
+// alone is only millisecond-granular, so a bulk import of two identically-named files
+// saved in the same millisecond would collide and silently overwrite; a random token
+// makes the generated name collision-free.
 export function newUploadPath(
 	staticPath: string,
 	category: string,
 	filename: string
 ): { relPath: string; fullPath: string } {
 	const safeFilename = normalizeUploadFilename(filename);
+	const token = randomBytes(6).toString('hex');
 	const relPath = normalizeUploadsRootRelPath(
-		posix.join(UPLOADS_ROOT, category, `${Date.now()}-${safeFilename}`)
+		posix.join(UPLOADS_ROOT, category, `${Date.now()}-${token}-${safeFilename}`)
 	);
 	return { relPath, fullPath: uploadsFilePath(staticPath, relPath) };
 }
