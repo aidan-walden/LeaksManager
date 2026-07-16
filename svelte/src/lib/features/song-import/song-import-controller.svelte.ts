@@ -160,6 +160,16 @@ export class SongImportController {
 			void this.#onComplete();
 			return createdSongs.length;
 		} catch (error) {
+			// A hard failure of the create call means no songs were created but the files
+			// were already saved to disk in phase 1. Clean them up so they don't orphan.
+			const staged = this.#stagedImport;
+			if (staged) {
+				try {
+					await this.#ipcActions.cleanupFiles(staged.filesData.map((file) => file.filepath));
+				} catch {
+					// best-effort — surface the original error below
+				}
+			}
 			this.#rejectPendingCompletion(error);
 			throw error;
 		}

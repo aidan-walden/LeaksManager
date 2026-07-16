@@ -83,6 +83,11 @@ export function getSongReadable(db: Database.Database, songId: number): SongRead
 	return song ? buildSongReadable(db, song) : null;
 }
 
+// updateSong performs a FULL-STATE replace, not a partial patch: `album_id` and
+// `track_number` are written from the input every time, so an omitted field is
+// interpreted as "clear it" (→ NULL), not "leave unchanged". The edit UI relies on this
+// to clear a track number or unassign an album. Any new caller must therefore send the
+// song's complete intended state, not a sparse diff.
 export function updateSong(db: Database.Database, input: UpdateSongInput): SongReadable | null {
 	const ts = now();
 
@@ -357,7 +362,7 @@ export async function writeAlbumMetadata(
 	const songsProcessed = results.filter((r) => r.success).length;
 	const songsFailed = results.length - songsProcessed;
 	return {
-		success: true,
+		success: songsFailed === 0,
 		message: `Processed album ${albumId}`,
 		songsProcessed,
 		songsFailed,

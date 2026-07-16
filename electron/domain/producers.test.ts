@@ -3,20 +3,22 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { migrate } from '../db/migrate';
-import { registerLower } from '../db/connection';
+import { configureConnection } from '../db/connection';
 import {
 	matchPatterns,
 	matchProducersFromFilename,
 	createProducerWithAliases,
+	deleteProducer,
 	type Pattern
 } from './producers';
 import { createArtist } from './artists';
+import { createSong } from './songs';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 function freshDb(): Database.Database {
 	const db = new Database(':memory:');
-	registerLower(db);
+	configureConnection(db);
 	migrate(db, MIGRATIONS_DIR);
 	return db;
 }
@@ -105,5 +107,51 @@ describe('matchProducersFromFilename', () => {
 		expect(() =>
 			createProducerWithAliases(db, { name: 'B', aliases: [{ name: 'dupe', artistIds: [] }] })
 		).toThrow();
+	});
+});
+
+// deleteProducer relies on ON DELETE CASCADE to clear producer_aliases,
+// producer_alias_artists and song_producers. Requires FK enforcement
+// (configureConnection); otherwise these rows orphan and stale aliases re-match.
+describe('deleteProducer cascades to aliases and links', () => {
+	let db: Database.Database;
+	beforeEach(() => {
+		db = freshDb();
+	});
+
+	it('removes aliases, alias-artist links, and song_producers on delete', () => {
+		const artist = createArtist(db, { name: 'Artist' });
+		const producer = createProducerWithAliases(db, {
+			name: 'Metro Boomin',
+			aliases: [{ name: 'Metro', artistIds: [artist.id] }]
+		});
+		const songId = createSong(db, {
+			name: 'Track',
+			filepath: 'uploads/songs/track.mp3',
+			artistIds: [artist.id],
+			producerIds: [producer.id],
+			albumId: null
+		}).id;
+
+		const count = (table: string, col: string, id: number) =>
+			(db.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE ${col} = ?`).get(id) as { c: number })
+				.c;
+
+		expect(count('producer_aliases', 'producer_id', producer.id)).toBe(1);
+		expect(count('song_producers', 'producer_id', producer.id)).toBe(1);
+		const aliasId = (
+			db.prepare(`SELECT id FROM producer_aliases WHERE producer_id = ?`).get(producer.id) as {
+				id: number;
+			}
+		).id;
+		expect(count('producer_alias_artists', 'alias_id', aliasId)).toBe(1);
+
+		deleteProducer(db, producer.id);
+
+		expect(count('producer_aliases', 'producer_id', producer.id)).toBe(0);
+		expect(count('producer_alias_artists', 'alias_id', aliasId)).toBe(0);
+		expect(count('song_producers', 'producer_id', producer.id)).toBe(0);
+		// The song row itself survives (only the producer link cascades).
+		expect(count('songs', 'id', songId)).toBe(1);
 	});
 });

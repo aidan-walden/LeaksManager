@@ -65,4 +65,18 @@ describe('migrate', () => {
 		// Migration 2 must have run: at least one sync trigger exists.
 		expect(names(db, 'trigger').length).toBeGreaterThan(0);
 	});
+
+	it('legacy DB already at the latest schema is stamped correctly, not re-migrated', () => {
+		// A tracking-less legacy DB that had ALL migrations applied in the golang-migrate
+		// era (is_single column + triggers present). Re-running 000003's non-idempotent
+		// ALTER TABLE ADD COLUMN would throw "duplicate column"; feature detection must
+		// stamp it at LATEST and skip re-application.
+		const db = new Database(':memory:');
+		db.exec(readFileSync(join(MIGRATIONS_DIR, '000001_initial_schema.up.sql'), 'utf8'));
+		db.exec(readFileSync(join(MIGRATIONS_DIR, '000002_sync_triggers.up.sql'), 'utf8'));
+		db.exec(readFileSync(join(MIGRATIONS_DIR, '000003_album_is_single.up.sql'), 'utf8'));
+
+		expect(() => migrate(db, MIGRATIONS_DIR)).not.toThrow();
+		expect(version(db)).toBe(LATEST);
+	});
 });

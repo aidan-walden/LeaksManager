@@ -25,6 +25,14 @@ export interface Pattern {
 const SONG_COLS =
 	's.id, s.name, s.album_id, s.artwork_path, s.genre, s.year, s.track_number, s.duration, s.filepath, s.file_type, s.created_at, s.updated_at, s.synced, s.apple_music_id';
 
+// Escape regex metacharacters in a producer term. `RegExp.escape` is only available
+// on Node 24+ (Electron's bundled runtime), but the test suite and tooling run on the
+// repo's Node 22, where it is undefined and would throw. This fallback keeps matching
+// working everywhere and also guards terms containing `.`, `(`, `+`, etc.
+function escapeRegExp(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function createProducerWithAliases(
 	db: Database.Database,
 	input: CreateProducerInput
@@ -233,7 +241,7 @@ export function matchPatterns(
 	for (const p of sorted) {
 		if (p.isAlias && !isArtistContextValid(p.aliasArtistIds)) continue;
 		if (p.term === '') continue;
-		const re = new RegExp(`\\b${(RegExp as { escape: (s: string) => string }).escape(p.term)}\\b`, 'g');
+		const re = new RegExp(`\\b${escapeRegExp(p.term)}\\b`, 'g');
 		for (const m of nameWithoutExt.matchAll(re)) {
 			const start = m.index ?? 0;
 			const end = start + m[0].length;
@@ -282,7 +290,7 @@ export async function writeProducerMetadata(
 	const songsProcessed = results.filter((r) => r.success).length;
 	const songsFailed = results.length - songsProcessed;
 	return {
-		success: true,
+		success: songsFailed === 0,
 		message: `Processed producer ${producerId}`,
 		songsProcessed,
 		songsFailed,

@@ -31,6 +31,27 @@ function tableExists(db: Database.Database, name: string): boolean {
 		.get(name);
 }
 
+function objectExists(db: Database.Database, type: string, name: string): boolean {
+	return !!db
+		.prepare(`SELECT name FROM sqlite_master WHERE type=? AND name=?`)
+		.get(type, name);
+}
+
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+	const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+	return cols.some((c) => c.name === column);
+}
+
+// A tracking-less DB predates our schema_migrations table (golang-migrate era). Infer
+// how far its schema already advanced from feature detection so we don't re-run an
+// already-applied, non-idempotent migration (e.g. 000003's ALTER TABLE ADD COLUMN would
+// fail with "duplicate column"). Newest feature first.
+function detectLegacyVersion(db: Database.Database): number {
+	if (columnExists(db, 'albums', 'is_single')) return 3; // 000003_album_is_single
+	if (objectExists(db, 'trigger', 'album_metadata_update_cascade')) return 2; // 000002_sync_triggers
+	return 1; // 000001_initial_schema (CORE_TABLE present)
+}
+
 function setVersion(db: Database.Database, version: number): void {
 	// golang-migrate keeps exactly one row; mirror that.
 	db.prepare('DELETE FROM schema_migrations').run();
@@ -53,11 +74,10 @@ export function migrate(db: Database.Database, migrationsDir: string): void {
 		current = row?.version ?? 0;
 	} else {
 		// No tracking table yet. A DB that already has CORE_TABLE predates our
-		// tracking (golang-migrate era) and holds migration 1's schema, so stamp
-		// it at version 1 and let the loop apply everything after it. A truly
+		// tracking (golang-migrate era); infer how far its schema advanced by feature
+		// detection so the loop only applies migrations it is actually missing. A truly
 		// fresh DB starts at 0 and runs the whole set.
-		// ponytail: assumes legacy DB predates is_single; add a column guard if that ceiling breaks
-		current = tableExists(db, CORE_TABLE) ? 1 : 0;
+		current = tableExists(db, CORE_TABLE) ? detectLegacyVersion(db) : 0;
 		db.exec('CREATE TABLE schema_migrations (version BIGINT NOT NULL, dirty BOOLEAN NOT NULL)');
 		setVersion(db, current);
 	}

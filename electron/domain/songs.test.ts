@@ -5,11 +5,11 @@ import { dirname, join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { migrate } from '../db/migrate';
-import { registerLower } from '../db/connection';
+import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum } from './albums';
 import { createProducerWithAliases } from './producers';
-import { createSong } from './songs';
+import { createSong, deleteSong } from './songs';
 import { updateSettings } from './settings';
 // buildSongTags is the T032 write-path port of backend/metadata.go buildSongTags.
 // It assembles the cross-format tag payload from the DB (mediabunny MetadataTags)
@@ -28,7 +28,7 @@ describe('buildSongTags single-vs-album track-number rule (FR-009)', () => {
 
 	beforeEach(() => {
 		db = new Database(':memory:');
-		registerLower(db);
+		configureConnection(db);
 		migrate(db, MIGRATIONS_DIR);
 		staticPath = mkdtempSync(join(tmpdir(), 'leaks-songtags-'));
 		mkdirSync(join(staticPath, 'uploads', 'songs'), { recursive: true });
@@ -123,5 +123,54 @@ describe('buildSongTags single-vs-album track-number rule (FR-009)', () => {
 		expect(tags.album).toBe('Real Album');
 		expect(tags.trackNumber).toBe(2);
 		expect(tags.tracksTotal).toBe(3);
+	});
+});
+
+// deleteSong relies on ON DELETE CASCADE to clear song_artists / song_producers.
+// This only holds when foreign-key enforcement is enabled per-connection
+// (configureConnection); without it the junction rows would orphan.
+describe('deleteSong cascades to junction rows', () => {
+	let db: Database.Database;
+	let staticPath: string;
+
+	beforeEach(() => {
+		db = new Database(':memory:');
+		configureConnection(db);
+		migrate(db, MIGRATIONS_DIR);
+		staticPath = mkdtempSync(join(tmpdir(), 'leaks-delsong-'));
+		mkdirSync(join(staticPath, 'uploads', 'songs'), { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(staticPath, { recursive: true, force: true });
+	});
+
+	it('removes song_artists and song_producers when the song is deleted', () => {
+		const artist = createArtist(db, { name: 'Artist' });
+		const producer = createProducerWithAliases(db, { name: 'Prod', aliases: [] });
+		const songId = createSong(db, {
+			name: 'Track',
+			filepath: 'uploads/songs/track.mp3',
+			artistIds: [artist.id],
+			producerIds: [producer.id],
+			albumId: null
+		}).id;
+
+		const countArtists = () =>
+			(db.prepare(`SELECT COUNT(*) AS c FROM song_artists WHERE song_id = ?`).get(songId) as {
+				c: number;
+			}).c;
+		const countProducers = () =>
+			(db.prepare(`SELECT COUNT(*) AS c FROM song_producers WHERE song_id = ?`).get(songId) as {
+				c: number;
+			}).c;
+
+		expect(countArtists()).toBe(1);
+		expect(countProducers()).toBe(1);
+
+		deleteSong(db, staticPath, songId);
+
+		expect(countArtists()).toBe(0);
+		expect(countProducers()).toBe(0);
 	});
 });

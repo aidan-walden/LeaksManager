@@ -81,6 +81,11 @@ function disposeInput(input: Input): void {
 // entries such as previously-written producer credits) is preserved. Passing a static
 // tags object to mediabunny would REPLACE all input metadata; merging keeps parity with
 // the old backend, which only ever touched the fields it wrote.
+//
+// Known limitation (parity with the Go backend): because buildSongTags only sets keys
+// with a non-empty DB value, a merge can never *clear* a tag. Emptying e.g. genre in the
+// app leaves the file's old genre untouched. Clearing would require emitting explicit
+// empty/sentinel values here — deliberately not done, to match prior behavior.
 function mergeTags(inputTags: MetadataTags, overrides: MetadataTags): MetadataTags {
 	return { ...inputTags, ...overrides, raw: { ...inputTags.raw, ...overrides.raw } };
 }
@@ -91,6 +96,17 @@ export async function readMetadata(fullPath: string): Promise<ExtractedMetadata>
 	try {
 		const tags = await input.getMetadataTags();
 
+		// mediabunny computes duration from the container rather than the tags. Kept as
+		// fractional seconds to match the Go oracle (float64) and the REAL `duration`
+		// column. A file that can't report a positive duration stays null.
+		let duration: number | null = null;
+		try {
+			const seconds = await input.computeDuration();
+			if (Number.isFinite(seconds) && seconds > 0) duration = seconds;
+		} catch {
+			duration = null;
+		}
+
 		const image = tags.images?.[0];
 		return {
 			title: tags.title ?? null,
@@ -100,8 +116,10 @@ export async function readMetadata(fullPath: string): Promise<ExtractedMetadata>
 			year: tags.date ? tags.date.getFullYear() : null,
 			genre: tags.genre ?? null,
 			trackNumber: tags.trackNumber ?? null,
+			// readMetadata doesn't surface producers — they only round-trip on the write
+			// side via the format-native composer/producer raw keys (see buildSongTags).
 			producer: null,
-			duration: null,
+			duration,
 			artwork: image
 				? { data: Buffer.from(image.data).toString('base64'), mimeType: image.mimeType }
 				: null
