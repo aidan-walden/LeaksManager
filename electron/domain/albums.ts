@@ -66,13 +66,9 @@ export function updateAlbum(db: Database.Database, input: UpdateAlbumInput): voi
 	})(db);
 }
 
+// Foreign keys handle the rest: songs get album_id = NULL, and artist links are deleted.
 export function deleteAlbum(db: Database.Database, albumId: number): void {
-	db.transaction((tx) => {
-		// Unlink songs (album_id → NULL), then drop artist links and the album.
-		tx.prepare(`UPDATE songs SET album_id = NULL WHERE album_id = ?`).run(albumId);
-		tx.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(albumId);
-		tx.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
-	})(db);
+	db.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
 }
 
 export function getAlbumsWithSongs(
@@ -100,11 +96,8 @@ export function getAlbumWithArtists(
 	db: Database.Database,
 	albumId: number
 ): AlbumWithArtists | null {
-	const row = db.prepare(`SELECT ${ALBUM_COLS} FROM albums WHERE id = ?`).get(albumId) as
-		| Record<string, unknown>
-		| undefined;
-	if (!row) return null;
-	return { ...rowToAlbum(row), artists: getArtistsForAlbum(db, albumId) };
+	const album = getAlbumById(db, albumId);
+	return album ? { ...album, artists: getArtistsForAlbum(db, albumId) } : null;
 }
 
 export function getArtistsForAlbum(db: Database.Database, albumId: number): Artist[] {
@@ -135,7 +128,7 @@ export function findAlbumByName(db: Database.Database, name: string): Album | nu
 }
 
 // True if the album's ordered artist list equals artistIds exactly.
-export function artistSetMatches(
+function artistSetMatches(
 	db: Database.Database,
 	albumId: number,
 	artistIds: number[]
@@ -150,15 +143,15 @@ export function artistSetMatches(
 }
 
 // Finds an album by case-insensitive name with the exact ordered artist set, or
-// creates one. Empty trimmed name → { album: null, created: false }.
+// creates one. An empty trimmed name returns null.
 export function resolveOrCreateAlbum(
 	db: Database.Database,
 	name: string,
 	artistIds: number[],
 	opts: AlbumResolutionOpts = {}
-): { album: Album | null; created: boolean } {
+): Album | null {
 	const trimmed = name.trim();
-	if (trimmed === '') return { album: null, created: false };
+	if (trimmed === '') return null;
 	const ts = now();
 
 	return db.transaction((tx) => {
@@ -175,7 +168,7 @@ export function resolveOrCreateAlbum(
 					alb.isSingle = true;
 					alb.updatedAt = ts;
 				}
-				return { album: alb, created: false };
+				return alb;
 			}
 		}
 
@@ -187,15 +180,12 @@ export function resolveOrCreateAlbum(
 			artworkPath = songRow?.artwork_path ?? null;
 		}
 
-		return {
-			album: insertAlbumWithArtists(
-				tx,
-				{ name: trimmed, artworkPath, genre: null, year: null, isSingle: opts.isSingle ?? false },
-				artistIds,
-				ts
-			),
-			created: true
-		};
+		return insertAlbumWithArtists(
+			tx,
+			{ name: trimmed, artworkPath, genre: null, year: null, isSingle: opts.isSingle ?? false },
+			artistIds,
+			ts
+		);
 	})(db);
 }
 

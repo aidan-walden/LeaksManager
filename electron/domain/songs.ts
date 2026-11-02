@@ -88,11 +88,11 @@ export function updateSong(db: Database.Database, input: UpdateSongInput): SongR
 
 	let albumId = input.albumId ?? null;
 	if (input.albumName != null) {
-		const { album } = resolveOrCreateAlbum(db, input.albumName, input.artistIds, {
+		const album = resolveOrCreateAlbum(db, input.albumName, input.artistIds, {
 			isSingle: input.isSingle,
 			inheritArtworkFromSongId: input.id
 		});
-		albumId = album ? album.id : null;
+		albumId = album?.id ?? null;
 	}
 
 	db.transaction((tx) => {
