@@ -46,9 +46,8 @@ export interface AlbumWithArtists extends Album {
 	artists: Artist[];
 }
 
-export interface AlbumWithSongs extends Album {
-	artists: Artist[];
-	songs: Song[];
+export interface AlbumSummary extends AlbumWithArtists {
+	songCount: number;
 }
 
 export interface Song {
@@ -139,20 +138,15 @@ export interface Settings {
 	updatedAt: number;
 }
 
-export interface Limits {
-	songsPerPage: number;
-	albumsPerPage: number;
-}
-
 export interface InitialData {
 	songs: SongReadable[];
 	songsCount: number;
-	albums: AlbumWithSongs[];
+	albums: AlbumSummary[];
 	artists: Artist[];
 	producers: ProducerWithAliases[];
 	settings: Settings;
 	isMac: boolean;
-	limits: Limits;
+	songsPerPage: number;
 	hasUnsyncedChanges: boolean;
 }
 

@@ -7,6 +7,7 @@ import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum, deleteAlbum } from './albums';
 import { createSong } from './songs';
+import { getInitialData } from './initial-data';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
@@ -41,5 +42,26 @@ describe('albums', () => {
 		expect(song).toEqual({ album_id: null, synced: 0 });
 		expect(db.prepare('SELECT COUNT(*) AS c FROM album_artists').get()).toEqual({ c: 0 });
 		expect(db.prepare('SELECT COUNT(*) AS c FROM albums').get()).toEqual({ c: 0 });
+	});
+
+	it('initial data includes every album', () => {
+		for (let i = 0; i < 26; i++) {
+			createAlbum(db, { name: `Album ${i}`, artistIds: [artistId] });
+		}
+
+		const { albums } = getInitialData(db);
+
+		expect(albums).toHaveLength(26);
+		expect(albums.every((album) => album.artists.length === 1)).toBe(true);
+	});
+
+	it('counts each album\'s songs', () => {
+		const withSong = createAlbum(db, { name: 'With song', artistIds: [artistId] });
+		createAlbum(db, { name: 'Empty', artistIds: [artistId] });
+		seedSong(withSong.id);
+
+		const counts = Object.fromEntries(getInitialData(db).albums.map((a) => [a.name, a.songCount]));
+
+		expect(counts).toEqual({ 'With song': 1, Empty: 0 });
 	});
 });

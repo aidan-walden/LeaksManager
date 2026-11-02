@@ -6,11 +6,11 @@
 	import EntityActionsMenu from '$lib/components/shared/entity-actions-menu.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { AlbumWithSongs } from '$lib/ipc';
+	import type { AlbumSummary } from '$lib/ipc';
 	import { toAssetUrl } from '$lib/utils';
 
 	let creatingAlbum = $state(false);
-	let currentAlbum = $state<AlbumWithSongs | null>(null);
+	let currentAlbum = $state<AlbumSummary | null>(null);
 	const { ipcActions } = getAppServicesContext();
 
 	async function onDelete(id: number) {
@@ -23,7 +23,7 @@
 		creatingAlbum = true;
 	}
 
-	function onClickEdit(album: AlbumWithSongs) {
+	function onClickEdit(album: AlbumSummary) {
 		currentAlbum = album;
 		creatingAlbum = true;
 	}
@@ -33,7 +33,7 @@
 		defaultThumbnail,
 		onUpload
 	}: {
-		albums: AlbumWithSongs[];
+		albums: AlbumSummary[];
 		defaultThumbnail: string;
 		onUpload: (files: File[], albumId: number) => Promise<void>;
 	} = $props();

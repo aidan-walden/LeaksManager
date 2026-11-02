@@ -16,6 +16,6 @@ export const load = async () => {
 		settings: data.settings,
 		hasUnsyncedChanges: data.hasUnsyncedChanges,
 		isServerMac: data.isMac,
-		limits: data.limits
+		songsPerPage: data.songsPerPage
 	};
 };

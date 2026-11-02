@@ -32,7 +32,7 @@
 {#if tab === 'songs'}
 	<SongsTab
 		songs={data.songs}
-		songsPerPage={data.limits.songsPerPage}
+		songsPerPage={data.songsPerPage}
 		songsCount={data.songsCount}
 		onUpload={async (files) => {
 			await songImport.handleUpload(files);

@@ -2,14 +2,13 @@ import type Database from 'better-sqlite3';
 import type {
 	Album,
 	AlbumWithArtists,
-	AlbumWithSongs,
+	AlbumSummary,
 	Artist,
-	Song,
 	CreateAlbumInput,
 	UpdateAlbumInput,
 	AlbumResolutionOpts
 } from './models';
-import { ALBUM_COLS, ARTIST_COLS, SONG_COLS, qualify, rowToAlbum, rowToArtist, rowToSong, now } from './rows';
+import { ALBUM_COLS, ARTIST_COLS, qualify, rowToAlbum, rowToArtist, now } from './rows';
 import { linkOrdered, replaceOrderedLinks } from './links';
 import { saveBase64 } from '../files';
 
@@ -71,17 +70,16 @@ export function deleteAlbum(db: Database.Database, albumId: number): void {
 	db.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
 }
 
-export function getAlbumsWithSongs(
-	db: Database.Database,
-	limit: number,
-	offset: number
-): AlbumWithSongs[] {
+export function getAlbumSummaries(db: Database.Database): AlbumSummary[] {
 	const rows = db
-		.prepare(`SELECT ${ALBUM_COLS} FROM albums ORDER BY created_at DESC LIMIT ? OFFSET ?`)
-		.all(limit, offset) as Record<string, unknown>[];
+		.prepare(
+			`SELECT ${ALBUM_COLS}, (SELECT COUNT(*) FROM songs WHERE album_id = albums.id) AS song_count
+			 FROM albums ORDER BY created_at DESC`
+		)
+		.all() as Record<string, unknown>[];
 	return rows.map((r) => {
-		const alb = rowToAlbum(r);
-		return { ...alb, artists: getArtistsForAlbum(db, alb.id), songs: getSongsForAlbum(db, alb.id) };
+		const album = rowToAlbum(r);
+		return { ...album, artists: getArtistsForAlbum(db, album.id), songCount: Number(r.song_count) };
 	});
 }
 
@@ -111,13 +109,6 @@ export function getArtistsForAlbum(db: Database.Database, albumId: number): Arti
 		)
 		.all(albumId) as Record<string, unknown>[];
 	return rows.map(rowToArtist);
-}
-
-export function getSongsForAlbum(db: Database.Database, albumId: number): Song[] {
-	const rows = db
-		.prepare(`SELECT ${SONG_COLS} FROM songs WHERE album_id = ? ORDER BY track_number, created_at`)
-		.all(albumId) as Record<string, unknown>[];
-	return rows.map(rowToSong);
 }
 
 export function findAlbumByName(db: Database.Database, name: string): Album | null {

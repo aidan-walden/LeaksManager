@@ -6,7 +6,7 @@
 	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
-	import type { AlbumWithSongs, FileUpload } from '$lib/ipc';
+	import type { AlbumSummary, FileUpload } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import { fileToUpload } from '$lib/utils/file-upload';
 
@@ -16,7 +16,7 @@
 		album
 	}: {
 		open: boolean;
-		album: AlbumWithSongs | null;
+		album: AlbumSummary | null;
 	} = $props();
 
 	const { ipcActions, runtimeErrors } = getAppServicesContext();

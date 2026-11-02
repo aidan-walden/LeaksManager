@@ -9,7 +9,7 @@
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import type { AlbumWithSongs, SongReadable } from '$lib/ipc';
+	import type { AlbumSummary, SongReadable } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -29,7 +29,7 @@
 
 	const artists = $derived(getArtistsContext());
 	const producers = $derived(getProducersContext());
-	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
+	const albums = $derived(getAlbumsContext<AlbumSummary>());
 	const { ipcActions } = getAppServicesContext();
 
 	const initial = untrack(() => ({
@@ -85,7 +85,7 @@
 		albums.find((album) => normalizeAlbumName(album.name) === normalizeAlbumName(albumName)) ?? null
 	);
 
-	const totalTracks = $derived(isSingle ? 1 : (matchedAlbum?.songs.length ?? 0));
+	const totalTracks = $derived(isSingle ? 1 : (matchedAlbum?.songCount ?? 0));
 
 	$effect(() => {
 		if (isSingle) {
