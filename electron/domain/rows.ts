@@ -1,17 +1,16 @@
 import type { Artist, Album, Song, Producer } from './models';
 
 // Row mappers: snake_case SQLite rows → camelCase domain models. better-sqlite3
-// returns INTEGER/REAL as number and NULL as null; 0/1 sync flags become booleans.
-// Go used sql.NullInt64 for timestamps (zero when null) — mirror with `?? 0`.
+// returns INTEGER/REAL as number and NULL as null. A null timestamp becomes 0.
 
 export type Row = Record<string, unknown>;
 
 export const SONG_COLS =
-	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id';
+	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, created_at, updated_at, apple_music_id';
 export const ALBUM_COLS =
-	'id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced';
+	'id, name, artwork_path, genre, year, is_single, created_at, updated_at';
 export const ARTIST_COLS =
-	'id, name, image, career_start_year, career_end_year, created_at, updated_at, synced';
+	'id, name, image, career_start_year, career_end_year, created_at, updated_at';
 
 // Prefixes each column with a table alias, for SELECTs that join a junction table.
 export const qualify = (cols: string, alias: string): string =>
@@ -36,8 +35,7 @@ export function rowToArtist(r: Row): Artist {
 		careerStartYear: int(r.career_start_year),
 		careerEndYear: int(r.career_end_year),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 
@@ -50,8 +48,7 @@ export function rowToAlbum(r: Row): Album {
 		year: int(r.year),
 		isSingle: bool(r.is_single),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 
@@ -66,11 +63,9 @@ export function rowToSong(r: Row): Song {
 		trackNumber: int(r.track_number),
 		duration: int(r.duration),
 		filepath: String(r.filepath),
-		fileType: str(r.file_type),
 		appleMusicId: r.apple_music_id == null ? undefined : String(r.apple_music_id),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 

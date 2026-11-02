@@ -58,10 +58,8 @@ export function createSong(db: Database.Database, input: CreateSongInput): Song 
 			trackNumber: input.trackNumber ?? null,
 			duration: input.duration ?? null,
 			filepath: input.filepath,
-			fileType: null,
 			createdAt: ts,
-			updatedAt: ts,
-			synced: false
+			updatedAt: ts
 		};
 	})(db);
 }

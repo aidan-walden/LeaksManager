@@ -99,14 +99,10 @@ export async function readMetadata(fullPath: string): Promise<ExtractedMetadata>
 		return {
 			title: tags.title ?? null,
 			artist: tags.artist ?? null,
-			albumArtist: tags.albumArtist ?? null,
 			album: tags.album ?? null,
 			year: tags.date ? tags.date.getFullYear() : null,
 			genre: tags.genre ?? null,
 			trackNumber: tags.trackNumber ?? null,
-			// readMetadata doesn't surface producers — they only round-trip on the write
-			// side via the format-native composer/producer raw keys (see buildSongTags).
-			producer: null,
 			duration,
 			artwork: image
 				? { data: Buffer.from(image.data).toString('base64'), mimeType: image.mimeType }

@@ -31,7 +31,7 @@ function insertAlbumWithArtists(
 		.run(fields.name, fields.artworkPath, fields.genre, fields.year, fields.isSingle ? 1 : 0, ts, ts);
 	const albumId = Number(info.lastInsertRowid);
 	linkOrdered(tx, 'album_artists', albumId, artistIds, ts);
-	return { id: albumId, ...fields, createdAt: ts, updatedAt: ts, synced: false };
+	return { id: albumId, ...fields, createdAt: ts, updatedAt: ts };
 }
 
 export function createAlbum(db: Database.Database, input: CreateAlbumInput): Album {

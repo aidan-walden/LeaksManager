@@ -9,12 +9,10 @@ export interface ArtworkData {
 export interface ExtractedMetadata {
 	title: string | null;
 	artist: string | null;
-	albumArtist: string | null;
 	album: string | null;
 	year: number | null;
 	genre: string | null;
 	trackNumber: number | null;
-	producer: string | null;
 	duration: number | null;
 	artwork: ArtworkData | null;
 }
@@ -27,7 +25,6 @@ export interface Artist {
 	careerEndYear: number | null;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
 }
 
 export interface Album {
@@ -39,7 +36,6 @@ export interface Album {
 	isSingle: boolean;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
 }
 
 export interface AlbumWithArtists extends Album {
@@ -60,11 +56,9 @@ export interface Song {
 	trackNumber: number | null;
 	duration: number | null;
 	filepath: string;
-	fileType: string | null;
 	appleMusicId?: string;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
 }
 
 export interface SongReadable extends Song {

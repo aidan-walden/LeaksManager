@@ -22,12 +22,10 @@ function emptyMeta(): ExtractedMetadata {
 	return {
 		title: null,
 		artist: null,
-		albumArtist: null,
 		album: null,
 		year: null,
 		genre: null,
 		trackNumber: null,
-		producer: null,
 		duration: null,
 		artwork: null
 	};

@@ -37,8 +37,7 @@ export function createArtist(db: Database.Database, input: CreateArtistInput): A
 		careerStartYear: input.careerStartYear ?? null,
 		careerEndYear: input.careerEndYear ?? null,
 		createdAt: ts,
-		updatedAt: ts,
-		synced: false
+		updatedAt: ts
 	};
 }
 

@@ -100,15 +100,19 @@ function sampleTags(): MetadataTags {
 	};
 }
 
-// Reads a single raw metadata key straight from the file (readMetadata doesn't surface
-// producers), disposing the input so the round-trip suite can't leak fds.
-async function readRawTag(path: string, key: string): Promise<unknown> {
+// Reads tags straight from the file, for tags that readMetadata doesn't surface, and
+// disposes the input so the round-trip suite can't leak fds.
+async function readTags(path: string): Promise<MetadataTags> {
 	const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS });
 	try {
-		return (await input.getMetadataTags()).raw?.[key];
+		return await input.getMetadataTags();
 	} finally {
 		input.dispose();
 	}
+}
+
+async function readRawTag(path: string, key: string): Promise<unknown> {
+	return (await readTags(path)).raw?.[key];
 }
 
 // Assert the audio stream survived the metadata write: the file still demuxes to
@@ -149,7 +153,7 @@ describe('metadata round-trip parity (SC-002)', () => {
 
 			expect(got.title).toBe('Test Title');
 			expect(got.artist).toBe('Test Artist');
-			expect(got.albumArtist).toBe('Various Artists');
+			expect((await readTags(path)).albumArtist).toBe('Various Artists');
 			expect(got.album).toBe('Test Album');
 			expect(got.genre).toBe('Hip-Hop');
 			expect(got.year).toBe(2024);
