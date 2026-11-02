@@ -6,20 +6,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import { SongImportController } from '$lib/features/song-import/song-import-controller.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import { setArtistsContext } from '$lib/contexts/artists-context';
-	import { setAlbumsContext } from '$lib/contexts/albums-context';
-	import { setProducersContext } from '$lib/contexts/producers-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
-	import type { TabViewData } from '$lib/view-models/tab-data';
+	import type { InitialData } from '$lib/ipc';
 
-	let { tab, data }: { tab: string; data: TabViewData } = $props();
+	let { tab, data }: { tab: string; data: InitialData } = $props();
 
-	// Set context with a getter function to maintain reactivity
-	// Context must be set during component initialization
-	setArtistsContext(() => data.artists);
-	setAlbumsContext(() => data.albums);
-	setProducersContext(() => data.producers);
 	const { ipcActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';

@@ -1,10 +1,12 @@
+import type { InitialData } from '$lib/ipc';
+
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
 	namespace App {
 		// interface Error {}
 		// interface Locals {}
-		// interface PageData {}
+		interface PageData extends InitialData {}
 		// interface PageState {}
 		// interface Platform {}
 	}

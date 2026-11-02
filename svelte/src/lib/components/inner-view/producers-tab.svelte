@@ -4,20 +4,18 @@
 	import EntityActionsMenu from '$lib/components/shared/entity-actions-menu.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { TabViewData } from '$lib/view-models/tab-data';
-
-	type ProducerElement = TabViewData['producers'][number];
+	import type { Artist, ProducerWithAliases } from '$lib/ipc';
 
 	let {
 		producers,
 		artists
 	}: {
-		producers: TabViewData['producers'];
-		artists: TabViewData['artists'];
+		producers: ProducerWithAliases[];
+		artists: Artist[];
 	} = $props();
 
 	let dialogOpen = $state(false);
-	let currentProducer = $state<ProducerElement | null>(null);
+	let currentProducer = $state<ProducerWithAliases | null>(null);
 	const { ipcActions } = getAppServicesContext();
 
 	function openCreateModal() {
@@ -25,7 +23,7 @@
 		dialogOpen = true;
 	}
 
-	function onClickEdit(producer: ProducerElement) {
+	function onClickEdit(producer: ProducerWithAliases) {
 		currentProducer = producer;
 		dialogOpen = true;
 	}

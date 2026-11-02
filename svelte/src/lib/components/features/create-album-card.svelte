@@ -5,7 +5,7 @@
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
-	import { getArtistsContext } from '$lib/contexts/artists-context';
+	import { page } from '$app/state';
 	import type { AlbumSummary, FileUpload } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import { fileToUpload } from '$lib/utils/file-upload';
@@ -20,7 +20,7 @@
 	} = $props();
 
 	const { ipcActions, runtimeErrors } = getAppServicesContext();
-	const artists = $derived(getArtistsContext());
+	const artists = $derived(page.data.artists);
 
 	const initial = untrack(() => ({
 		name: album?.name ?? '',

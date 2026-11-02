@@ -67,7 +67,7 @@ To add a migration, create matching `00000N_name.up.sql` and `00000N_name.down.s
 
 - Svelte 5 (runes), SvelteKit with `adapter-static`, SSR disabled under `svelte/src/routes/`.
 - Routing is tab-based under `routes/[tab]/`; entity views live in `lib/components/inner-view/`.
-- Per-entity Svelte contexts in `lib/contexts/` act as caches; `lib/stores/sync.svelte.ts` tracks Apple Music sync state.
+- Components read loaded entities from `page.data` (`$app/state`), typed as `InitialData` in `app.d.ts`; `lib/stores/sync.svelte.ts` tracks Apple Music sync state.
 - UI uses shadcn-svelte-extras (jsrepo) + Tailwind v4. Prefer an existing component from `@ieedan/shadcn-svelte-extras` via jsrepo before hand-writing a new one.
 - Domain helpers worth knowing: `lib/utils/artist-parser.ts` and producer alias matching mirror Electron main-process logic. Keep them consistent.
 

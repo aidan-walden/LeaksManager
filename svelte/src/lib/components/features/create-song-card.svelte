@@ -6,10 +6,8 @@
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
-	import { getArtistsContext } from '$lib/contexts/artists-context';
-	import { getProducersContext } from '$lib/contexts/producers-context';
-	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import type { AlbumSummary, SongReadable } from '$lib/ipc';
+	import { page } from '$app/state';
+	import type { SongReadable } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -27,9 +25,9 @@
 		song: SongReadable;
 	} = $props();
 
-	const artists = $derived(getArtistsContext());
-	const producers = $derived(getProducersContext());
-	const albums = $derived(getAlbumsContext<AlbumSummary>());
+	const artists = $derived(page.data.artists);
+	const producers = $derived(page.data.producers);
+	const albums = $derived(page.data.albums);
 	const { ipcActions } = getAppServicesContext();
 
 	const initial = untrack(() => ({
