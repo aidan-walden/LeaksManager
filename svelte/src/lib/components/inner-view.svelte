@@ -57,13 +57,13 @@
 	bind:open={songImport.showArtistMappingDialog}
 	unmappedArtists={songImport.unmappedArtists}
 	existingArtists={data.artists}
-	onResolve={songImport.handleArtistMapping.bind(songImport)}
-	onCancel={songImport.handleArtistMappingCancel.bind(songImport)}
+	onResolve={songImport.handleArtistMapping}
+	onCancel={songImport.handleArtistMappingCancel}
 />
 
 <!-- Artwork Choice Dialog -->
 <ArtworkChoiceDialog
 	bind:open={songImport.showArtworkChoiceDialog}
 	filesWithArtwork={songImport.filesWithArtworkCount}
-	onChoice={songImport.handleArtworkChoice.bind(songImport)}
+	onChoice={songImport.handleArtworkChoice}
 />
