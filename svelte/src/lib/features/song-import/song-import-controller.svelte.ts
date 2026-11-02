@@ -1,4 +1,4 @@
-import type { IpcActions } from '$lib/services/ipc-actions';
+import type { IpcActions } from '$lib/services/ipc-actions.svelte';
 import type { SongImportDraft } from '$lib/ipc';
 import { fileToUpload } from '$lib/utils/file-upload';
 

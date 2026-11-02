@@ -4,7 +4,7 @@ import SongRowActions from '$lib/components/features/song-row-actions.svelte';
 import { invalidateAll } from '$app/navigation';
 import SongHover from './table/song-hover.svelte';
 import type { SongReadable } from '$lib/ipc';
-import type { IpcActions } from '$lib/services/ipc-actions';
+import type { IpcActions } from '$lib/services/ipc-actions.svelte';
 
 export function createSongColumns(
 	ipcActions: Pick<IpcActions, 'deleteSong'>

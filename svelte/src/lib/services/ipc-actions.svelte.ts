@@ -10,7 +10,9 @@ export function createIpcActions(runtimeErrors: RuntimeErrorNotifier) {
 				const method = getRawIpcBindings()[name] as (
 					...args: Parameters<Method>
 				) => ReturnType<Method>;
-				return await method(...args);
+				// $state proxies can't cross IPC: structured clone rejects them.
+				const plainArgs = args.map((arg) => $state.snapshot(arg)) as Parameters<Method>;
+				return await method(...plainArgs);
 			} catch (error) {
 				runtimeErrors.notify(error, name);
 				throw error;

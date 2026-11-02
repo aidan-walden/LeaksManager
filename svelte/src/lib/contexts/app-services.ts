@@ -1,6 +1,6 @@
 import { getContext, setContext } from 'svelte';
 import type { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-import type { IpcActions } from '$lib/services/ipc-actions';
+import type { IpcActions } from '$lib/services/ipc-actions.svelte';
 import type { SyncState } from '$lib/stores/sync.svelte';
 
 const APP_SERVICES_KEY = Symbol('app-services');

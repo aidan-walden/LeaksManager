@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { setAppServicesContext } from '$lib/contexts/app-services';
 	import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-	import { createIpcActions } from '$lib/services/ipc-actions';
+	import { createIpcActions } from '$lib/services/ipc-actions.svelte';
 	import { SyncState } from '$lib/stores/sync.svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import Toaster from '$lib/components/ui/sonner/sonner.svelte';

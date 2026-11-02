@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRawIpcBindings, type RawIpcBindings } from './bindings';
 import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-import { createIpcActions } from '$lib/services/ipc-actions';
+import { createIpcActions } from '$lib/services/ipc-actions.svelte';
 
 describe('ipc actions', () => {
 	let api: RawIpcBindings;

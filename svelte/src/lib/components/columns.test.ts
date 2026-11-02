@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IpcActions } from '$lib/services/ipc-actions';
+import type { IpcActions } from '$lib/services/ipc-actions.svelte';
 
 vi.mock('./ui/data-table/render-helpers.js', () => ({
 	renderComponent: vi.fn((_component, props) => props)
