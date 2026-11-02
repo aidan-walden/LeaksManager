@@ -19,7 +19,6 @@
 
 	let {
 		open = $bindable(),
-		onOpenChange,
 		title,
 		formId,
 		submitLabel = 'Create',
@@ -29,7 +28,6 @@
 		onSubmit
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
 		title: string;
 		formId: string;
 		submitLabel?: string;
@@ -72,7 +70,6 @@
 				return;
 			}
 
-			formElement.reset();
 			await invalidateAll();
 			open = false;
 		} finally {
@@ -128,7 +125,7 @@
 	</Tabs.Root>
 {/snippet}
 
-<AlertDialog.Root bind:open {onOpenChange}>
+<AlertDialog.Root bind:open>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>{title}</AlertDialog.Title>

@@ -40,17 +40,9 @@
 	<Button onclick={openCreateModal}>+</Button>
 </div>
 
-<CreateProducerCard
-	bind:open={dialogOpen}
-	producer={currentProducer}
-	onOpenChange={(value) => {
-		dialogOpen = value;
-		if (!value) {
-			currentProducer = null;
-		}
-	}}
-	{artists}
-/>
+{#if dialogOpen}
+	<CreateProducerCard bind:open={dialogOpen} producer={currentProducer} {artists} />
+{/if}
 
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each producers as producer (producer.id)}

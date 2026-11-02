@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -13,14 +14,13 @@
 
 	type ArtistOption = { id: number; name: string };
 
+	// Mount this card only while its dialog is open: the form state starts from `producer`.
 	let {
 		open = $bindable(),
-		onOpenChange,
 		artists,
 		producer = null
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
 		artists: ArtistOption[];
 		producer?: ProducerWithAliases | null;
 	} = $props();
@@ -30,8 +30,15 @@
 		artistIds: number[];
 	};
 
-	let aliases = $state<Alias[]>([]);
-	let name = $state('');
+	const initial = untrack(() => ({
+		name: producer?.name ?? '',
+		aliases: (producer?.aliases ?? []).map(
+			(alias): Alias => ({ name: alias.alias, artistIds: [...alias.artistIds] })
+		)
+	}));
+
+	let aliases = $state(initial.aliases);
+	let name = $state(initial.name);
 	const { ipcActions } = getAppServicesContext();
 
 	function addAlias() {
@@ -42,26 +49,7 @@
 		aliases = aliases.filter((_, i) => i !== index);
 	}
 
-	// Reset state whenever producer changes or the dialog closes
-	$effect(() => {
-		if (producer) {
-			name = producer.name;
-			aliases = producer.aliases.map((alias) => ({
-				name: alias.alias,
-				artistIds: [...alias.artistIds]
-			}));
-			return;
-		}
-
-		if (!open) {
-			name = '';
-			aliases = [];
-		}
-	});
-
-	async function handleSubmit(formData: FormData): Promise<void> {
-		const producerName = formData.get('name') as string;
-
+	async function handleSubmit(): Promise<void> {
 		// filter out aliases with empty names
 		const validAliases = aliases
 			.filter((a) => a.name.trim() !== '')
@@ -74,18 +62,18 @@
 			// update existing producer
 			await ipcActions.updateProducerWithAliases({
 				id: producer.id,
-				name: producerName,
+				name,
 				aliases: validAliases
 			});
 
 			// Tags carry the producer's name but not its aliases, so only a rename needs a rewrite.
-			if (producerName !== producer.name) {
+			if (name !== producer.name) {
 				await ipcActions.writeProducerMetadata(producer.id);
 			}
 		} else {
 			// create new producer
 			await ipcActions.createProducerWithAliases({
-				name: producerName,
+				name,
 				aliases: validAliases
 			});
 		}
@@ -181,7 +169,6 @@
 
 <CreateCard
 	bind:open
-	{onOpenChange}
 	title={producer ? 'Edit Producer' : 'Create Producer'}
 	formId={producer ? 'update-producer-form' : 'create-producer-form'}
 	submitLabel={producer ? 'Save Changes' : 'Create'}

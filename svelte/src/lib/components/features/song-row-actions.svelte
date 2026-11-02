@@ -28,4 +28,6 @@
 	<DropdownMenu.Item onclick={onClickShowInFileExplorer}>Show in File Explorer</DropdownMenu.Item>
 </EntityActionsMenu>
 
-<CreateSongCard bind:open={editingSong} {song} />
+{#if editingSong}
+	<CreateSongCard bind:open={editingSong} {song} />
+{/if}

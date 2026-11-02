@@ -36,10 +36,9 @@
 	<Button onclick={() => (creatingEntity = true)}>+</Button>
 </div>
 
-<CreateCardComponent
-	bind:open={creatingEntity}
-	onOpenChange={(value: boolean) => (creatingEntity = value)}
-/>
+{#if creatingEntity}
+	<CreateCardComponent bind:open={creatingEntity} />
+{/if}
 
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each data as entity (entity.id)}

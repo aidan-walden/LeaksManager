@@ -4,15 +4,9 @@
 	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 
-	let {
-		open = $bindable(),
-		onOpenChange
-	}: { open: boolean; onOpenChange?: (open: boolean) => void } = $props();
+	let { open = $bindable() }: { open: boolean } = $props();
 
 	let file = $state<File | null>(null);
-	let blob: Blob | null = $derived.by(() => {
-		return file ? new Blob([file], { type: file.type }) : null;
-	});
 	const { ipcActions } = getAppServicesContext();
 
 	const handleUpload = (files: File[]) => {
@@ -71,7 +65,6 @@
 
 <CreateCard
 	bind:open
-	{onOpenChange}
 	title="Create Artist"
 	formId="create-artist-form"
 	upload={{
@@ -82,7 +75,7 @@
 			maxFiles: 1,
 			fileCount: file ? 1 : 0
 		},
-		preview: blob
+		preview: file
 	}}
 	formFields={artistFields}
 	onSubmit={handleSubmit}

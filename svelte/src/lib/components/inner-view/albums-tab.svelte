@@ -43,13 +43,9 @@
 	<Button onclick={openCreateModal}>+</Button>
 </div>
 
-<CreateAlbumCard
-	bind:open={creatingAlbum}
-	album={currentAlbum}
-	onOpenChange={(value) => {
-		creatingAlbum = value;
-	}}
-/>
+{#if creatingAlbum}
+	<CreateAlbumCard bind:open={creatingAlbum} album={currentAlbum} />
+{/if}
 
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each albums as album (album.id)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
@@ -9,134 +10,60 @@
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import { fileToUpload } from '$lib/utils/file-upload';
 
+	// Mount this card only while its dialog is open: the form state starts from `album`.
 	let {
 		open = $bindable(),
-		onOpenChange,
 		album
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
 		album: AlbumWithSongs | null;
 	} = $props();
 
-	let file = $state<File | null>(null);
-	let blob = $state<Blob | null>(null);
 	const { ipcActions, runtimeErrors } = getAppServicesContext();
-
 	const artists = $derived(getArtistsContext());
 
-	let selectedArtistIds = $state<number[]>([]);
+	const initial = untrack(() => ({
+		name: album?.name ?? '',
+		artistIds: album?.artists.map((artist) => artist.id) ?? [],
+		year: album?.year ?? null,
+		genre: album?.genre ?? ''
+	}));
 
-	let initialValues = $state<{
-		name: string;
-		artistIds: number[];
-		year: string;
-		genre: string;
-		hasFile: boolean;
-	} | null>(null);
-
-	$effect(() => {
-		if (open) {
-			if (album) {
-				const artistIds = album.artists.map((artist) => artist.id);
-				selectedArtistIds = [...artistIds];
-				initialValues = {
-					name: album.name,
-					artistIds: [...artistIds],
-					year: album.year !== null && album.year !== undefined ? String(album.year) : '',
-					genre: album.genre !== null && album.genre !== undefined ? album.genre : '',
-					hasFile: false
-				};
-			} else {
-				selectedArtistIds = [];
-				initialValues = null;
-				blob = null;
-			}
-
-			file = null;
-		} else {
-			selectedArtistIds = [];
-			initialValues = null;
-			file = null;
-			if (!album) {
-				blob = null;
-			}
-		}
-	});
+	let file = $state<File | null>(null);
+	let storedArtwork = $state<Blob | null>(null);
+	let name = $state(initial.name);
+	let selectedArtistIds = $state([...initial.artistIds]);
+	let year = $state(initial.year);
+	let genre = $state(initial.genre);
 
 	$effect(() => {
-		if (!open || file) {
-			return;
-		}
-
 		const artworkPath = album?.artworkPath;
-
 		if (!artworkPath) {
-			blob = null;
+			storedArtwork = null;
 			return;
 		}
 
-		(async () => {
-			const artworkBlob = await loadArtworkPreviewBlob(artworkPath);
-			if (!artworkBlob) {
-				return;
-			}
-
-			if (!file && album?.artworkPath === artworkPath) {
-				blob = artworkBlob;
-			}
-		})();
-	});
-
-	$effect(() => {
-		if (file) {
-			blob = new Blob([file], { type: file.type });
-		}
+		let cancelled = false;
+		loadArtworkPreviewBlob(artworkPath).then((artwork) => {
+			if (!cancelled) storedArtwork = artwork;
+		});
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
 		file = files[0];
-		if (initialValues) {
-			initialValues.hasFile = true;
-		}
 	};
 
+	// Don't rewrite the album's files when nothing changed.
 	const beforeSubmit = (): boolean => {
-		if (!album || !initialValues) {
-			return true;
-		}
-
-		const formElement = document.getElementById('create-album-form') as HTMLFormElement;
-		if (!formElement) {
-			return true;
-		}
-
-		const formData = new FormData(formElement);
-		const currentName = formData.get('name') as string;
-		const currentYear = (formData.get('year') as string) ?? '';
-		const currentGenre = (formData.get('genre') as string) ?? '';
-
-		const initial = initialValues;
-
-		const nameChanged = currentName !== initial.name;
-		const yearChanged = currentYear !== initial.year;
-		const genreChanged = currentGenre !== initial.genre;
-		const artistsChanged =
-			selectedArtistIds.length !== initial.artistIds.length ||
-			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
-		const fileChanged = initial.hasFile;
-
-		return nameChanged || yearChanged || artistsChanged || genreChanged || fileChanged;
+		const current = { name, artistIds: selectedArtistIds, year, genre };
+		return !album || file !== null || JSON.stringify(current) !== JSON.stringify(initial);
 	};
 
-	async function handleSubmit(formData: FormData): Promise<void> {
-		const name = formData.get('name') as string;
-		const yearStr = formData.get('year') as string;
-		const genre = formData.get('genre') as string;
-
-		const year = yearStr ? parseInt(yearStr) : undefined;
-
+	async function handleSubmit(): Promise<void> {
 		// Read the file first, so a read failure can't leave a saved album without its art.
 		let artwork: FileUpload | null = null;
 		if (file) {
@@ -154,7 +81,7 @@
 			await ipcActions.updateAlbum({
 				id: albumId,
 				name,
-				year,
+				year: year ?? undefined,
 				genre: genre || undefined,
 				artistIds: selectedArtistIds
 			});
@@ -162,7 +89,7 @@
 			const newAlbum = await ipcActions.createAlbum({
 				name,
 				artistIds: selectedArtistIds,
-				year,
+				year: year ?? undefined,
 				genre: genre || undefined
 			});
 			albumId = newAlbum.id;
@@ -188,7 +115,7 @@
 				name="name"
 				type="text"
 				placeholder="Album Name"
-				value={album ? album.name : ''}
+				bind:value={name}
 				required
 				disabled={formLoading}
 			/>
@@ -209,7 +136,7 @@
 				name="year"
 				type="number"
 				placeholder="Year"
-				value={album && album.year !== null ? String(album.year) : ''}
+				bind:value={year}
 				disabled={formLoading}
 			/>
 		</div>
@@ -220,20 +147,15 @@
 				name="genre"
 				type="text"
 				placeholder="Genre"
-				value={album && album.genre !== null ? album.genre : ''}
+				bind:value={genre}
 				disabled={formLoading}
 			/>
 		</div>
-		{#if album}
-			<input type="hidden" name="albumId" value={String(album.id)} />
-		{/if}
-		<input type="hidden" name="artistIds" value={selectedArtistIds.join(',')} />
 	</div>
 {/snippet}
 
 <CreateCard
 	bind:open
-	{onOpenChange}
 	title={album ? 'Edit Album' : 'Create Album'}
 	formId="create-album-form"
 	upload={{
@@ -244,7 +166,7 @@
 			maxFiles: 1,
 			fileCount: file ? 1 : 0
 		},
-		preview: blob
+		preview: file ?? storedArtwork
 	}}
 	formFields={albumFields}
 	submitLabel={album ? 'Save Changes' : 'Create'}

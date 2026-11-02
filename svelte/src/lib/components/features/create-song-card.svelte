@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
@@ -8,7 +9,7 @@
 	import { getArtistsContext } from '$lib/contexts/artists-context';
 	import { getProducersContext } from '$lib/contexts/producers-context';
 	import { getAlbumsContext } from '$lib/contexts/albums-context';
-	import type { Album, Song } from '$lib/ipc';
+	import type { AlbumWithSongs, SongReadable } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -16,76 +17,59 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
-	import type { SongReadable } from '$lib/ipc';
 
-	type AlbumWithSongs = Album & { songs: Song[] };
-
+	// Mount this card only while its dialog is open: the form state starts from `song`.
 	let {
 		open = $bindable(),
-		onOpenChange,
 		song
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
-		song: SongReadable | null;
+		song: SongReadable;
 	} = $props();
 
-	// Get artists from context
 	const artists = $derived(getArtistsContext());
 	const producers = $derived(getProducersContext());
 	const albums = $derived(getAlbumsContext<AlbumWithSongs>());
 	const { ipcActions } = getAppServicesContext();
 
+	const initial = untrack(() => ({
+		name: song.name,
+		album: song.album?.name ?? '',
+		artistIds: song.artists.map((a) => a.id),
+		producerIds: song.producers.map((p) => p.id),
+		trackNumber: song.trackNumber,
+		isSingle: song.album?.isSingle ?? false
+	}));
+
 	let file = $state<File | null>(null);
-	let blob = $state<Blob | null>(null);
+	let storedArtwork = $state<Blob | null>(null);
 	let albumPopoverOpen = $state(false);
+	let songName = $state(initial.name);
+	let albumName = $state(initial.album);
+	let manualAlbumName = $state(initial.isSingle ? '' : initial.album);
+	let selectedArtistIds = $state([...initial.artistIds]);
+	let selectedProducerIds = $state([...initial.producerIds]);
+	let trackNumber = $state(initial.trackNumber);
+	let manualTrackNumber = $state(initial.trackNumber);
+	let isSingle = $state(initial.isSingle);
 
-	// Update blob when file changes
+	// The song's own artwork, or the artwork it inherits from its album.
+	const artworkPath = $derived(song.artworkPath ?? song.album?.artworkPath ?? null);
+
 	$effect(() => {
-		if (file) {
-			blob = new Blob([file], { type: file.type });
-		}
-	});
-
-	// effective path: song's own artwork or inherited from album
-	const effectiveArtworkPath = $derived(song?.artworkPath ?? song?.album?.artworkPath ?? null);
-
-	$effect(() => {
-		// Every table row mounts a card, so don't fetch artwork until its dialog opens.
-		if (!open) {
-			return;
-		}
-
-		if (file || !effectiveArtworkPath) {
-			if (!file) {
-				blob = null;
-			}
+		if (!artworkPath) {
+			storedArtwork = null;
 			return;
 		}
 
 		let cancelled = false;
-
-		(async () => {
-			const artworkBlob = await loadArtworkPreviewBlob(effectiveArtworkPath);
-			if (!cancelled) {
-				blob = artworkBlob;
-			}
-		})();
-
+		loadArtworkPreviewBlob(artworkPath).then((artwork) => {
+			if (!cancelled) storedArtwork = artwork;
+		});
 		return () => {
 			cancelled = true;
 		};
 	});
-
-	// Store selected artist IDs
-	let selectedArtistIds = $state<number[]>([]);
-	let selectedProducerIds = $state<number[]>([]);
-	let trackNumber = $state<number | null>(null);
-	let manualTrackNumber = $state<number | null>(null);
-	let songName = $state('');
-	let albumName = $state('');
-	let manualAlbumName = $state('');
-	let isSingle = $state(false);
 
 	function normalizeAlbumName(value: string) {
 		return value.trim().toLocaleLowerCase();
@@ -95,96 +79,15 @@
 		return `${title.trim()} - Single`;
 	}
 
-	function isSingleAlbum(title: string, album: string) {
-		return normalizeAlbumName(album) === normalizeAlbumName(makeSingleAlbumName(title));
-	}
-
 	const nonSingleAlbums = $derived(albums.filter((album) => !album.isSingle));
 
 	const matchedAlbum = $derived(
 		albums.find((album) => normalizeAlbumName(album.name) === normalizeAlbumName(albumName)) ?? null
 	);
 
-	// Calculate total tracks in the selected album (including this song if editing)
-	const totalTracks = $derived.by(() => {
-		if (isSingle) return 1;
-		if (!matchedAlbum) return 0;
-		// Count songs in the album
-		const songsInAlbum = matchedAlbum.songs?.length ?? 0;
-		// If we're creating a new song and an album is selected, it will be added
-		// If we're editing, the song is already counted
-		return song ? songsInAlbum : songsInAlbum + 1;
-	});
-
-	// Track initial values for edit mode
-	let initialValues = $state<{
-		name: string;
-		album: string;
-		artistIds: number[];
-		producerIds: number[];
-		trackNumber: number | null;
-		isSingle: boolean;
-		hasFile: boolean;
-	} | null>(null);
-
-	// Capture initial values when dialog opens, reset when it closes
-	$effect(() => {
-		if (open) {
-			// Dialog opened - capture current state
-			if (song) {
-				// Edit mode: capture initial values for change detection
-				const artistIds = song.artists?.map((a) => a.id) ?? [];
-				const producerIds = song.producers?.map((p) => p.id) ?? [];
-				const single = song.album?.isSingle ?? isSingleAlbum(song.name, song.album?.name ?? '');
-				selectedArtistIds = artistIds;
-				selectedProducerIds = producerIds;
-
-				trackNumber = song.trackNumber ?? null;
-				manualTrackNumber = song.trackNumber ?? null;
-				songName = song.name;
-				albumName = song.album?.name ?? '';
-				isSingle = single;
-				manualAlbumName = single ? '' : (song.album?.name ?? '');
-
-				initialValues = {
-					name: song.name,
-					album: song.album?.name || '',
-					artistIds: [...artistIds],
-					producerIds: [...producerIds],
-					trackNumber: song.trackNumber ?? null,
-					isSingle: single,
-					hasFile: false
-				};
-			} else {
-				// Create mode: reset to empty state
-				selectedArtistIds = [];
-				selectedProducerIds = [];
-				trackNumber = null;
-				manualTrackNumber = null;
-				songName = '';
-				albumName = '';
-				manualAlbumName = '';
-				isSingle = false;
-				initialValues = null;
-			}
-			file = null;
-		} else {
-			// Dialog closed - reset state
-			selectedArtistIds = [];
-			selectedProducerIds = [];
-			trackNumber = null;
-			manualTrackNumber = null;
-			songName = '';
-			albumName = '';
-			manualAlbumName = '';
-			isSingle = false;
-			initialValues = null;
-			file = null;
-		}
-	});
+	const totalTracks = $derived(isSingle ? 1 : (matchedAlbum?.songs.length ?? 0));
 
 	$effect(() => {
-		if (!open) return;
 		if (isSingle) {
 			albumName = makeSingleAlbumName(songName);
 			return;
@@ -198,57 +101,22 @@
 	const handleUpload = (files: File[]) => {
 		if (files.length === 0) return;
 		file = files[0];
-		if (initialValues) {
-			initialValues.hasFile = true;
-		}
 	};
 
-	// Check if form values have changed (for edit mode only)
+	// Don't rewrite the song or its file when nothing changed.
 	const beforeSubmit = (): boolean => {
-		// In create mode, always allow submission
-		if (!song || !initialValues) {
-			return true;
-		}
-
-		// Capture initial values to avoid null check issues
-		const initial = initialValues;
-
-		// Get current form values
-		const currentName = songName;
-		const currentAlbum = albumName;
-
-		// Check if any values changed
-		const nameChanged = currentName !== initial.name;
-		const albumChanged = currentAlbum !== initial.album;
-		const artistsChanged =
-			selectedArtistIds.length !== initial.artistIds.length ||
-			selectedArtistIds.some((id, index) => id !== initial.artistIds[index]);
-		const trackNumberChanged = trackNumber !== initial.trackNumber;
-		const producersChanged =
-			selectedProducerIds.length !== initial.producerIds.length ||
-			selectedProducerIds.some((id, index) => id !== initial.producerIds[index]);
-		const singleChanged = isSingle !== initial.isSingle;
-
-		const fileChanged = initial.hasFile;
-
-		// Allow submission only if something changed
-		return (
-			nameChanged ||
-			albumChanged ||
-			artistsChanged ||
-			trackNumberChanged ||
-			producersChanged ||
-			singleChanged ||
-			fileChanged
-		);
+		const current = {
+			name: songName,
+			album: albumName,
+			artistIds: selectedArtistIds,
+			producerIds: selectedProducerIds,
+			trackNumber,
+			isSingle
+		};
+		return file !== null || JSON.stringify(current) !== JSON.stringify(initial);
 	};
 
 	async function handleSubmit(): Promise<void> {
-		if (!song) {
-			throw new Error('Song editing requires an existing song');
-		}
-
-		// update existing song
 		await ipcActions.updateSong({
 			id: song.id,
 			name: songName,
@@ -390,7 +258,7 @@
 					name="trackNumber"
 					type="number"
 					min="1"
-					placeholder={song?.trackNumber?.toString() ?? ''}
+					placeholder={song.trackNumber?.toString() ?? ''}
 					bind:value={trackNumber}
 					disabled={loading || isSingle || (!albumName.trim() && !isSingle)}
 					class="w-20"
@@ -404,8 +272,7 @@
 
 <CreateCard
 	bind:open
-	{onOpenChange}
-	title={song ? 'Edit Song' : 'Create Song'}
+	title="Edit Song"
 	formId="create-song-form"
 	upload={{
 		tabLabel: 'Song Art',
@@ -415,10 +282,10 @@
 			maxFiles: 1,
 			fileCount: file ? 1 : 0
 		},
-		preview: blob
+		preview: file ?? storedArtwork
 	}}
 	formFields={songFields}
-	submitLabel={song ? 'Save Changes' : 'Create'}
+	submitLabel="Save Changes"
 	{beforeSubmit}
 	onSubmit={handleSubmit}
 />
