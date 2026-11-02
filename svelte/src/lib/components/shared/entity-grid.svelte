@@ -1,8 +1,7 @@
 <script lang="ts" generics="T extends { id: number; name: string }">
 	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import EntityActionsMenu from '$lib/components/shared/entity-actions-menu.svelte';
 	import type { Component } from 'svelte';
 
 	let {
@@ -19,8 +18,8 @@
 		defaultThumbnail?: string;
 		createCardComponent: Component<any>;
 		resolveImage?: (entity: T) => string | null | undefined;
-		onEdit?: (entity: T) => void;
-		onDelete?: (id: number) => void;
+		onEdit: (entity: T) => void;
+		onDelete: (id: number) => void;
 	} = $props();
 
 	let creatingEntity = $state(false);
@@ -42,35 +41,6 @@
 	onOpenChange={(value: boolean) => (creatingEntity = value)}
 />
 
-{#snippet actions(entity: T)}
-	{#if onEdit || onDelete}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-						<span class="sr-only">Open menu</span>
-						<EllipsisIcon />
-					</Button>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content>
-				<DropdownMenu.Group>
-					<DropdownMenu.Label>{entityType} Actions</DropdownMenu.Label>
-					<DropdownMenu.Separator />
-					{#if onEdit}
-						<DropdownMenu.Item onclick={() => onEdit(entity)}>Edit</DropdownMenu.Item>
-					{/if}
-					{#if onDelete}
-						<DropdownMenu.Item style="color: red;" onclick={() => onDelete(entity.id)}
-							>Delete</DropdownMenu.Item
-						>
-					{/if}
-				</DropdownMenu.Group>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
-	{/if}
-{/snippet}
-
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each data as entity (entity.id)}
 		<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
@@ -79,7 +49,11 @@
 			</AspectRatio>
 			<div class="flex flex-row justify-between">
 				<p class="mt-2 block text-sm font-medium">{entity.name}</p>
-				{@render actions(entity)}
+				<EntityActionsMenu
+					label={`${entityType} Actions`}
+					onEdit={() => onEdit(entity)}
+					onDelete={() => onDelete(entity.id)}
+				/>
 			</div>
 		</div>
 	{/each}

@@ -1,6 +1,6 @@
 import type {
 	AlbumWithSongs,
-	ArtistWithRelations,
+	Artist,
 	InitialData,
 	ProducerWithAliases,
 	SongReadable
@@ -10,7 +10,7 @@ export type TabViewData = {
 	songs: SongReadable[];
 	songsCount: number;
 	albums: AlbumWithSongs[];
-	artists: ArtistWithRelations[];
+	artists: Artist[];
 	producers: ProducerWithAliases[];
 	settings: InitialData['settings'];
 	isServerMac: boolean;

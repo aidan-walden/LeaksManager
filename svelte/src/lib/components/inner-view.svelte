@@ -13,22 +13,13 @@
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
 	import type { TabViewData } from '$lib/view-models/tab-data';
 
-	type ArtistForContext = TabViewData['artists'][number] & { image?: string | null };
-	type AlbumElement = TabViewData['albums'][number];
-	type ProducerElement = TabViewData['producers'][number];
-
 	let { tab, data }: { tab: string; data: TabViewData } = $props();
-
-	// Initialize artists state and set context synchronously
-	let resolvedArtists = $state<ArtistForContext[]>([]);
-	let resolvedAlbums = $state<AlbumElement[]>([]);
-	let resolvedProducers = $state<ProducerElement[]>([]);
 
 	// Set context with a getter function to maintain reactivity
 	// Context must be set during component initialization
-	setArtistsContext(() => resolvedArtists);
-	setAlbumsContext(() => resolvedAlbums);
-	setProducersContext(() => resolvedProducers);
+	setArtistsContext(() => data.artists);
+	setAlbumsContext(() => data.albums);
+	setProducersContext(() => data.producers);
 	const { ipcActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';
@@ -36,13 +27,6 @@
 		onComplete: () => invalidateAll(),
 		ipcActions
 	});
-
-	$effect(() => {
-		resolvedArtists = data.artists;
-		resolvedAlbums = data.albums;
-		resolvedProducers = data.producers;
-	});
-
 </script>
 
 {#if tab === 'songs'}
@@ -55,7 +39,6 @@
 {:else if tab === 'albums'}
 	<AlbumsTab
 		albums={data.albums}
-		albumsPerPage={data.limits.albumsPerPage}
 		{defaultThumbnail}
 		onUpload={async (files, albumId) => {
 			await songImport.handleUpload(files, albumId);
@@ -71,7 +54,7 @@
 <ArtistMappingDialog
 	bind:open={songImport.showArtistMappingDialog}
 	unmappedArtists={songImport.unmappedArtists}
-	existingArtists={resolvedArtists}
+	existingArtists={data.artists}
 	onResolve={songImport.handleArtistMapping.bind(songImport)}
 	onCancel={songImport.handleArtistMappingCancel.bind(songImport)}
 />

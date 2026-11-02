@@ -10,7 +10,7 @@ import type {
 	CreateSongInput
 } from './models';
 import type { ExtractedMetadata } from '../metadata';
-import { saveBase64, deleteFile } from '../files';
+import { saveBase64, cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
 import { readMetadata } from '../metadata';
 import { parseArtists, createArtist, findArtistByName } from './artists';
@@ -46,7 +46,6 @@ interface SongCreationSpec {
 	artistIds: number[];
 	albumId: number | null;
 	artworkPath: string | null;
-	matchProducers: boolean;
 }
 
 // Picks artwork for an uploaded song: embedded when requested + present (falling
@@ -71,8 +70,7 @@ function resolveUploadArtwork(
 	return null;
 }
 
-// Shared core of both upload flows: create a song per spec, then write its tags back
-// to the file. A metadata write failure does not abort the batch (mirrors Go).
+// Creates a song per spec, then writes its tags back to the file. A metadata write failure does not abort the batch (mirrors Go).
 async function createSongsFromSpecs(
 	db: Database.Database,
 	staticPath: string,
@@ -81,9 +79,7 @@ async function createSongsFromSpecs(
 ): Promise<Song[]> {
 	const created: Song[] = [];
 	for (const spec of specs) {
-		const producerIds = spec.matchProducers
-			? matchProducersFromFilename(db, spec.originalFilename, spec.artistIds)
-			: [];
+		const producerIds = matchProducersFromFilename(db, spec.originalFilename, spec.artistIds);
 
 		const trackNumber =
 			!settings.clearTrackNumberOnUpload && (spec.metadata.trackNumber ?? 0) > 0
@@ -112,27 +108,17 @@ async function createSongsFromSpecs(
 			song = createSong(db, input);
 		} catch (err) {
 			console.error(`createSong failed for ${spec.originalFilename}:`, err);
-			try {
-				deleteFile(staticPath, spec.filepath);
-			} catch {
-				// best-effort cleanup of the orphaned upload
-			}
+			cleanupFiles(staticPath, [spec.filepath]);
 			continue;
 		}
 		created.push(song);
 
 		// Write-back: persist the resolved DB state into the file's embedded tags.
-		// writeSongMetadata catches internally and returns a result; guard anyway so
-		// one bad file can never abort the whole batch. A failure here (e.g. an
-		// unsupported output format) leaves the song row created but its file tags
-		// unwritten — logged rather than surfaced, mirroring the Go oracle.
-		try {
-			const result = await writeSongMetadata(db, staticPath, song.id);
-			if (!result.success) {
-				console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
-			}
-		} catch (err) {
-			console.error(`metadata write-back threw for song ${song.id}:`, err);
+		// A failure here (e.g. an unsupported output format) leaves the song row created
+		// but its file tags unwritten — logged rather than surfaced, mirroring the Go oracle.
+		const result = await writeSongMetadata(db, staticPath, song.id);
+		if (!result.success) {
+			console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
 		}
 	}
 	return created;
@@ -264,51 +250,9 @@ export async function createSongsWithMetadata(
 			metadata: fd.metadata,
 			artistIds: finalArtistIds,
 			albumId: finalAlbumId,
-			artworkPath: resolveUploadArtwork(staticPath, input.useEmbeddedArtwork, fd.metadata, currentAlbum),
-			matchProducers: true
+			artworkPath: resolveUploadArtwork(staticPath, input.useEmbeddedArtwork, fd.metadata, currentAlbum)
 		};
 	});
-
-	return createSongsFromSpecs(db, staticPath, specs, settings);
-}
-
-// Simple upload without metadata preview.
-export async function uploadSongs(
-	db: Database.Database,
-	staticPath: string,
-	files: FileUpload[],
-	albumId: number | null
-): Promise<Song[]> {
-	const settings = getSettings(db);
-
-	let album: AlbumWithArtists | null = null;
-	let artistIds: number[] = [];
-	if (albumId != null) {
-		album = getAlbumWithArtists(db, albumId);
-		if (album) artistIds = album.artists.map((a) => a.id);
-	}
-
-	const specs: SongCreationSpec[] = [];
-	for (const file of files) {
-		const relPath = saveBase64(staticPath, 'songs', file.filename, file.base64Data);
-
-		let metadata: ExtractedMetadata;
-		try {
-			metadata = await readMetadata(staticFilePath(staticPath, relPath));
-		} catch {
-			metadata = emptyMeta();
-		}
-
-		specs.push({
-			filepath: relPath,
-			originalFilename: file.filename,
-			metadata,
-			artistIds,
-			albumId,
-			artworkPath: resolveUploadArtwork(staticPath, false, metadata, album),
-			matchProducers: false
-		});
-	}
 
 	return createSongsFromSpecs(db, staticPath, specs, settings);
 }

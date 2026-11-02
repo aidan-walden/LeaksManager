@@ -55,6 +55,11 @@
 	const effectiveArtworkPath = $derived(song?.artworkPath ?? song?.album?.artworkPath ?? null);
 
 	$effect(() => {
+		// Every table row mounts a card, so don't fetch artwork until its dialog opens.
+		if (!open) {
+			return;
+		}
+
 		if (file || !effectiveArtworkPath) {
 			if (!file) {
 				blob = null;

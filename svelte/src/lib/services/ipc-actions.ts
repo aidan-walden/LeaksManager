@@ -6,7 +6,6 @@ import type {
 	CreateAlbumInput,
 	CreateArtistInput,
 	CreateProducerInput,
-	CreateSongInput,
 	CreateSongsWithMetadataInput,
 	PageRequest,
 	SongBatchUploadRequest,
@@ -55,8 +54,6 @@ export function createIpcActions(dependencies: IpcActionDependencies) {
 			runAction(dependencies, 'UpdateAlbum', () => api().UpdateAlbum(input)),
 		deleteAlbum: (albumId: number) =>
 			runAction(dependencies, 'DeleteAlbum', () => api().DeleteAlbum(albumId)),
-		createSong: (input: CreateSongInput) =>
-			runAction(dependencies, 'CreateSong', () => api().CreateSong(input), { markChanged: true }),
 		updateSong: (input: UpdateSongInput) =>
 			runAction(dependencies, 'UpdateSong', () => api().UpdateSong(input), { markChanged: true }),
 		deleteSong: (songId: number) =>
@@ -74,12 +71,6 @@ export function createIpcActions(dependencies: IpcActionDependencies) {
 			),
 		deleteProducer: (producerId: number) =>
 			runAction(dependencies, 'DeleteProducer', () => api().DeleteProducer(producerId)),
-		getProducersWithAliases: () =>
-			runAction(dependencies, 'GetProducersWithAliases', () => api().GetProducersWithAliases()),
-		matchProducersFromFilename: (filename: string, songArtistIds: number[]) =>
-			runAction(dependencies, 'MatchProducersFromFilename', () =>
-				api().MatchProducersFromFilename(filename, songArtistIds)
-			),
 		updateSettings: (input: UpdateSettingsInput) =>
 			runAction(dependencies, 'UpdateSettings', () => api().UpdateSettings(input), {
 				onSuccess: (settings) => dependencies.syncState.configure(settings.importToAppleMusic)
@@ -92,8 +83,6 @@ export function createIpcActions(dependencies: IpcActionDependencies) {
 			runAction(dependencies, 'UploadAlbumArt', () =>
 				api().UploadAlbumArt(albumId, filename, base64Data)
 			),
-		extractMetadata: (relPath: string) =>
-			runAction(dependencies, 'ExtractMetadata', () => api().ExtractMetadata(relPath)),
 		writeSongMetadata: (songId: number) =>
 			runAction(dependencies, 'WriteSongMetadata', () => api().WriteSongMetadata(songId), {
 				markChanged: true
@@ -109,15 +98,14 @@ export function createIpcActions(dependencies: IpcActionDependencies) {
 				api().UploadAndExtractMetadata(files, albumId ?? null)
 			),
 		createSongsWithMetadata: (input: CreateSongsWithMetadataInput) =>
-			runAction(dependencies, 'CreateSongsWithMetadata', () => api().CreateSongsWithMetadata(input), {
-				markChanged: true
-			}),
-		uploadSongs: ({ files, albumId }: SongBatchUploadRequest) =>
-			runAction(dependencies, 'UploadSongs', () => api().UploadSongs(files, albumId ?? null), {
-				markChanged: true
-			}),
-		getAppleMusicLibrary: () =>
-			runAction(dependencies, 'GetAppleMusicLibrary', () => api().GetAppleMusicLibrary()),
+			runAction(
+				dependencies,
+				'CreateSongsWithMetadata',
+				() => api().CreateSongsWithMetadata(input),
+				{
+					markChanged: true
+				}
+			),
 		syncSongsToAppleMusic: () =>
 			runAction(dependencies, 'SyncSongsToAppleMusic', () => api().SyncSongsToAppleMusic())
 	};

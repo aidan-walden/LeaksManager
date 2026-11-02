@@ -3,13 +3,12 @@ import type {
 	Producer,
 	ProducerWithAliases,
 	ProducerAliasWithArtists,
-	Song,
 	CreateProducerInput,
 	UpdateProducerInput,
 	BatchResult
 } from './models';
-import { rowToProducer, rowToSong, now } from './rows';
-import { writeSongMetadata } from './songs';
+import { rowToProducer, now } from './rows';
+import { writeSongsMetadata } from './songs';
 
 // Port of backend/producers.go.
 
@@ -22,9 +21,6 @@ export interface Pattern {
 	aliasArtistIds?: number[];
 }
 
-const SONG_COLS =
-	's.id, s.name, s.album_id, s.artwork_path, s.genre, s.year, s.track_number, s.duration, s.filepath, s.file_type, s.created_at, s.updated_at, s.synced, s.apple_music_id';
-
 // Escape regex metacharacters in a producer term. `RegExp.escape` is only available
 // on Node 24+ (Electron's bundled runtime), but the test suite and tooling run on the
 // repo's Node 22, where it is undefined and would throw. This fallback keeps matching
@@ -33,37 +29,56 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Alias uniqueness (case-insensitive) across all producers, except the one being edited.
+function assertAliasesUnique(
+	tx: Database.Database,
+	aliases: CreateProducerInput['aliases'],
+	excludeProducerId: number | null
+): void {
+	const dupe = tx.prepare(
+		`SELECT COUNT(*) AS c FROM producer_aliases WHERE LOWER(alias) = LOWER(?) AND producer_id IS NOT ?`
+	);
+	for (const alias of aliases) {
+		if ((dupe.get(alias.name, excludeProducerId) as { c: number }).c > 0) {
+			throw new Error(`alias "${alias.name}" already exists for another producer`);
+		}
+	}
+}
+
+function insertAliases(
+	tx: Database.Database,
+	producerId: number,
+	aliases: CreateProducerInput['aliases'],
+	ts: number
+): void {
+	const insAlias = tx.prepare(
+		`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`
+	);
+	const insAliasArtist = tx.prepare(
+		`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`
+	);
+	for (const alias of aliases) {
+		const aliasId = Number(insAlias.run(producerId, alias.name, ts).lastInsertRowid);
+		for (const artistId of alias.artistIds) {
+			insAliasArtist.run(aliasId, artistId, ts);
+		}
+	}
+}
+
 export function createProducerWithAliases(
 	db: Database.Database,
 	input: CreateProducerInput
 ): Producer {
 	const ts = now();
 	return db.transaction((tx) => {
-		// Alias uniqueness (case-insensitive, across all producers).
-		const dupe = tx.prepare(`SELECT COUNT(*) AS c FROM producer_aliases WHERE LOWER(alias) = LOWER(?)`);
-		for (const alias of input.aliases) {
-			if ((dupe.get(alias.name) as { c: number }).c > 0) {
-				throw new Error(`alias "${alias.name}" already exists for another producer`);
-			}
-		}
+		assertAliasesUnique(tx, input.aliases, null);
 
 		const info = tx
 			.prepare(`INSERT INTO producers (name, created_at, updated_at) VALUES (?, ?, ?)`)
 			.run(input.name, ts, ts);
 		const producerId = Number(info.lastInsertRowid);
 
-		const insAlias = tx.prepare(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`
-		);
-		const insAliasArtist = tx.prepare(
-			`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`
-		);
-		for (const alias of input.aliases) {
-			const aliasId = Number(insAlias.run(producerId, alias.name, ts).lastInsertRowid);
-			for (const artistId of alias.artistIds) {
-				insAliasArtist.run(aliasId, artistId, ts);
-			}
-		}
+		insertAliases(tx, producerId, input.aliases, ts);
 
 		return { id: producerId, name: input.name, createdAt: ts, updatedAt: ts };
 	})(db);
@@ -80,15 +95,7 @@ export function updateProducerWithAliases(
 			.get(input.id) as { created_at: number } | undefined;
 		if (!existing) throw new Error(`producer ${input.id} not found`);
 
-		// Alias uniqueness (case-insensitive), excluding the current producer.
-		const dupe = tx.prepare(
-			`SELECT COUNT(*) AS c FROM producer_aliases WHERE LOWER(alias) = LOWER(?) AND producer_id != ?`
-		);
-		for (const alias of input.aliases) {
-			if ((dupe.get(alias.name, input.id) as { c: number }).c > 0) {
-				throw new Error(`alias "${alias.name}" already exists for another producer`);
-			}
-		}
+		assertAliasesUnique(tx, input.aliases, input.id);
 
 		tx.prepare(`UPDATE producers SET name = ?, updated_at = ? WHERE id = ?`).run(
 			input.name,
@@ -96,28 +103,9 @@ export function updateProducerWithAliases(
 			input.id
 		);
 
-		// Replace existing aliases (and their artist restrictions).
-		const aliasIds = (
-			tx.prepare(`SELECT id FROM producer_aliases WHERE producer_id = ?`).all(input.id) as {
-				id: number;
-			}[]
-		).map((r) => r.id);
-		const delAliasArtist = tx.prepare(`DELETE FROM producer_alias_artists WHERE alias_id = ?`);
-		for (const aliasId of aliasIds) delAliasArtist.run(aliasId);
+		// Replace existing aliases; their artist restrictions go with them via ON DELETE CASCADE.
 		tx.prepare(`DELETE FROM producer_aliases WHERE producer_id = ?`).run(input.id);
-
-		const insAlias = tx.prepare(
-			`INSERT INTO producer_aliases (producer_id, alias, created_at) VALUES (?, ?, ?)`
-		);
-		const insAliasArtist = tx.prepare(
-			`INSERT INTO producer_alias_artists (alias_id, artist_id, created_at) VALUES (?, ?, ?)`
-		);
-		for (const alias of input.aliases) {
-			const aliasId = Number(insAlias.run(input.id, alias.name, ts).lastInsertRowid);
-			for (const artistId of alias.artistIds) {
-				insAliasArtist.run(aliasId, artistId, ts);
-			}
-		}
+		insertAliases(tx, input.id, input.aliases, ts);
 
 		return { id: input.id, name: input.name, createdAt: existing.created_at, updatedAt: ts };
 	})(db);
@@ -133,11 +121,7 @@ export function getProducersWithAliases(db: Database.Database): ProducerWithAlia
 		.all() as Record<string, unknown>[];
 	return rows.map((r) => {
 		const prod = rowToProducer(r);
-		return {
-			...prod,
-			aliases: getAliasesForProducer(db, prod.id),
-			songs: getSongsForProducer(db, prod.id)
-		};
+		return { ...prod, aliases: getAliasesForProducer(db, prod.id) };
 	});
 }
 
@@ -162,15 +146,6 @@ export function getAliasesForProducer(
 			artistIds
 		};
 	});
-}
-
-export function getSongsForProducer(db: Database.Database, producerId: number): Song[] {
-	const rows = db
-		.prepare(
-			`SELECT ${SONG_COLS} FROM songs s JOIN song_producers sp ON s.id = sp.song_id WHERE sp.producer_id = ?`
-		)
-		.all(producerId) as Record<string, unknown>[];
-	return rows.map(rowToSong);
 }
 
 // Loads all producer-matching patterns in one query (no N+1). Each producer
@@ -270,10 +245,6 @@ export function matchPatterns(
 
 // WriteProducerMetadata writes tags to every song by a producer (re-tagging so each
 // file reflects current state). Mirrors backend/producers.go WriteProducerMetadata.
-// ponytail: the Go oracle's sole point was writing producers into the composer tag,
-// but mediabunny's unified MetadataTags has no composer field (see songs.ts/metadata.ts),
-// so that field is not emitted. The faithful control flow is kept: iterate the producer's
-// songs and write everything the unified engine supports, aggregating per-song results.
 export async function writeProducerMetadata(
 	db: Database.Database,
 	staticPath: string,
@@ -282,20 +253,12 @@ export async function writeProducerMetadata(
 	const rows = db
 		.prepare(`SELECT song_id FROM song_producers WHERE producer_id = ?`)
 		.all(producerId) as { song_id: number }[];
-
-	const results = await Promise.all(
-		rows.map((r) => writeSongMetadata(db, staticPath, r.song_id))
+	return writeSongsMetadata(
+		db,
+		staticPath,
+		rows.map((r) => r.song_id),
+		`Processed producer ${producerId}`
 	);
-
-	const songsProcessed = results.filter((r) => r.success).length;
-	const songsFailed = results.length - songsProcessed;
-	return {
-		success: songsFailed === 0,
-		message: `Processed producer ${producerId}`,
-		songsProcessed,
-		songsFailed,
-		results
-	};
 }
 
 export function matchProducersFromFilename(

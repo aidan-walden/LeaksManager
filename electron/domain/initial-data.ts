@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { InitialData } from './models';
 import { getSongsReadable, getSongsCount } from './songs';
 import { getAlbumsWithSongs } from './albums';
-import { getArtistsWithRelations } from './artists';
+import { getArtists } from './artists';
 import { getProducersWithAliases } from './producers';
 import { getSettings } from './settings';
 
@@ -17,7 +17,7 @@ export function getInitialData(db: Database.Database): InitialData {
 		songs: getSongsReadable(db, SONGS_PER_PAGE, 0),
 		songsCount: getSongsCount(db),
 		albums: getAlbumsWithSongs(db, ALBUMS_PER_PAGE, 0),
-		artists: getArtistsWithRelations(db),
+		artists: getArtists(db),
 		producers: getProducersWithAliases(db),
 		settings,
 		isMac: process.platform === 'darwin',

@@ -9,7 +9,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { EditableProducer } from '$lib/schema';
+	import type { ProducerWithAliases } from '$lib/ipc';
 
 	type ArtistOption = { id: number; name: string };
 
@@ -24,7 +24,7 @@
 		onOpenChange?: (open: boolean) => void;
 		callback?: () => void;
 		artists: ArtistOption[];
-		producer?: EditableProducer | null;
+		producer?: ProducerWithAliases | null;
 	} = $props();
 
 	type Alias = {
@@ -48,12 +48,9 @@
 	$effect(() => {
 		if (producer) {
 			name = producer.name;
-			aliases = (producer.producerAliases ?? []).map((alias) => ({
+			aliases = producer.aliases.map((alias) => ({
 				name: alias.alias,
-				artistIds:
-					alias.producerAliasArtists
-						?.map((link) => link.artistId)
-						.filter((id) => !Number.isNaN(id)) ?? []
+				artistIds: [...alias.artistIds]
 			}));
 			return;
 		}
@@ -83,8 +80,10 @@
 				aliases: validAliases
 			});
 
-			// write metadata to all songs by this producer
-			await ipcActions.writeProducerMetadata(producer.id);
+			// Tags carry the producer's name but not its aliases, so only a rename needs a rewrite.
+			if (producerName !== producer.name) {
+				await ipcActions.writeProducerMetadata(producer.id);
+			}
 
 			return { id: updated.id };
 		} else {

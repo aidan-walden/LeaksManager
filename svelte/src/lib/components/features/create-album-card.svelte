@@ -6,8 +6,9 @@
 	import { invalidateAll } from '$app/navigation';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
-	import type { EditableAlbum } from '$lib/schema';
+	import type { AlbumWithSongs } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
+	import { fileToUpload } from '$lib/utils/file-upload';
 
 	let {
 		open = $bindable(),
@@ -16,7 +17,7 @@
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
-		album: EditableAlbum | null;
+		album: AlbumWithSongs | null;
 	} = $props();
 
 	let loading = $state(false);
@@ -39,7 +40,7 @@
 	$effect(() => {
 		if (open) {
 			if (album) {
-				const artistIds = (album.albumArtists ?? []).map((aa) => aa.artistId);
+				const artistIds = album.artists.map((artist) => artist.id);
 				selectedArtistIds = [...artistIds];
 				initialValues = {
 					name: album.name,
@@ -145,16 +146,7 @@
 		loading = true;
 
 		try {
-			// convert file to base64
-			const arrayBuffer = await currentFile.arrayBuffer();
-			const base64 = btoa(
-				new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-			);
-			await ipcActions.uploadAlbumArt({
-				albumId,
-				filename: currentFile.name,
-				base64Data: base64
-			});
+			await ipcActions.uploadAlbumArt({ albumId, ...(await fileToUpload(currentFile)) });
 			await invalidateAll();
 		} finally {
 			loading = false;

@@ -45,6 +45,18 @@
 
 	let formElement: HTMLFormElement;
 	let loading = $state(false);
+	let previewUrl = $state<string | null>(null);
+
+	$effect(() => {
+		const preview = upload?.preview;
+		if (!preview) {
+			previewUrl = null;
+			return;
+		}
+		const url = URL.createObjectURL(preview);
+		previewUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -107,9 +119,9 @@
 						disabled={loading}
 						class="size-full"
 					>
-						{#if upload.preview}
+						{#if previewUrl}
 							<img
-								src={URL.createObjectURL(upload.preview)}
+								src={previewUrl}
 								alt="Uploaded file preview"
 								class="size-full rounded-md object-cover"
 							/>

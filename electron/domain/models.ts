@@ -20,11 +20,6 @@ export interface Artist {
 	synced: boolean;
 }
 
-export interface ArtistWithRelations extends Artist {
-	albums: Album[];
-	songs: Song[];
-}
-
 export interface Album {
 	id: number;
 	name: string;
@@ -86,22 +81,6 @@ export interface BatchResult {
 
 // --- Apple Music DTOs (port of backend/models.go) ---
 
-export interface AppleMusicTrack {
-	id: string; // persistent ID
-	databaseId: number;
-	name: string;
-	artist: string;
-	albumArtist: string;
-	album: string;
-	genre: string;
-	year: number;
-	duration: number;
-	trackNumber: number;
-	trackCount: number;
-	discNumber: number;
-	discCount: number;
-}
-
 export interface SyncResult {
 	totalSongs: number;
 	successCount: number;
@@ -140,7 +119,6 @@ export interface ProducerAliasWithArtists extends ProducerAlias {
 
 export interface ProducerWithAliases extends Producer {
 	aliases: ProducerAliasWithArtists[];
-	songs: Song[];
 }
 
 export interface Settings {
@@ -160,7 +138,7 @@ export interface InitialData {
 	songs: SongReadable[];
 	songsCount: number;
 	albums: AlbumWithSongs[];
-	artists: ArtistWithRelations[];
+	artists: Artist[];
 	producers: ProducerWithAliases[];
 	settings: Settings;
 	isMac: boolean;

@@ -13,9 +13,8 @@ describe('ipc actions', () => {
 
 	beforeEach(() => {
 		api = {
-			CreateSong: vi.fn(),
-			UpdateSettings: vi.fn(),
-			GetAppleMusicLibrary: vi.fn()
+			UpdateSong: vi.fn(),
+			UpdateSettings: vi.fn()
 		} as unknown as RawIpcBindings;
 		window.api = api;
 		runtimeErrors = new RuntimeErrorNotifier();
@@ -29,47 +28,23 @@ describe('ipc actions', () => {
 	});
 
 	it('marks sync state as changed after successful mutating calls', async () => {
-		vi.mocked(api.CreateSong).mockResolvedValue({
-			id: 1,
-			name: 'Track',
-			filepath: 'uploads/songs/track.mp3',
-			albumId: null,
-			artworkPath: null,
-			genre: null,
-			year: null,
-			trackNumber: null,
-			duration: null,
-			fileType: null,
-			createdAt: 0,
-			updatedAt: 0,
-			synced: false
-		});
+		vi.mocked(api.UpdateSong).mockResolvedValue(null);
 		syncState.configure(true, false);
 
-		await ipcActions.createSong({
-			name: 'Track',
-			filepath: 'uploads/songs/track.mp3',
-			artistIds: [],
-			producerIds: []
-		});
+		await ipcActions.updateSong({ id: 1, name: 'Track', artistIds: [], producerIds: [] });
 
 		expect(syncState.hasChanges).toBe(true);
 	});
 
 	it('reports runtime failures before rethrowing', async () => {
 		const error = new Error('boom');
-		vi.mocked(api.CreateSong).mockRejectedValue(error);
+		vi.mocked(api.UpdateSong).mockRejectedValue(error);
 
 		await expect(
-			ipcActions.createSong({
-				name: 'Track',
-				filepath: 'uploads/songs/track.mp3',
-				artistIds: [],
-				producerIds: []
-			})
+			ipcActions.updateSong({ id: 1, name: 'Track', artistIds: [], producerIds: [] })
 		).rejects.toThrow('boom');
 
-		expect(notifySpy).toHaveBeenCalledWith(error, 'CreateSong');
+		expect(notifySpy).toHaveBeenCalledWith(error, 'UpdateSong');
 	});
 
 	it('reconfigures sync state from updated settings', async () => {
@@ -85,28 +60,5 @@ describe('ipc actions', () => {
 
 		expect(syncState.isAppleMusicEnabled).toBe(true);
 		expect(syncState.hasChanges).toBe(false);
-	});
-
-	it('exposes Apple Music library fetch through the actions wrapper', async () => {
-		vi.mocked(api.GetAppleMusicLibrary).mockResolvedValue([
-			{
-				id: 'abc',
-				databaseId: 0,
-				name: 'Track',
-				artist: 'Artist',
-				albumArtist: '',
-				album: 'Album',
-				genre: '',
-				year: 2026,
-				duration: 123,
-				trackNumber: 1,
-				trackCount: 1,
-				discNumber: 1,
-				discCount: 1
-			}
-		]);
-
-		await expect(ipcActions.getAppleMusicLibrary()).resolves.toHaveLength(1);
-		expect(api.GetAppleMusicLibrary).toHaveBeenCalledOnce();
 	});
 });

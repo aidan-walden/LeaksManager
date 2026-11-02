@@ -4,22 +4,24 @@ import type {
 	SongReadable,
 	Artist,
 	Producer,
-	Album,
 	CreateSongInput,
 	UpdateSongInput
 } from './models';
 import type { SongProcessingResult, BatchResult } from './models';
-import { rowToSong, rowToArtist, rowToProducer, rowToAlbum, now } from './rows';
-import { resolveOrCreateAlbum } from './albums';
+import { ARTIST_COLS, SONG_COLS, qualify, rowToSong, rowToArtist, rowToProducer, now } from './rows';
+import { linkOrdered, replaceOrderedLinks } from './links';
+import { getAlbumById, resolveOrCreateAlbum } from './albums';
 import { getSettings } from './settings';
+import { cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
 import { writeMetadata, type MetadataTags } from '../metadata';
-import { readFileSync, rmSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 // Port of backend/songs.go — create + read paths plus update/delete (US2).
 
-const SONG_COLS =
-	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id';
+// Each write holds the cover art in memory and re-muxes a whole audio file, so a large
+// album or producer must not start them all at once.
+const METADATA_WRITE_CONCURRENCY = 4;
 
 export function createSong(db: Database.Database, input: CreateSongInput): Song {
 	const ts = now();
@@ -43,15 +45,8 @@ export function createSong(db: Database.Database, input: CreateSongInput): Song 
 			);
 		const songId = Number(info.lastInsertRowid);
 
-		const linkArtist = tx.prepare(
-			`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
-		);
-		input.artistIds.forEach((artistId, i) => linkArtist.run(songId, artistId, i, ts));
-
-		const linkProducer = tx.prepare(
-			`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`
-		);
-		input.producerIds.forEach((producerId, i) => linkProducer.run(songId, producerId, i, ts));
+		linkOrdered(tx, 'song_artists', songId, input.artistIds, ts);
+		linkOrdered(tx, 'song_producers', songId, input.producerIds, ts);
 
 		return {
 			id: songId,
@@ -106,19 +101,11 @@ export function updateSong(db: Database.Database, input: UpdateSongInput): SongR
 		).run(input.name ?? null, albumId, input.trackNumber ?? null, ts, input.id);
 
 		if (input.artistIds != null) {
-			tx.prepare(`DELETE FROM song_artists WHERE song_id = ?`).run(input.id);
-			const linkArtist = tx.prepare(
-				`INSERT INTO song_artists (song_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
-			);
-			input.artistIds.forEach((artistId, i) => linkArtist.run(input.id, artistId, i, ts));
+			replaceOrderedLinks(tx, 'song_artists', input.id, input.artistIds, ts);
 		}
 
 		if (input.producerIds != null) {
-			tx.prepare(`DELETE FROM song_producers WHERE song_id = ?`).run(input.id);
-			const linkProducer = tx.prepare(
-				`INSERT INTO song_producers (song_id, producer_id, "order", created_at) VALUES (?, ?, ?, ?)`
-			);
-			input.producerIds.forEach((producerId, i) => linkProducer.run(input.id, producerId, i, ts));
+			replaceOrderedLinks(tx, 'song_producers', input.id, input.producerIds, ts);
 		}
 	})(db);
 
@@ -138,11 +125,7 @@ export function deleteSong(db: Database.Database, staticPath: string, songId: nu
 
 	// Delete file from disk (best-effort, mirror Go)
 	if (songFilepath !== '') {
-		try {
-			rmSync(staticFilePath(staticPath, songFilepath));
-		} catch {
-			// ignore — Go swallows the path/remove error
-		}
+		cleanupFiles(staticPath, [songFilepath]);
 	}
 }
 
@@ -177,7 +160,7 @@ export function buildSongReadable(db: Database.Database, song: Song): SongReadab
 export function getArtistsForSong(db: Database.Database, songId: number): Artist[] {
 	const rows = db
 		.prepare(
-			`SELECT ar.id, ar.name, ar.image, ar.career_start_year, ar.career_end_year, ar.created_at, ar.updated_at, ar.synced
+			`SELECT ${qualify(ARTIST_COLS, 'ar')}
 			 FROM artists ar
 			 JOIN song_artists sa ON ar.id = sa.artist_id
 			 WHERE sa.song_id = ?
@@ -198,15 +181,6 @@ export function getProducersForSong(db: Database.Database, songId: number): Prod
 		)
 		.all(songId) as Record<string, unknown>[];
 	return rows.map(rowToProducer);
-}
-
-export function getAlbumById(db: Database.Database, albumId: number): Album | null {
-	const row = db
-		.prepare(
-			`SELECT id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced FROM albums WHERE id = ?`
-		)
-		.get(albumId) as Record<string, unknown> | undefined;
-	return row ? rowToAlbum(row) : null;
 }
 
 // --- Metadata write-back (port of backend/metadata.go) ---
@@ -345,6 +319,31 @@ export async function writeSongMetadata(
 	}
 }
 
+// Writes tags to each song, aggregating the per-song results.
+export async function writeSongsMetadata(
+	db: Database.Database,
+	staticPath: string,
+	songIds: number[],
+	message: string
+): Promise<BatchResult> {
+	const results: SongProcessingResult[] = new Array(songIds.length);
+	let cursor = 0;
+	const workers = Array.from(
+		{ length: Math.min(METADATA_WRITE_CONCURRENCY, songIds.length) },
+		async () => {
+			while (cursor < songIds.length) {
+				const index = cursor++;
+				results[index] = await writeSongMetadata(db, staticPath, songIds[index]);
+			}
+		}
+	);
+	await Promise.all(workers);
+
+	const songsProcessed = results.filter((r) => r.success).length;
+	const songsFailed = results.length - songsProcessed;
+	return { success: songsFailed === 0, message, songsProcessed, songsFailed, results };
+}
+
 // WriteAlbumMetadata writes tags to every song in an album.
 export async function writeAlbumMetadata(
 	db: Database.Database,
@@ -354,18 +353,10 @@ export async function writeAlbumMetadata(
 	const rows = db.prepare(`SELECT id FROM songs WHERE album_id = ?`).all(albumId) as {
 		id: number;
 	}[];
-
-	const results = await Promise.all(
-		rows.map((r) => writeSongMetadata(db, staticPath, r.id))
+	return writeSongsMetadata(
+		db,
+		staticPath,
+		rows.map((r) => r.id),
+		`Processed album ${albumId}`
 	);
-
-	const songsProcessed = results.filter((r) => r.success).length;
-	const songsFailed = results.length - songsProcessed;
-	return {
-		success: songsFailed === 0,
-		message: `Processed album ${albumId}`,
-		songsProcessed,
-		songsFailed,
-		results
-	};
 }

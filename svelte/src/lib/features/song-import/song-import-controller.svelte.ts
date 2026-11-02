@@ -1,5 +1,6 @@
 import type { IpcActions } from '$lib/services/ipc-actions';
-import type { FileUpload, SongImportDraft } from '$lib/ipc';
+import type { SongImportDraft } from '$lib/ipc';
+import { fileToUpload } from '$lib/utils/file-upload';
 
 type StagedSongImport = {
 	filesData: SongImportDraft[];
@@ -38,7 +39,7 @@ export class SongImportController {
 	}
 
 	async handleUpload(files: File[], albumId?: number): Promise<number> {
-		const fileUploads = await Promise.all(files.map(this.#fileToUpload));
+		const fileUploads = await Promise.all(files.map(fileToUpload));
 		const result = await this.#ipcActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
 
 		this.#stagedImport = {
@@ -115,31 +116,6 @@ export class SongImportController {
 
 		return filesData.some((file) => file.metadata.artwork && file.albumId != null);
 	}
-
-	#fileToUpload = async (file: File): Promise<FileUpload> => {
-		const base64 = await new Promise<string>((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => {
-				if (typeof reader.result !== 'string') {
-					reject(new Error('failed to read file as data URL'));
-					return;
-				}
-				const base64Data = reader.result.split(',', 2)[1];
-				if (!base64Data) {
-					reject(new Error('failed to parse base64 data from file'));
-					return;
-				}
-				resolve(base64Data);
-			};
-			reader.onerror = () => reject(reader.error ?? new Error('failed to read file'));
-			reader.readAsDataURL(file);
-		});
-
-		return {
-			filename: file.name,
-			base64Data: base64
-		};
-	};
 
 	#createSongs = async (
 		artistMapping: Record<string, number | 'CREATE_NEW'>,

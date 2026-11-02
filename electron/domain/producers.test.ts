@@ -8,6 +8,7 @@ import {
 	matchPatterns,
 	matchProducersFromFilename,
 	createProducerWithAliases,
+	updateProducerWithAliases,
 	deleteProducer,
 	type Pattern
 } from './producers';
@@ -107,6 +108,24 @@ describe('matchProducersFromFilename', () => {
 		expect(() =>
 			createProducerWithAliases(db, { name: 'B', aliases: [{ name: 'dupe', artistIds: [] }] })
 		).toThrow();
+	});
+
+	it('replaces aliases and their artist restrictions on update, keeping its own alias valid', () => {
+		const artist = createArtist(db, { name: 'Artist' });
+		const producer = createProducerWithAliases(db, {
+			name: 'Metro Boomin',
+			aliases: [{ name: 'Metro', artistIds: [artist.id] }]
+		});
+
+		updateProducerWithAliases(db, {
+			id: producer.id,
+			name: 'Metro Boomin',
+			aliases: [{ name: 'metro', artistIds: [] }]
+		});
+
+		const rows = (sql: string) => db.prepare(sql).all();
+		expect(rows('SELECT alias FROM producer_aliases')).toEqual([{ alias: 'metro' }]);
+		expect(rows('SELECT alias_id FROM producer_alias_artists')).toEqual([]);
 	});
 });
 
