@@ -75,11 +75,7 @@ export interface SongProcessingResult {
 }
 
 export interface BatchResult {
-	success: boolean;
-	message: string;
-	songsProcessed: number;
 	songsFailed: number;
-	results: SongProcessingResult[];
 }
 
 // --- Apple Music DTOs (port of backend/models.go) ---

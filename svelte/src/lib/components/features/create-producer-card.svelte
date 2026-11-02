@@ -11,6 +11,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import type { ProducerWithAliases } from '$lib/ipc';
+	import { notifyTagWriteFailures } from '$lib/utils/tag-write-failures';
 
 	type ArtistOption = { id: number; name: string };
 
@@ -68,7 +69,7 @@
 
 			// Tags carry the producer's name but not its aliases, so only a rename needs a rewrite.
 			if (name !== producer.name) {
-				await ipcActions.writeProducerMetadata(producer.id);
+				notifyTagWriteFailures(await ipcActions.writeProducerMetadata(producer.id));
 			}
 		} else {
 			// create new producer

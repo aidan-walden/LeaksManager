@@ -276,12 +276,11 @@ export async function writeSongMetadata(
 	}
 }
 
-// Writes tags to each song, aggregating the per-song results.
+// Writes tags to each song and counts the failures, which it also logs.
 export async function writeSongsMetadata(
 	db: Database.Database,
 	staticPath: string,
-	songIds: number[],
-	message: string
+	songIds: number[]
 ): Promise<BatchResult> {
 	const results: SongProcessingResult[] = new Array(songIds.length);
 	let cursor = 0;
@@ -296,9 +295,11 @@ export async function writeSongsMetadata(
 	);
 	await Promise.all(workers);
 
-	const songsProcessed = results.filter((r) => r.success).length;
-	const songsFailed = results.length - songsProcessed;
-	return { success: songsFailed === 0, message, songsProcessed, songsFailed, results };
+	const failures = results.filter((r) => !r.success);
+	for (const { songId, error } of failures) {
+		console.error(`metadata write failed for song ${songId}: ${error}`);
+	}
+	return { songsFailed: failures.length };
 }
 
 // WriteAlbumMetadata writes tags to every song in an album.
@@ -313,7 +314,6 @@ export async function writeAlbumMetadata(
 	return writeSongsMetadata(
 		db,
 		staticPath,
-		rows.map((r) => r.id),
-		`Processed album ${albumId}`
+		rows.map((r) => r.id)
 	);
 }

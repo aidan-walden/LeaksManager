@@ -9,6 +9,7 @@
 	import type { AlbumSummary, FileUpload } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import { fileToUpload } from '$lib/utils/file-upload';
+	import { notifyTagWriteFailures } from '$lib/utils/tag-write-failures';
 
 	// Mount this card only while its dialog is open: the form state starts from `album`.
 	let {
@@ -101,7 +102,7 @@
 
 		// Write tags last, so the files also get the new artwork.
 		if (album) {
-			await ipcActions.writeAlbumMetadata(albumId);
+			notifyTagWriteFailures(await ipcActions.writeAlbumMetadata(albumId));
 		}
 	}
 </script>

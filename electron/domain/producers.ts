@@ -231,8 +231,7 @@ export async function writeProducerMetadata(
 	return writeSongsMetadata(
 		db,
 		staticPath,
-		rows.map((r) => r.song_id),
-		`Processed producer ${producerId}`
+		rows.map((r) => r.song_id)
 	);
 }
 
