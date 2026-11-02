@@ -223,11 +223,6 @@ export interface UpdateSettingsInput {
 	automaticallyMakeSingles?: boolean;
 }
 
-export interface PageRequest {
-	limit: number;
-	offset: number;
-}
-
 export interface SongImportDraft {
 	originalFilename: string;
 	filepath: string;
@@ -254,13 +249,4 @@ export interface CreateSongsWithMetadataInput {
 export interface FileUpload {
 	filename: string;
 	base64Data: string;
-}
-
-export interface AlbumArtUploadRequest extends FileUpload {
-	albumId: number;
-}
-
-export interface SongBatchUploadRequest {
-	files: FileUpload[];
-	albumId?: number;
 }

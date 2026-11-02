@@ -146,7 +146,8 @@
 		loading = true;
 
 		try {
-			await ipcActions.uploadAlbumArt({ albumId, ...(await fileToUpload(currentFile)) });
+			const { filename, base64Data } = await fileToUpload(currentFile);
+			await ipcActions.uploadAlbumArt(albumId, filename, base64Data);
 			await invalidateAll();
 		} finally {
 			loading = false;

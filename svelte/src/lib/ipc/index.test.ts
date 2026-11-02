@@ -2,38 +2,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRawIpcBindings, type RawIpcBindings } from './bindings';
 import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
 import { createIpcActions } from '$lib/services/ipc-actions';
-import { SyncState } from '$lib/stores/sync.svelte';
 
 describe('ipc actions', () => {
 	let api: RawIpcBindings;
 	let runtimeErrors: RuntimeErrorNotifier;
 	let notifySpy: ReturnType<typeof vi.spyOn>;
-	let syncState: SyncState;
 	let ipcActions: ReturnType<typeof createIpcActions>;
 
 	beforeEach(() => {
 		api = {
 			UpdateSong: vi.fn(),
-			UpdateSettings: vi.fn()
+			GetSongsReadable: vi.fn()
 		} as unknown as RawIpcBindings;
 		window.api = api;
 		runtimeErrors = new RuntimeErrorNotifier();
 		notifySpy = vi.spyOn(runtimeErrors, 'notify');
-		syncState = new SyncState();
-		ipcActions = createIpcActions({ syncState, runtimeErrors });
+		ipcActions = createIpcActions(runtimeErrors);
 	});
 
 	it('uses the Electron preload bindings directly', () => {
 		expect(getRawIpcBindings()).toBe(api);
 	});
 
-	it('marks sync state as changed after successful mutating calls', async () => {
-		vi.mocked(api.UpdateSong).mockResolvedValue(null);
-		syncState.configure(true, false);
+	it('forwards all arguments and returns the result', async () => {
+		vi.mocked(api.GetSongsReadable).mockResolvedValue([]);
 
-		await ipcActions.updateSong({ id: 1, name: 'Track', artistIds: [], producerIds: [] });
+		await expect(ipcActions.getSongsReadable(25, 50)).resolves.toEqual([]);
 
-		expect(syncState.hasChanges).toBe(true);
+		expect(api.GetSongsReadable).toHaveBeenCalledWith(25, 50);
 	});
 
 	it('reports runtime failures before rethrowing', async () => {
@@ -45,20 +41,5 @@ describe('ipc actions', () => {
 		).rejects.toThrow('boom');
 
 		expect(notifySpy).toHaveBeenCalledWith(error, 'UpdateSong');
-	});
-
-	it('reconfigures sync state from updated settings', async () => {
-		vi.mocked(api.UpdateSettings).mockResolvedValue({
-			id: 1,
-			clearTrackNumberOnUpload: false,
-			importToAppleMusic: true,
-			automaticallyMakeSingles: false,
-			updatedAt: 1
-		});
-
-		await ipcActions.updateSettings({ importToAppleMusic: true });
-
-		expect(syncState.isAppleMusicEnabled).toBe(true);
-		expect(syncState.hasChanges).toBe(false);
 	});
 });

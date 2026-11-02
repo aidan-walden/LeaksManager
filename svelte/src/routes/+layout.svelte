@@ -14,7 +14,7 @@
 	let { children, data }: { children?: Snippet; data: LayoutData } = $props();
 	const syncState = new SyncState();
 	const runtimeErrors = new RuntimeErrorNotifier();
-	const ipcActions = createIpcActions({ syncState, runtimeErrors });
+	const ipcActions = createIpcActions(runtimeErrors);
 
 	setAppServicesContext({ syncState, runtimeErrors, ipcActions });
 

@@ -43,7 +43,7 @@
 		const nextSongsCount = await ipcActions.getSongsCount();
 		const nextPage = clampSongsPage(page, nextSongsCount, songsPerPage);
 		const offset = nextPage * songsPerPage;
-		const nextSongs = await ipcActions.getSongsReadable({ limit: songsPerPage, offset });
+		const nextSongs = await ipcActions.getSongsReadable(songsPerPage, offset);
 
 		if (requestId !== refreshRequestId) {
 			return;
@@ -73,7 +73,7 @@
 			return;
 		}
 
-		const replacementRows = await ipcActions.getSongsReadable({ limit: 1, offset: replacementOffset });
+		const replacementRows = await ipcActions.getSongsReadable(1, replacementOffset);
 		localSongs = [...nextVisibleSongs, ...replacementRows];
 	}
 
@@ -90,10 +90,10 @@
 		localSongsCount = totalSongsCount + createdCount;
 
 		const pageOffset = currentPage * songsPerPage;
-		const incomingRows = await ipcActions.getSongsReadable({
-			limit: Math.min(createdCount, songsPerPage),
-			offset: pageOffset
-		});
+		const incomingRows = await ipcActions.getSongsReadable(
+			Math.min(createdCount, songsPerPage),
+			pageOffset
+		);
 		localSongs = mergeIncomingPageRows(incomingRows, visibleSongs, songsPerPage);
 	}
 

@@ -40,7 +40,7 @@ export class SongImportController {
 
 	async handleUpload(files: File[], albumId?: number): Promise<number> {
 		const fileUploads = await Promise.all(files.map(fileToUpload));
-		const result = await this.#ipcActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
+		const result = await this.#ipcActions.uploadAndExtractMetadata(fileUploads, albumId ?? null);
 
 		this.#stagedImport = {
 			filesData: result.filesData,
