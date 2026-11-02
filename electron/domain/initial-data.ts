@@ -4,7 +4,7 @@ import { getSongsReadable, getSongsCount } from './songs';
 import { getAlbumsWithSongs } from './albums';
 import { getArtists } from './artists';
 import { getProducersWithAliases } from './producers';
-import { getSettings } from './settings';
+import { getSettings, isMac } from './settings';
 
 // Port of backend/initial_data.go — the payload for the renderer's layout load.
 
@@ -20,7 +20,7 @@ export function getInitialData(db: Database.Database): InitialData {
 		artists: getArtists(db),
 		producers: getProducersWithAliases(db),
 		settings,
-		isMac: process.platform === 'darwin',
+		isMac: isMac(),
 		limits: { songsPerPage: SONGS_PER_PAGE, albumsPerPage: ALBUMS_PER_PAGE },
 		hasUnsyncedChanges: checkUnsyncedChanges(db, settings.importToAppleMusic)
 	};

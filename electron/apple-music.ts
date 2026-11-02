@@ -6,7 +6,7 @@ import type Database from 'better-sqlite3';
 import type { IpcDeps } from './ipc';
 import type { SyncResult, SyncItemResult, SongReadable } from './domain/models';
 import { getSongReadable, writeSongMetadataInternal } from './domain/songs';
-import { getSettings } from './domain/settings';
+import { getSettings, isMac } from './domain/settings';
 import { staticFilePath } from './paths';
 import { now } from './domain/rows';
 
@@ -89,7 +89,7 @@ function logSyncError(song: SongReadable, step: string, err: unknown): void {
 // setting is a no-op. A single song's failure is captured in its result and must NOT mark
 // that song synced.
 export async function syncSongsToAppleMusic(deps: IpcDeps): Promise<SyncResult> {
-	if (process.platform !== 'darwin') {
+	if (!isMac()) {
 		throw new Error('Apple Music sync is only available on macOS');
 	}
 
