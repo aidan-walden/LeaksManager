@@ -18,7 +18,6 @@ import { createArtist } from './domain/artists';
 import {
 	createAlbum,
 	updateAlbum,
-	deleteAlbum,
 	uploadAlbumArt
 } from './domain/albums';
 import {
@@ -33,7 +32,8 @@ import {
 	getSongsReadable,
 	getSongsCount,
 	writeSongMetadata,
-	writeAlbumMetadata
+	writeAlbumMetadata,
+	deleteAlbumAndClearTags
 } from './domain/songs';
 import { updateSettings } from './domain/settings';
 import { uploadAndExtractMetadata, createSongsWithMetadata } from './domain/workflows';
@@ -52,7 +52,8 @@ export const handlers = {
 	// Albums
 	CreateAlbum: (d: IpcDeps, input: CreateAlbumInput) => createAlbum(d.db, input),
 	UpdateAlbum: (d: IpcDeps, input: UpdateAlbumInput) => updateAlbum(d.db, input),
-	DeleteAlbum: (d: IpcDeps, albumId: number) => deleteAlbum(d.db, albumId),
+	DeleteAlbum: (d: IpcDeps, albumId: number) =>
+		deleteAlbumAndClearTags(d.db, d.staticPath, albumId),
 	UploadAlbumArt: (d: IpcDeps, albumId: number, filename: string, base64Data: string) =>
 		uploadAlbumArt(d.db, d.staticPath, albumId, filename, base64Data),
 

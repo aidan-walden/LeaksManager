@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 import { migrate } from './db/migrate';
 import { configureConnection } from './db/connection';
 import { createArtist } from './domain/artists';
+import { createAlbum, deleteAlbum } from './domain/albums';
 import { createSong } from './domain/songs';
+import { getSettings } from './domain/settings';
 import { syncSongsToAppleMusic } from './apple-music';
 import type { IpcDeps } from './ipc';
 
@@ -97,6 +99,25 @@ describe('syncSongsToAppleMusic', () => {
 
 		expect(results[0]).toMatchObject({ status: 'added', appleMusicId: 'NEWID' });
 		expect(row()).toEqual({ synced: 1, apple_music_id: 'NEWID' });
+	});
+
+	it.each([
+		['clears the album', 0, ''],
+		['sets the single name', 1, 'Song - Single']
+	])('%s of a track after its album is deleted', async (_name, makeSingles, expectedAlbum) => {
+		const artistId = (db.prepare('SELECT artist_id FROM song_artists').get() as { artist_id: number })
+			.artist_id;
+		const album = createAlbum(db, { name: 'Gone', artistIds: [artistId] });
+		db.prepare('UPDATE songs SET album_id = ? WHERE id = ?').run(album.id, songId);
+		getSettings(db);
+		db.prepare('UPDATE settings SET automatically_make_singles = ?').run(makeSingles);
+		deleteAlbum(db, album.id);
+		fakeMusic({ verify: 'true' });
+
+		await sync();
+
+		const update = osascript.mock.calls.find(([step]) => step === 'update');
+		expect(update?.[1]).toEqual(['OLDID', 'Song', 'Artist', expectedAlbum]);
 	});
 
 	it('updates the saved track when verify finds it', async () => {

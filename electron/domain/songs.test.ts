@@ -1,16 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { migrate } from '../db/migrate';
 import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum } from './albums';
 import { createProducerWithAliases } from './producers';
-import { createSong, deleteSong, writeAlbumMetadata } from './songs';
+import { createSong, deleteAlbumAndClearTags, deleteSong, writeAlbumMetadata } from './songs';
 import { updateSettings } from './settings';
+import { readMetadata } from '../metadata';
 // buildSongTags is the T032 write-path port of backend/metadata.go buildSongTags.
 // It assembles the cross-format tag payload from the DB (mediabunny MetadataTags)
 // plus the resolved file path, mirroring the Go (SongTags, fullPath, error) return.
@@ -222,5 +223,85 @@ describe('writeAlbumMetadata', () => {
 			db.close();
 			rmSync(staticPath, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('deleteAlbumAndClearTags', () => {
+	const FIXTURE_FLAC = 'ZkxhQwAAACIAwADAAAALAAAMAfQA8AAABkCfCt/b50DLnNgYijV2HiR2hAAALg0AAABMYXZmNjIuMTIuMTAyAQAAABUAAABlbmNvZGVyPUxhdmY2Mi4xMi4xMDL/+BQIACsAAADpW//4FAgBLAAAAIUj//gUCAIlAAAAMav/+BQIAyIAAABd0//4FAgENwAAANi+//gUCAUwAAAAtMb/+BQIBjkAAAAATv/4FAgHPgAAAGw2//hkCAg/9gAAAKYF';
+	let db: Database.Database;
+	let staticPath: string;
+	let artistId: number;
+
+	beforeEach(() => {
+		db = new Database(':memory:');
+		configureConnection(db);
+		migrate(db, MIGRATIONS_DIR);
+		staticPath = mkdtempSync(join(tmpdir(), 'leaks-delete-album-'));
+		mkdirSync(join(staticPath, 'uploads', 'songs'), { recursive: true });
+		artistId = createArtist(db, { name: 'Band' }).id;
+	});
+
+	afterEach(() => {
+		rmSync(staticPath, { recursive: true, force: true });
+	});
+
+	const seedSong = (albumId: number, file: string) =>
+		createSong(db, {
+			name: 'Track',
+			filepath: `uploads/songs/${file}`,
+			artistIds: [artistId],
+			producerIds: [],
+			albumId,
+			trackNumber: 2
+		}).id;
+
+	it("removes the album's tags from the file and keeps the song's own", async () => {
+		const album = createAlbum(db, { name: 'Gone', artistIds: [artistId], genre: 'Jazz' });
+		const songId = seedSong(album.id, 'real.flac');
+		const path = join(staticPath, 'uploads', 'songs', 'real.flac');
+		writeFileSync(path, Buffer.from(FIXTURE_FLAC, 'base64'));
+		await writeAlbumMetadata(db, staticPath, album.id);
+		expect(await readMetadata(path)).toMatchObject({ album: 'Gone', genre: 'Jazz', trackNumber: 2 });
+
+		const result = await deleteAlbumAndClearTags(db, staticPath, album.id);
+
+		expect(result).toEqual({ songsFailed: 0 });
+		expect(await readMetadata(path)).toMatchObject({
+			title: 'Track',
+			album: null,
+			genre: null,
+			trackNumber: null
+		});
+		expect(db.prepare('SELECT album_id, synced FROM songs WHERE id = ?').get(songId)).toEqual({
+			album_id: null,
+			synced: 0
+		});
+	});
+
+	it("reports a song whose file can't be written and still deletes the album", async () => {
+		const album = createAlbum(db, { name: 'Gone', artistIds: [artistId] });
+		seedSong(album.id, 'missing.flac');
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		const result = await deleteAlbumAndClearTags(db, staticPath, album.id);
+		consoleError.mockRestore();
+
+		expect(result).toEqual({ songsFailed: 1 });
+		expect(db.prepare('SELECT COUNT(*) AS c FROM albums').get()).toEqual({ c: 0 });
+	});
+
+	it("doesn't clear the file's tags on a normal write", () => {
+		const songId = createSong(db, {
+			name: 'Track',
+			filepath: 'uploads/songs/normal.flac',
+			artistIds: [artistId],
+			producerIds: []
+		}).id;
+
+		const { tags } = buildSongTags(db, staticPath, songId);
+
+		expect(tags).not.toHaveProperty('album');
+		expect(tags).not.toHaveProperty('genre');
+		expect(tags).not.toHaveProperty('images');
 	});
 });

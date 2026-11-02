@@ -10,7 +10,7 @@ import type {
 import type { SongProcessingResult, BatchResult } from './models';
 import { ARTIST_COLS, SONG_COLS, qualify, rowToSong, rowToArtist, rowToProducer, now } from './rows';
 import { linkOrdered, replaceOrderedLinks } from './links';
-import { getAlbumById, getArtistsForAlbum, resolveOrCreateAlbum } from './albums';
+import { deleteAlbum, getAlbumById, getArtistsForAlbum, resolveOrCreateAlbum } from './albums';
 import { getSettings } from './settings';
 import { cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
@@ -18,6 +18,8 @@ import { writeMetadata, type MetadataTags } from '../metadata';
 import { readFileSync } from 'node:fs';
 
 // Port of backend/songs.go — create + read paths plus update/delete (US2).
+
+type TagWriteOptions = { clearAlbumTags?: boolean };
 
 // Each write holds the cover art in memory and re-muxes a whole audio file, so a large
 // album or producer must not start them all at once.
@@ -183,14 +185,24 @@ export function getProducersForSong(db: Database.Database, songId: number): Prod
 
 // --- Metadata write-back (port of backend/metadata.go) ---
 
+// The album name that a song's tags and its Apple Music track carry. A song with no album
+// becomes its own single when that setting is on.
+export function effectiveAlbumName(db: Database.Database, song: SongReadable): string {
+	if (song.album?.name) return song.album.name;
+	return getSettings(db).automaticallyMakeSingles ? `${song.name} - Single` : '';
+}
+
 // buildSongTags assembles a mediabunny MetadataTags payload from the DB: genre and
 // album artist fall back song→album, artwork falls back song→album, and the singles
 // track-number rule is driven by Settings. Returns the tags plus the resolved full path
-// of the audio file to write.
+// of the audio file to write. A value the song doesn't have normally leaves the file's tag
+// alone, because the tag may be the only copy of it; `clearAlbumTags` clears the tags that
+// came from a former album instead.
 export function buildSongTags(
 	db: Database.Database,
 	staticPath: string,
-	songId: number
+	songId: number,
+	{ clearAlbumTags = false }: TagWriteOptions = {}
 ): { tags: MetadataTags; fullPath: string } {
 	const song = getSongReadable(db, songId);
 	if (!song) throw new Error('song not found');
@@ -201,24 +213,27 @@ export function buildSongTags(
 	const albumArtists = album ? getArtistsForAlbum(db, album.id) : [];
 	const albumArtist = albumArtists.map((a) => a.name).join(', ') || song.artist;
 
-	let albumName = album?.name ?? '';
+	const albumName = effectiveAlbumName(db, song);
 	let trackNumber = song.trackNumber ?? 0;
 	let trackTotal = 0;
 
-	if (album && albumName !== '') {
+	if (album?.name) {
 		const count = db.prepare(`SELECT COUNT(*) AS c FROM songs WHERE album_id = ?`).get(album.id) as {
 			c: number;
 		};
 		trackTotal = count.c;
-	} else if (getSettings(db).automaticallyMakeSingles) {
-		albumName = `${song.name} - Single`;
+	} else if (albumName !== '') {
 		trackNumber = 1;
 		trackTotal = 1;
 	} else {
 		trackNumber = 0;
 	}
 
-	const tags: MetadataTags = {};
+	// An explicit undefined clears the tag (see mergeTags). The assignments below replace
+	// these for every value the song still has.
+	const tags: MetadataTags = clearAlbumTags
+		? { album: undefined, genre: undefined, trackNumber: undefined, tracksTotal: undefined, images: undefined }
+		: {};
 	if (song.name !== '') tags.title = song.name;
 	if (song.artist !== '') tags.artist = song.artist;
 	if (albumArtist !== '') tags.albumArtist = albumArtist;
@@ -255,9 +270,10 @@ export function buildSongTags(
 export async function writeSongMetadataInternal(
 	db: Database.Database,
 	staticPath: string,
-	songId: number
+	songId: number,
+	options?: TagWriteOptions
 ): Promise<void> {
-	const { tags, fullPath } = buildSongTags(db, staticPath, songId);
+	const { tags, fullPath } = buildSongTags(db, staticPath, songId, options);
 	await writeMetadata(fullPath, tags);
 }
 
@@ -266,10 +282,11 @@ export async function writeSongMetadataInternal(
 export async function writeSongMetadata(
 	db: Database.Database,
 	staticPath: string,
-	songId: number
+	songId: number,
+	options?: TagWriteOptions
 ): Promise<SongProcessingResult> {
 	try {
-		await writeSongMetadataInternal(db, staticPath, songId);
+		await writeSongMetadataInternal(db, staticPath, songId, options);
 		return { songId, success: true };
 	} catch (err) {
 		const error = err instanceof Error ? err.message : String(err);
@@ -282,7 +299,8 @@ export async function writeSongMetadata(
 export async function writeSongsMetadata(
 	db: Database.Database,
 	staticPath: string,
-	songIds: number[]
+	songIds: number[],
+	options?: TagWriteOptions
 ): Promise<BatchResult> {
 	const results: SongProcessingResult[] = new Array(songIds.length);
 	let cursor = 0;
@@ -291,7 +309,7 @@ export async function writeSongsMetadata(
 		async () => {
 			while (cursor < songIds.length) {
 				const index = cursor++;
-				results[index] = await writeSongMetadata(db, staticPath, songIds[index]);
+				results[index] = await writeSongMetadata(db, staticPath, songIds[index], options);
 			}
 		}
 	);
@@ -313,5 +331,23 @@ export async function writeAlbumMetadata(
 		db,
 		staticPath,
 		rows.map((r) => r.id)
+	);
+}
+
+// Deletes an album, then rewrites its former songs' files so they stop carrying its tags.
+export async function deleteAlbumAndClearTags(
+	db: Database.Database,
+	staticPath: string,
+	albumId: number
+): Promise<BatchResult> {
+	const rows = db.prepare(`SELECT id FROM songs WHERE album_id = ?`).all(albumId) as {
+		id: number;
+	}[];
+	deleteAlbum(db, albumId);
+	return writeSongsMetadata(
+		db,
+		staticPath,
+		rows.map((r) => r.id),
+		{ clearAlbumTags: true }
 	);
 }

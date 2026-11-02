@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { migrate } from '../db/migrate';
 import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
-import { createAlbum } from './albums';
+import { createAlbum, deleteAlbum } from './albums';
 import { createSong } from './songs';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -87,6 +87,35 @@ describe('sync triggers flip synced=0 for exactly the affected rows (SC-003)', (
 		expect(synced('albums', album.id)).toBe(0);
 		expect(synced('songs', inAlbum)).toBe(0);
 		expect(synced('songs', standalone)).toBe(1);
+	});
+
+	// Foreign key ON DELETE SET NULL must dirty songs even when the album has no artist links
+	// whose delete trigger could do it.
+	it('deleting an album with no artists dirties its songs (song_metadata_update_cascade)', () => {
+		const artist = createArtist(db, { name: 'Band' });
+		const album = createAlbum(db, { name: 'Album', artistIds: [artist.id] });
+		const inAlbum = seedSong(album.id, 'In');
+		const standalone = seedSong(null, 'Out');
+		db.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(album.id);
+		markAllSynced();
+
+		deleteAlbum(db, album.id);
+
+		expect(synced('songs', inAlbum)).toBe(0);
+		expect(synced('songs', standalone)).toBe(1);
+	});
+
+	it('moving a song to another album dirties only that song (song_metadata_update_cascade)', () => {
+		const artist = createArtist(db, { name: 'Band' });
+		const album = createAlbum(db, { name: 'Album', artistIds: [artist.id] });
+		const moved = seedSong(null, 'Moved');
+		const other = seedSong(null, 'Other');
+		markAllSynced();
+
+		db.prepare(`UPDATE songs SET album_id = ? WHERE id = ?`).run(album.id, moved);
+
+		expect(synced('songs', moved)).toBe(0);
+		expect(synced('songs', other)).toBe(1);
 	});
 
 	// song_artists_insert_cascade: AFTER INSERT ON song_artists -> dirties NEW.song_id.

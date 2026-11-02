@@ -190,6 +190,31 @@ describe('metadata round-trip parity (SC-002)', () => {
 		expect(openFds()).toBeLessThanOrEqual(before);
 	});
 
+	for (const { format, ext, producerKey, makeSource } of CASES) {
+		it(`${format}: an explicit undefined clears a tag and keeps the others`, async () => {
+			const path = await makeSource(`clear-${ext}`);
+			await writeMetadata(path, sampleTags());
+
+			await writeMetadata(path, {
+				album: undefined,
+				genre: undefined,
+				trackNumber: undefined,
+				tracksTotal: undefined,
+				images: undefined
+			});
+
+			const got = await readTags(path);
+			expect(got.album).toBeUndefined();
+			expect(got.genre).toBeUndefined();
+			expect(got.trackNumber).toBeUndefined();
+			expect(got.tracksTotal).toBeUndefined();
+			expect(got.images ?? []).toHaveLength(0);
+			expect(got.title).toBe('Test Title');
+			expect(got.raw?.[producerKey]).toBe(PRODUCERS);
+			await assertAudioIntact(path);
+		});
+	}
+
 	it('merge preserves existing raw tags instead of replacing all metadata', async () => {
 		// Seed a file with a producer credit, then write unrelated tags — the producer
 		// must survive (writes must MERGE, not replace, per the old backend's behavior).

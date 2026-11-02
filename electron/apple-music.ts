@@ -5,7 +5,7 @@ import { dialog } from 'electron';
 import type Database from 'better-sqlite3';
 import type { IpcDeps } from './ipc';
 import type { SyncResult, SyncItemResult, SongReadable } from './domain/models';
-import { getSongReadable, writeSongMetadataInternal } from './domain/songs';
+import { effectiveAlbumName, getSongReadable, writeSongMetadataInternal } from './domain/songs';
 import { getSettings, isMac } from './domain/settings';
 import { staticFilePath } from './paths';
 import { now } from './domain/rows';
@@ -240,6 +240,7 @@ async function findAppleMusicTrack(song: SongReadable): Promise<string> {
 function buildMetadataScript(
 	trackVar: string,
 	song: SongReadable,
+	albumName: string,
 	argStart: number
 ): { script: string; args: string[] } {
 	const lines: string[] = [];
@@ -252,9 +253,8 @@ function buildMetadataScript(
 	lines.push(`set name of ${trackVar} to ${nextArg(song.name)}`);
 	lines.push(`set artist of ${trackVar} to ${nextArg(song.artist)}`);
 
-	if (song.album != null) {
-		lines.push(`set album of ${trackVar} to ${nextArg(song.album.name)}`);
-	}
+	// Always set, so an empty name clears the album of a song that left one.
+	lines.push(`set album of ${trackVar} to ${nextArg(albumName)}`);
 	if (song.genre != null) {
 		lines.push(`set genre of ${trackVar} to ${nextArg(song.genre)}`);
 	}
@@ -314,7 +314,7 @@ async function updateAppleMusicTrack(
 	song: SongReadable
 ): Promise<void> {
 	// argv: item 1 = persistent ID, then metadata values, then the artwork path.
-	const metadata = buildMetadataScript('t', song, 2);
+	const metadata = buildMetadataScript('t', song, effectiveAlbumName(deps.db, song), 2);
 	const artwork = buildArtworkScript(deps, 't', song, 2 + metadata.args.length);
 	const args = [persistentID, ...metadata.args, ...artwork.args];
 	const script = `
@@ -333,7 +333,7 @@ async function updateAppleMusicTrack(
 // Adds a new track file to the library, returning its persistent ID.
 async function addTrackToAppleMusic(deps: IpcDeps, song: SongReadable): Promise<string> {
 	// argv: item 1 = POSIX path, then metadata values.
-	const metadata = buildMetadataScript('newTrack', song, 2);
+	const metadata = buildMetadataScript('newTrack', song, effectiveAlbumName(deps.db, song), 2);
 	const args = [staticFilePath(deps.staticPath, song.filepath), ...metadata.args];
 	const script = `
 		on run argv

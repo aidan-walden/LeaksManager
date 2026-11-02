@@ -8,13 +8,14 @@
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import type { AlbumSummary } from '$lib/ipc';
 	import { toAssetUrl } from '$lib/utils';
+	import { notifyTagWriteFailures } from '$lib/utils/tag-write-failures';
 
 	let creatingAlbum = $state(false);
 	let currentAlbum = $state<AlbumSummary | null>(null);
 	const { ipcActions } = getAppServicesContext();
 
 	async function onDelete(id: number) {
-		await ipcActions.deleteAlbum(id);
+		notifyTagWriteFailures(await ipcActions.deleteAlbum(id));
 		await invalidateAll();
 	}
 

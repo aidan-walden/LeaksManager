@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { migrate } from './migrate';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
-const LATEST = 3; // electron/migrations: 000001..000003
+const LATEST = 4; // electron/migrations: 000001..000004
 
 function names(db: Database.Database, type: 'table' | 'trigger'): string[] {
 	return (

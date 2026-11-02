@@ -64,18 +64,35 @@ function disposeInput(input: Input): void {
 	input.dispose();
 }
 
+// Native keys (ID3, MP4, Vorbis) that mediabunny's `raw` uses for each clearable tag, in
+// upper case. One ID3 or MP4 key holds both the track number and the total.
+const RAW_TAG_KEYS: Partial<Record<keyof MetadataTags, string[]>> = {
+	album: ['TALB', '©ALB', 'ALBUM'],
+	genre: ['TCON', '©GEN', 'GENRE'],
+	trackNumber: ['TRCK', 'TRKN', 'TRACKNUMBER'],
+	tracksTotal: ['TRCK', 'TRKN', 'TRACKTOTAL', 'TOTALTRACKS'],
+	images: ['APIC', 'COVR', 'METADATA_BLOCK_PICTURE']
+};
+
 // mergeTags overlays new tags onto the file's existing metadata instead of replacing
 // it: scalar fields in `overrides` win, everything else (including unrelated `raw`
 // entries such as previously-written producer credits) is preserved. Passing a static
 // tags object to mediabunny would REPLACE all input metadata; merging keeps parity with
 // the old backend, which only ever touched the fields it wrote.
 //
-// Known limitation (parity with the Go backend): because buildSongTags only sets keys
-// with a non-empty DB value, a merge can never *clear* a tag. Emptying e.g. genre in the
-// app leaves the file's old genre untouched. Clearing would require emitting explicit
-// empty/sentinel values here — deliberately not done, to match prior behavior.
+// A key absent from `overrides` keeps the file's value, so emptying e.g. genre in the app
+// leaves the file's old genre untouched (parity with the Go backend). A key explicitly set
+// to undefined clears the tag, which must also drop its native `raw` entries because
+// mediabunny writes those back. Only the keys in RAW_TAG_KEYS can be cleared.
 function mergeTags(inputTags: MetadataTags, overrides: MetadataTags): MetadataTags {
-	return { ...inputTags, ...overrides, raw: { ...inputTags.raw, ...overrides.raw } };
+	const raw = { ...inputTags.raw, ...overrides.raw };
+	for (const tag of Object.keys(overrides) as (keyof MetadataTags)[]) {
+		if (overrides[tag] !== undefined) continue;
+		for (const key of Object.keys(raw)) {
+			if (RAW_TAG_KEYS[tag]?.includes(key.toUpperCase())) delete raw[key];
+		}
+	}
+	return { ...inputTags, ...overrides, raw };
 }
 
 // readMetadata replaces ExtractMetadata's tag read (parity with dhowden/tag).
