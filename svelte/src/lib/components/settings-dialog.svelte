@@ -13,12 +13,10 @@
 
 	let {
 		editingSettings = $bindable(),
-		onOpenChange,
 		settings,
 		isMac
 	}: {
 		editingSettings?: boolean;
-		onOpenChange?: (value: boolean) => void;
 		settings: Settings;
 		isMac: boolean;
 	} = $props();
@@ -58,7 +56,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open={editingSettings} {onOpenChange}>
+<Dialog.Root bind:open={editingSettings}>
 	<Dialog.Content class="sm">
 		<Dialog.Header>
 			<Dialog.Title>Settings</Dialog.Title>

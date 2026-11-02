@@ -14,10 +14,6 @@
 		settingsOpen = true;
 	}
 
-	function onSettingsOpenChange(open: boolean) {
-		settingsOpen = open;
-	}
-
 	const { children, data } = $props();
 </script>
 
@@ -36,7 +32,6 @@
 
 <SettingsDialog
 	bind:editingSettings={settingsOpen}
-	onOpenChange={onSettingsOpenChange}
 	settings={data.settings}
 	isMac={data.isMac}
 />
