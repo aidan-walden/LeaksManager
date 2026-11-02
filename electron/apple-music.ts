@@ -130,22 +130,13 @@ export async function syncSongsToAppleMusic(deps: IpcDeps): Promise<SyncResult> 
 }
 
 // Finds the song's track in Apple Music: first by its saved persistent ID, then by name
-// and artist. Returns '' when no track is found. A lookup error counts as "not found", so
-// the caller adds the track.
+// and artist. Returns '' only when both lookups succeed and find no track. A lookup error
+// rejects, because the track may exist and adding it could create a duplicate.
 async function findExistingTrack(song: SongReadable): Promise<string> {
-	if (song.appleMusicId) {
-		try {
-			if (await verifyAppleMusicTrack(song.appleMusicId)) return song.appleMusicId;
-		} catch (err) {
-			logSyncError(song, 'verify_existing_track', err);
-		}
+	if (song.appleMusicId && (await verifyAppleMusicTrack(song.appleMusicId))) {
+		return song.appleMusicId;
 	}
-	try {
-		return await findAppleMusicTrack(song);
-	} catch (err) {
-		logSyncError(song, 'find_track', err);
-		return '';
-	}
+	return findAppleMusicTrack(song);
 }
 
 // Any failure returns a "failed" item and leaves the song dirty, so a later sync retries it.
@@ -172,7 +163,12 @@ async function syncSingleSong(deps: IpcDeps, songID: number): Promise<SyncItemRe
 		return failed('write_metadata', 'Failed to write source metadata', err);
 	}
 
-	let appleMusicID = await findExistingTrack(song);
+	let appleMusicID: string;
+	try {
+		appleMusicID = await findExistingTrack(song);
+	} catch (err) {
+		return failed('find_track', 'Failed to look up track', err);
+	}
 	const status = appleMusicID !== '' ? 'updated' : 'added';
 
 	if (status === 'updated') {
@@ -198,7 +194,8 @@ async function syncSingleSong(deps: IpcDeps, songID: number): Promise<SyncItemRe
 	return { songId: songID, songName: song.name, status, appleMusicId: appleMusicID };
 }
 
-// verifyAppleMusicTrack checks if a track with the given persistent ID exists.
+// verifyAppleMusicTrack checks if a track with the given persistent ID exists. Only
+// errAENoSuchObject (-1728) means "missing"; any other error, such as a timeout, rejects.
 async function verifyAppleMusicTrack(persistentID: string): Promise<boolean> {
 	const script = `
 		on run argv
