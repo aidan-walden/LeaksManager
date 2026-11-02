@@ -10,7 +10,7 @@ import type {
 import type { SongProcessingResult, BatchResult } from './models';
 import { ARTIST_COLS, SONG_COLS, qualify, rowToSong, rowToArtist, rowToProducer, now } from './rows';
 import { linkOrdered, replaceOrderedLinks } from './links';
-import { getAlbumById, resolveOrCreateAlbum } from './albums';
+import { getAlbumById, getArtistsForAlbum, resolveOrCreateAlbum } from './albums';
 import { getSettings } from './settings';
 import { cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
@@ -185,111 +185,70 @@ export function getProducersForSong(db: Database.Database, songId: number): Prod
 
 // --- Metadata write-back (port of backend/metadata.go) ---
 
-// buildSongTags assembles a mediabunny MetadataTags payload from the DB, mirroring
-// backend/metadata.go buildSongTags: genre/album-artist fall back song→album, artwork
-// falls back song→album, and the singles/track-number rule (FR-009) is driven by
-// Settings. Returns the tags plus the resolved full path of the audio file to write.
-// mediabunny's MetadataTags has no composer/producer field, so producers are emitted
-// through `raw` under each format's native composer/producer key (as the Go oracle did:
-// ID3 TCOM, MP4 ©wrt, Vorbis PRODUCER). mediabunny only writes the key that matches the
-// output format, so setting all three on every write is safe.
+// buildSongTags assembles a mediabunny MetadataTags payload from the DB: genre and
+// album artist fall back song→album, artwork falls back song→album, and the singles
+// track-number rule is driven by Settings. Returns the tags plus the resolved full path
+// of the audio file to write.
 export function buildSongTags(
 	db: Database.Database,
 	staticPath: string,
 	songId: number
 ): { tags: MetadataTags; fullPath: string } {
-	const row = db
-		.prepare(
-			`SELECT
-				s.name AS s_name, s.filepath AS s_filepath, s.genre AS s_genre, s.year AS s_year,
-				s.track_number AS s_track, s.artwork_path AS s_artwork,
-				a.name AS a_name, a.genre AS a_genre, a.artwork_path AS a_artwork,
-				(SELECT GROUP_CONCAT(ar.name, ', ') FROM song_artists sa
-				 LEFT JOIN artists ar ON sa.artist_id = ar.id
-				 WHERE sa.song_id = s.id ORDER BY sa."order") AS artists,
-				(SELECT GROUP_CONCAT(ar2.name, ', ') FROM album_artists aa
-				 LEFT JOIN artists ar2 ON aa.artist_id = ar2.id
-				 WHERE aa.album_id = s.album_id ORDER BY aa."order") AS album_artists,
-				(SELECT GROUP_CONCAT(p.name, ', ') FROM song_producers sp
-				 LEFT JOIN producers p ON sp.producer_id = p.id
-				 WHERE sp.song_id = s.id ORDER BY sp."order") AS producers
-			FROM songs s
-			LEFT JOIN albums a ON s.album_id = a.id
-			WHERE s.id = ?`
-		)
-		.get(songId) as Record<string, unknown> | undefined;
+	const song = getSongReadable(db, songId);
+	if (!song) throw new Error('song not found');
 
-	if (!row) throw new Error('song not found');
+	const album = song.album;
+	const fullPath = staticFilePath(staticPath, song.filepath);
+	const genre = song.genre || album?.genre;
+	const albumArtists = album ? getArtistsForAlbum(db, album.id) : [];
+	const albumArtist = albumArtists.map((a) => a.name).join(', ') || song.artist;
 
-	const str = (v: unknown): string => (v == null ? '' : String(v));
-	const num = (v: unknown): number => (v == null ? 0 : Number(v));
-
-	const sName = str(row.s_name);
-	const fullPath = staticFilePath(staticPath, str(row.s_filepath));
-
-	let genre = str(row.s_genre);
-	if (genre === '') genre = str(row.a_genre);
-
-	let albumName = str(row.a_name);
-	const artistStr = str(row.artists);
-	let albumArtist = str(row.album_artists);
-	if (albumArtist === '') albumArtist = artistStr;
-
-	const year = num(row.s_year);
-	let trackNumber = num(row.s_track);
+	let albumName = album?.name ?? '';
+	let trackNumber = song.trackNumber ?? 0;
 	let trackTotal = 0;
 
-	const settings = getSettings(db);
-	if (albumName === '') {
-		if (settings.automaticallyMakeSingles) {
-			albumName = `${sName} - Single`;
-			trackNumber = 1;
-			trackTotal = 1;
-		} else {
-			trackNumber = 0;
-		}
-	} else {
-		const count = db
-			.prepare(
-				`SELECT COUNT(*) AS c FROM songs
-				 WHERE album_id = (SELECT album_id FROM songs WHERE id = ?)`
-			)
-			.get(songId) as { c: number };
+	if (album && albumName !== '') {
+		const count = db.prepare(`SELECT COUNT(*) AS c FROM songs WHERE album_id = ?`).get(album.id) as {
+			c: number;
+		};
 		trackTotal = count.c;
+	} else if (getSettings(db).automaticallyMakeSingles) {
+		albumName = `${song.name} - Single`;
+		trackNumber = 1;
+		trackTotal = 1;
+	} else {
+		trackNumber = 0;
 	}
 
-	// artwork: song art preferred, fall back to album art
-	const artRel = str(row.s_artwork) || str(row.a_artwork);
-
 	const tags: MetadataTags = {};
-	if (sName !== '') tags.title = sName;
-	if (artistStr !== '') tags.artist = artistStr;
+	if (song.name !== '') tags.title = song.name;
+	if (song.artist !== '') tags.artist = song.artist;
 	if (albumArtist !== '') tags.albumArtist = albumArtist;
 	if (albumName !== '') tags.album = albumName;
-	if (genre !== '') tags.genre = genre;
-	// Go wrote year as `date=YYYY`; readMetadata derives the year from date.getFullYear().
-	// Use a local mid-year date so the round-tripped year is timezone-stable.
-	if (year > 0) tags.date = new Date(year, 5, 15);
+	if (genre) tags.genre = genre;
+	// readMetadata derives the year from date.getFullYear(), so use a local mid-year date
+	// to keep the round-tripped year timezone-stable.
+	if ((song.year ?? 0) > 0) tags.date = new Date(song.year as number, 5, 15);
 	if (trackNumber > 0) {
 		tags.trackNumber = trackNumber;
 		if (trackTotal > 0) tags.tracksTotal = trackTotal;
 	}
 
-	if (artRel !== '') {
-		const artFull = staticFilePath(staticPath, artRel);
-		const mimeType = artRel.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+	const artwork = song.artworkPath || album?.artworkPath;
+	if (artwork) {
+		const artFull = staticFilePath(staticPath, artwork);
+		const mimeType = artwork.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 		tags.images = [
 			{ data: new Uint8Array(readFileSync(artFull)), mimeType, kind: 'coverFront' }
 		];
 	}
 
-	// Producers have no normalized MetadataTags field. Emit the `, `-joined names via
-	// `raw` under all three format-native composer/producer keys (ID3 TCOM, MP4 ©wrt
-	// (U+00A9), Vorbis PRODUCER); mediabunny writes only the key matching the output
-	// format. Mirrors the Go oracle, which wrote producers as the format's composer tag.
-	const producers = str(row.producers);
+	// MetadataTags has no composer/producer field. Emit the names via `raw` under all three
+	// format-native keys (ID3 TCOM, MP4 ©wrt, Vorbis PRODUCER); mediabunny writes only the
+	// key that matches the output format.
+	const producers = song.producers.map((p) => p.name).join(', ');
 	if (producers !== '') {
-		tags.raw = { ...tags.raw, TCOM: producers, '©wrt': producers, PRODUCER: producers };
+		tags.raw = { TCOM: producers, '©wrt': producers, PRODUCER: producers };
 	}
 
 	return { tags, fullPath };

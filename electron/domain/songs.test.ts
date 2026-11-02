@@ -91,6 +91,27 @@ describe('buildSongTags single-vs-album track-number rule (FR-009)', () => {
 		expect(tags.raw?.PRODUCER).toBe('Alpha, Beta');
 	});
 
+	it('joins artists, album artists and producers in their linked order, not by id', () => {
+		const [first, second] = ['First', 'Second'].map((name) => createArtist(db, { name }).id);
+		const [prodFirst, prodSecond] = ['Prod A', 'Prod B'].map(
+			(name) => createProducerWithAliases(db, { name, aliases: [] }).id
+		);
+		const album = createAlbum(db, { name: 'Album', artistIds: [second, first] });
+		const songId = createSong(db, {
+			name: 'Ordered',
+			filepath: 'uploads/songs/ordered.mp3',
+			artistIds: [second, first],
+			producerIds: [prodSecond, prodFirst],
+			albumId: album.id
+		}).id;
+
+		const { tags } = buildSongTags(db, staticPath, songId);
+
+		expect(tags.artist).toBe('Second, First');
+		expect(tags.albumArtist).toBe('Second, First');
+		expect(tags.raw?.PRODUCER).toBe('Prod B, Prod A');
+	});
+
 	it('omits producer raw keys when a song has none', () => {
 		const songId = seedSong(null);
 		const { tags } = buildSongTags(db, staticPath, songId);
