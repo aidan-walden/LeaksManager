@@ -1,7 +1,6 @@
 import type Database from 'better-sqlite3';
 import type {
 	Song,
-	Settings,
 	AlbumWithArtists,
 	SongImportDraft,
 	FileUpload,
@@ -19,11 +18,6 @@ import { matchProducersFromFilename } from './producers';
 import { createSong, writeSongMetadata } from './songs';
 import { getSettings } from './settings';
 
-// Port of backend/workflows.go. createSongsFromSpecs creates each song record and then
-// writes the assembled tags (resolved artists, inherited album+artwork, matched
-// producers) back into the audio file. Per the Go oracle, a per-file write failure is
-// logged and skipped, never aborting the batch.
-
 function emptyMeta(): ExtractedMetadata {
 	return {
 		title: null,
@@ -37,15 +31,6 @@ function emptyMeta(): ExtractedMetadata {
 		duration: null,
 		artwork: null
 	};
-}
-
-interface SongCreationSpec {
-	filepath: string;
-	originalFilename: string;
-	metadata: ExtractedMetadata;
-	artistIds: number[];
-	albumId: number | null;
-	artworkPath: string | null;
 }
 
 // Picks artwork for an uploaded song: embedded when requested + present (falling
@@ -70,60 +55,6 @@ function resolveUploadArtwork(
 	return null;
 }
 
-// Creates a song per spec, then writes its tags back to the file. A metadata write failure does not abort the batch (mirrors Go).
-async function createSongsFromSpecs(
-	db: Database.Database,
-	staticPath: string,
-	specs: SongCreationSpec[],
-	settings: Settings
-): Promise<Song[]> {
-	const created: Song[] = [];
-	for (const spec of specs) {
-		const producerIds = matchProducersFromFilename(db, spec.originalFilename, spec.artistIds);
-
-		const trackNumber =
-			!settings.clearTrackNumberOnUpload && (spec.metadata.trackNumber ?? 0) > 0
-				? spec.metadata.trackNumber
-				: null;
-
-		const input: CreateSongInput = {
-			name: spec.metadata.title || spec.originalFilename,
-			filepath: spec.filepath,
-			artistIds: spec.artistIds,
-			producerIds,
-			albumId: spec.albumId,
-			artworkPath: spec.artworkPath,
-			genre: spec.metadata.genre || null,
-			year: (spec.metadata.year ?? 0) > 0 ? spec.metadata.year : null,
-			trackNumber,
-			duration: (spec.metadata.duration ?? 0) > 0 ? spec.metadata.duration : null
-		};
-
-		// Guard the row creation itself, not just the write-back. Each createSong is its
-		// own committed transaction, so an unguarded throw on spec N would abort the whole
-		// call after specs 0..N-1 were persisted, stranding the remaining saved files. On
-		// failure, drop this spec's already-saved upload so it doesn't orphan, and continue.
-		let song: Song;
-		try {
-			song = createSong(db, input);
-		} catch (err) {
-			console.error(`createSong failed for ${spec.originalFilename}:`, err);
-			cleanupFiles(staticPath, [spec.filepath]);
-			continue;
-		}
-		created.push(song);
-
-		// Write-back: persist the resolved DB state into the file's embedded tags.
-		// A failure here (e.g. an unsupported output format) leaves the song row created
-		// but its file tags unwritten — logged rather than surfaced, mirroring the Go oracle.
-		const result = await writeSongMetadata(db, staticPath, song.id);
-		if (!result.success) {
-			console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
-		}
-	}
-	return created;
-}
-
 // First step of the metadata-extraction workflow: save + extract + parse, flag
 // which artists are unmapped, and map files to existing albums by name.
 export async function uploadAndExtractMetadata(
@@ -133,8 +64,7 @@ export async function uploadAndExtractMetadata(
 	albumId: number | null
 ): Promise<UploadAndExtractResult> {
 	const filesData: SongImportDraft[] = [];
-	const allArtistNames = new Set<string>();
-	const allAlbumNames = new Set<string>();
+	const unmappedArtists = new Set<string>();
 	let filesWithArtwork = 0;
 
 	for (const file of files) {
@@ -147,51 +77,25 @@ export async function uploadAndExtractMetadata(
 			metadata = emptyMeta();
 		}
 
-		const parsed = parseArtists(metadata.artist);
-		for (const name of parsed) allArtistNames.add(name);
+		const parsedArtists = parseArtists(metadata.artist);
+		const unmapped = parsedArtists.filter((name) => !findArtistByName(db, name));
+		for (const name of unmapped) unmappedArtists.add(name);
 
-		if (albumId == null && metadata.album) allAlbumNames.add(metadata.album);
 		if (metadata.artwork) filesWithArtwork++;
+
+		const album = albumId == null && metadata.album ? findAlbumByName(db, metadata.album) : null;
 
 		filesData.push({
 			originalFilename: file.filename,
 			filepath: relPath,
 			metadata,
-			parsedArtists: parsed,
-			hasUnmappedArtists: false
+			parsedArtists,
+			hasUnmappedArtists: unmapped.length > 0,
+			albumId: album?.id
 		});
 	}
 
-	// Which collected artists already exist (lowercase → id).
-	const existing = new Map<string, number>();
-	for (const name of allArtistNames) {
-		const artist = findArtistByName(db, name);
-		if (artist) existing.set(name.toLowerCase(), artist.id);
-	}
-
-	const unmappedArtists: string[] = [];
-	for (const name of allArtistNames) {
-		if (!existing.has(name.toLowerCase())) unmappedArtists.push(name);
-	}
-
-	for (const fd of filesData) {
-		fd.hasUnmappedArtists = fd.parsedArtists.some((a) => !existing.has(a.toLowerCase()));
-	}
-
-	if (albumId == null) {
-		for (const albumName of allAlbumNames) {
-			const album = findAlbumByName(db, albumName);
-			if (album) {
-				for (const fd of filesData) {
-					if (fd.metadata.album && fd.metadata.album.toLowerCase() === albumName.toLowerCase()) {
-						fd.albumId = album.id;
-					}
-				}
-			}
-		}
-	}
-
-	return { filesData, unmappedArtists, filesWithArtwork };
+	return { filesData, unmappedArtists: [...unmappedArtists], filesWithArtwork };
 }
 
 // Second step: resolve the artist mapping (CREATE_NEW → new artist), inherit album
@@ -203,56 +107,61 @@ export async function createSongsWithMetadata(
 ): Promise<Song[]> {
 	const settings = getSettings(db);
 
-	const artistIdMap = new Map<string, number>();
+	const mappedArtistIds = new Map<string, number>();
 	for (const [artistName, resolution] of Object.entries(input.artistMapping)) {
-		if (resolution === 'CREATE_NEW') {
-			artistIdMap.set(artistName, createArtist(db, { name: artistName }).id);
-		} else if (typeof resolution === 'number') {
-			artistIdMap.set(artistName, resolution);
-		}
+		mappedArtistIds.set(
+			artistName,
+			resolution === 'CREATE_NEW' ? createArtist(db, { name: artistName }).id : resolution
+		);
 	}
 
-	// Fill in existing artists not present in the mapping.
+	const created: Song[] = [];
 	for (const fd of input.filesData) {
-		for (const artistName of fd.parsedArtists) {
-			if (!artistIdMap.has(artistName)) {
-				const artist = findArtistByName(db, artistName);
-				if (artist) artistIdMap.set(artistName, artist.id);
-			}
+		const albumId = input.albumId ?? fd.albumId ?? null;
+		const album = albumId != null ? getAlbumWithArtists(db, albumId) : null;
+
+		const parsedArtistIds = fd.parsedArtists.flatMap((name) => {
+			const id = mappedArtistIds.get(name) ?? findArtistByName(db, name)?.id;
+			return id !== undefined ? [id] : [];
+		});
+		// A file with no known artists inherits its album's artists.
+		const artistIds =
+			parsedArtistIds.length === 0 && album ? album.artists.map((a) => a.id) : parsedArtistIds;
+
+		const { metadata } = fd;
+		const songInput: CreateSongInput = {
+			name: metadata.title || fd.originalFilename,
+			filepath: fd.filepath,
+			artistIds,
+			producerIds: matchProducersFromFilename(db, fd.originalFilename, artistIds),
+			albumId,
+			artworkPath: resolveUploadArtwork(staticPath, input.useEmbeddedArtwork, metadata, album),
+			genre: metadata.genre || null,
+			year: (metadata.year ?? 0) > 0 ? metadata.year : null,
+			trackNumber:
+				!settings.clearTrackNumberOnUpload && (metadata.trackNumber ?? 0) > 0
+					? metadata.trackNumber
+					: null,
+			duration: (metadata.duration ?? 0) > 0 ? metadata.duration : null
+		};
+
+		// Each createSong commits on its own. Skip a failed file and remove its saved
+		// upload, so the rest of the batch still imports and nothing is left orphaned.
+		let song: Song;
+		try {
+			song = createSong(db, songInput);
+		} catch (err) {
+			console.error(`createSong failed for ${fd.originalFilename}:`, err);
+			cleanupFiles(staticPath, [fd.filepath]);
+			continue;
+		}
+		created.push(song);
+
+		// The song stays created if its tags can't be written, such as for an unsupported format.
+		const result = await writeSongMetadata(db, staticPath, song.id);
+		if (!result.success) {
+			console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
 		}
 	}
-
-	const album = input.albumId != null ? getAlbumWithArtists(db, input.albumId) : null;
-
-	const specs: SongCreationSpec[] = input.filesData.map((fd) => {
-		const songArtistIds: number[] = [];
-		for (const artistName of fd.parsedArtists) {
-			const id = artistIdMap.get(artistName);
-			if (id !== undefined) songArtistIds.push(id);
-		}
-
-		let currentAlbum = album;
-		if (currentAlbum == null && fd.albumId != null) {
-			currentAlbum = getAlbumWithArtists(db, fd.albumId);
-		}
-
-		// Inherit album artists when the file has none from metadata.
-		let finalArtistIds = songArtistIds;
-		if (finalArtistIds.length === 0 && currentAlbum) {
-			finalArtistIds = currentAlbum.artists.map((a) => a.id);
-		}
-
-		const finalAlbumId = input.albumId != null ? input.albumId : (fd.albumId ?? null);
-
-		return {
-			filepath: fd.filepath,
-			originalFilename: fd.originalFilename,
-			metadata: fd.metadata,
-			artistIds: finalArtistIds,
-			albumId: finalAlbumId,
-			artworkPath: resolveUploadArtwork(staticPath, input.useEmbeddedArtwork, fd.metadata, currentAlbum)
-		};
-	});
-
-	return createSongsFromSpecs(db, staticPath, specs, settings);
+	return created;
 }
