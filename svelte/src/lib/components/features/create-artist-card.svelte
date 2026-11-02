@@ -6,9 +6,8 @@
 
 	let {
 		open = $bindable(),
-		onOpenChange,
-		callback
-	}: { open: boolean; onOpenChange?: (open: boolean) => void; callback?: () => void } = $props();
+		onOpenChange
+	}: { open: boolean; onOpenChange?: (open: boolean) => void } = $props();
 
 	let file = $state<File | null>(null);
 	let blob: Blob | null = $derived.by(() => {
@@ -21,18 +20,16 @@
 		file = files[0];
 	};
 
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+	async function handleSubmit(formData: FormData): Promise<void> {
 		const name = formData.get('name') as string;
 		const careerStartStr = formData.get('career-start') as string;
 		const careerEndStr = formData.get('career-end') as string;
 
-		const artist = await ipcActions.createArtist({
+		await ipcActions.createArtist({
 			name,
 			careerStartYear: careerStartStr ? parseInt(careerStartStr) : undefined,
 			careerEndYear: careerEndStr ? parseInt(careerEndStr) : undefined
 		});
-
-		return { id: artist.id };
 	}
 </script>
 
@@ -75,7 +72,6 @@
 <CreateCard
 	bind:open
 	{onOpenChange}
-	{callback}
 	title="Create Artist"
 	formId="create-artist-form"
 	upload={{

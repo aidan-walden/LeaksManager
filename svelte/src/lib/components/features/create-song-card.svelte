@@ -23,12 +23,10 @@
 	let {
 		open = $bindable(),
 		onOpenChange,
-		callback,
 		song
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
-		callback?: (recordId: number) => void | Promise<void>;
 		song: SongReadable | null;
 	} = $props();
 
@@ -245,7 +243,7 @@
 		);
 	};
 
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+	async function handleSubmit(): Promise<void> {
 		if (!song) {
 			throw new Error('Song editing requires an existing song');
 		}
@@ -263,8 +261,6 @@
 
 		// write metadata to disk
 		await ipcActions.writeSongMetadata(song.id);
-
-		return { id: song.id };
 	}
 </script>
 
@@ -409,7 +405,6 @@
 <CreateCard
 	bind:open
 	{onOpenChange}
-	{callback}
 	title={song ? 'Edit Song' : 'Create Song'}
 	formId="create-song-form"
 	upload={{

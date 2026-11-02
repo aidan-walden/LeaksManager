@@ -3,10 +3,9 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import CreateCard from '$lib/components/forms/create-card.svelte';
-	import { invalidateAll } from '$app/navigation';
 	import MultiArtistCombobox from '$lib/components/forms/multi-artist-combobox.svelte';
 	import { getArtistsContext } from '$lib/contexts/artists-context';
-	import type { AlbumWithSongs } from '$lib/ipc';
+	import type { AlbumWithSongs, FileUpload } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
 	import { fileToUpload } from '$lib/utils/file-upload';
 
@@ -20,10 +19,9 @@
 		album: AlbumWithSongs | null;
 	} = $props();
 
-	let loading = $state(false);
 	let file = $state<File | null>(null);
 	let blob = $state<Blob | null>(null);
-	const { ipcActions } = getAppServicesContext();
+	const { ipcActions, runtimeErrors } = getAppServicesContext();
 
 	const artists = $derived(getArtistsContext());
 
@@ -132,59 +130,51 @@
 		return nameChanged || yearChanged || artistsChanged || genreChanged || fileChanged;
 	};
 
-	const callback = async (recordId?: number) => {
-		const currentFile = file;
-		if (!currentFile) {
-			return;
-		}
-
-		const albumId = recordId ?? album?.id;
-		if (!albumId) {
-			return;
-		}
-
-		loading = true;
-
-		try {
-			const { filename, base64Data } = await fileToUpload(currentFile);
-			await ipcActions.uploadAlbumArt(albumId, filename, base64Data);
-			await invalidateAll();
-		} finally {
-			loading = false;
-		}
-	};
-
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+	async function handleSubmit(formData: FormData): Promise<void> {
 		const name = formData.get('name') as string;
 		const yearStr = formData.get('year') as string;
 		const genre = formData.get('genre') as string;
 
 		const year = yearStr ? parseInt(yearStr) : undefined;
 
+		// Read the file first, so a read failure can't leave a saved album without its art.
+		let artwork: FileUpload | null = null;
+		if (file) {
+			try {
+				artwork = await fileToUpload(file);
+			} catch (error) {
+				runtimeErrors.notify(error, 'Read album art');
+				throw error;
+			}
+		}
+
+		let albumId: number;
 		if (album) {
-			// update existing album
+			albumId = album.id;
 			await ipcActions.updateAlbum({
-				id: album.id,
+				id: albumId,
 				name,
 				year,
 				genre: genre || undefined,
 				artistIds: selectedArtistIds
 			});
-
-			// write metadata to all songs in album
-			await ipcActions.writeAlbumMetadata(album.id);
-
-			return { id: album.id };
 		} else {
-			// create new album
 			const newAlbum = await ipcActions.createAlbum({
 				name,
 				artistIds: selectedArtistIds,
 				year,
 				genre: genre || undefined
 			});
+			albumId = newAlbum.id;
+		}
 
-			return { id: newAlbum.id };
+		if (artwork) {
+			await ipcActions.uploadAlbumArt(albumId, artwork.filename, artwork.base64Data);
+		}
+
+		// Write tags last, so the files also get the new artwork.
+		if (album) {
+			await ipcActions.writeAlbumMetadata(albumId);
 		}
 	}
 </script>
@@ -208,7 +198,7 @@
 			<MultiArtistCombobox
 				{artists}
 				bind:value={selectedArtistIds}
-				disabled={loading || formLoading}
+				disabled={formLoading}
 				useProducerMode={false}
 			/>
 		</div>
@@ -244,7 +234,6 @@
 <CreateCard
 	bind:open
 	{onOpenChange}
-	{callback}
 	title={album ? 'Edit Album' : 'Create Album'}
 	formId="create-album-form"
 	upload={{

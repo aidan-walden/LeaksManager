@@ -16,13 +16,11 @@
 	let {
 		open = $bindable(),
 		onOpenChange,
-		callback,
 		artists,
 		producer = null
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
-		callback?: () => void;
 		artists: ArtistOption[];
 		producer?: ProducerWithAliases | null;
 	} = $props();
@@ -61,7 +59,7 @@
 		}
 	});
 
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+	async function handleSubmit(formData: FormData): Promise<void> {
 		const producerName = formData.get('name') as string;
 
 		// filter out aliases with empty names
@@ -74,7 +72,7 @@
 
 		if (producer) {
 			// update existing producer
-			const updated = await ipcActions.updateProducerWithAliases({
+			await ipcActions.updateProducerWithAliases({
 				id: producer.id,
 				name: producerName,
 				aliases: validAliases
@@ -84,16 +82,12 @@
 			if (producerName !== producer.name) {
 				await ipcActions.writeProducerMetadata(producer.id);
 			}
-
-			return { id: updated.id };
 		} else {
 			// create new producer
-			const newProducer = await ipcActions.createProducerWithAliases({
+			await ipcActions.createProducerWithAliases({
 				name: producerName,
 				aliases: validAliases
 			});
-
-			return { id: newProducer.id };
 		}
 	}
 </script>
@@ -188,7 +182,6 @@
 <CreateCard
 	bind:open
 	{onOpenChange}
-	{callback}
 	title={producer ? 'Edit Producer' : 'Create Producer'}
 	formId={producer ? 'update-producer-form' : 'create-producer-form'}
 	submitLabel={producer ? 'Save Changes' : 'Create'}
