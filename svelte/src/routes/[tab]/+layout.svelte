@@ -38,5 +38,5 @@
 	bind:editingSettings={settingsOpen}
 	onOpenChange={onSettingsOpenChange}
 	settings={data.settings}
-	isServerMac={data.isServerMac}
+	isMac={data.isMac}
 />

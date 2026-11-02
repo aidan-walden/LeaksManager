@@ -13,6 +13,6 @@ export type TabViewData = {
 	artists: Artist[];
 	producers: ProducerWithAliases[];
 	settings: InitialData['settings'];
-	isServerMac: boolean;
+	isMac: boolean;
 	songsPerPage: number;
 };
