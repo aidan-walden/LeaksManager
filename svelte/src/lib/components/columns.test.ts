@@ -16,8 +16,7 @@ describe('song table columns', () => {
 	const ipcActions = {
 		deleteSong: vi.fn().mockResolvedValue(undefined)
 	} satisfies Pick<IpcActions, 'deleteSong'>;
-	const onSongDeleted = vi.fn().mockResolvedValue(undefined);
-	const columns = createSongColumns(ipcActions, { onSongDeleted });
+	const columns = createSongColumns(ipcActions);
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -49,6 +48,5 @@ describe('song table columns', () => {
 
 		expect(ipcActions.deleteSong).toHaveBeenCalledWith(7);
 		expect(invalidateAll).toHaveBeenCalled();
-		expect(onSongDeleted).toHaveBeenCalledWith(7);
 	});
 });

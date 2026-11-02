@@ -6,18 +6,11 @@ import SongHover from './table/song-hover.svelte';
 import type { SongReadable } from '$lib/ipc';
 import type { IpcActions } from '$lib/services/ipc-actions';
 
-type SongMutationHandlers = {
-	onSongDeleted?: (songId: number) => void | Promise<void>;
-	onSongSaved?: (song: SongReadable) => void | Promise<void>;
-};
-
 export function createSongColumns(
-	ipcActions: Pick<IpcActions, 'deleteSong'>,
-	handlers: SongMutationHandlers = {}
+	ipcActions: Pick<IpcActions, 'deleteSong'>
 ): ColumnDef<SongReadable>[] {
 	async function onDelete(id: number) {
 		await ipcActions.deleteSong(id);
-		await handlers.onSongDeleted?.(id);
 		void invalidateAll();
 	}
 
@@ -42,8 +35,7 @@ export function createSongColumns(
 			cell: ({ row }) => {
 				return renderComponent(SongRowActions, {
 					song: row.original,
-					onDelete,
-					onSongSaved: handlers.onSongSaved
+					onDelete
 				});
 			}
 		}

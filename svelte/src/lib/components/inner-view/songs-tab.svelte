@@ -1,19 +1,14 @@
-	<script lang="ts">
-		import DataTable from '$lib/components/ui/data-table/data-table.svelte';
-		import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import DataTable from '$lib/components/ui/data-table/data-table.svelte';
+	import FileDropZone from '$lib/components/ui/file-drop-zone/file-drop-zone.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import { createSongColumns } from '../columns';
-	import {
-		clampSongsPage,
-		getSongsPagePropSyncMode,
-		mergeIncomingPageRows,
-		removeSongFromPage,
-		replaceSongInPage
-	} from './songs-table';
+	import { clampSongsPage } from './songs-table';
 	import type { SongReadable } from '$lib/ipc';
 
 	let {
-		songs: initialSongs,
+		songs: firstPageSongs,
 		songsPerPage,
 		songsCount,
 		onUpload
@@ -21,97 +16,37 @@
 		songs: SongReadable[];
 		songsPerPage: number;
 		songsCount: number;
-		onUpload: (files: File[]) => Promise<number>;
+		onUpload: (files: File[]) => Promise<void>;
 	} = $props();
 
 	let currentPage = $state(0);
-	let localSongs = $state<SongReadable[] | null>(null);
-	let localSongsCount = $state<number | null>(null);
-	let refreshRequestId = 0;
-	let previousPageProps: { songs: SongReadable[]; songsCount: number } | null = null;
+	// Rows for pages after the first. The first page comes from props.
+	let laterPageSongs = $state<SongReadable[]>([]);
+	let latestRequestId = 0;
 	const { ipcActions } = getAppServicesContext();
-	const columns = createSongColumns(ipcActions, {
-		onSongDeleted: handleSongDeleted,
-		onSongSaved: handleSongSaved
-	});
-	const visibleSongs = $derived(localSongs ?? initialSongs);
-	const totalSongsCount = $derived(localSongsCount ?? songsCount);
+	const columns = createSongColumns(ipcActions);
+	const visibleSongs = $derived(currentPage === 0 ? firstPageSongs : laterPageSongs);
 
-	async function refreshSongs(page = currentPage) {
-		const requestId = refreshRequestId + 1;
-		refreshRequestId = requestId;
-		const nextSongsCount = await ipcActions.getSongsCount();
-		const nextPage = clampSongsPage(page, nextSongsCount, songsPerPage);
-		const offset = nextPage * songsPerPage;
-		const nextSongs = await ipcActions.getSongsReadable(songsPerPage, offset);
+	async function showPage(page: number) {
+		const requestId = ++latestRequestId;
+		const nextPage = clampSongsPage(page, songsCount, songsPerPage);
+		const rows =
+			nextPage === 0 ? [] : await ipcActions.getSongsReadable(songsPerPage, nextPage * songsPerPage);
 
-		if (requestId !== refreshRequestId) {
+		if (requestId !== latestRequestId) {
 			return;
 		}
 
-		localSongsCount = nextSongsCount;
-		localSongs = nextSongs;
+		laterPageSongs = rows;
 		currentPage = nextPage;
 	}
 
-	async function handleSongDeleted(songId: number) {
-		const nextSongsCount = Math.max(totalSongsCount - 1, 0);
-		const nextPage = clampSongsPage(currentPage, nextSongsCount, songsPerPage);
-
-		localSongsCount = nextSongsCount;
-
-		if (nextPage !== currentPage) {
-			await refreshSongs(nextPage);
-			return;
-		}
-
-		const nextVisibleSongs = removeSongFromPage(visibleSongs, songId);
-		const replacementOffset = currentPage * songsPerPage + nextVisibleSongs.length;
-		const hasReplacementRow = nextSongsCount > replacementOffset;
-		if (!hasReplacementRow) {
-			localSongs = nextVisibleSongs;
-			return;
-		}
-
-		const replacementRows = await ipcActions.getSongsReadable(1, replacementOffset);
-		localSongs = [...nextVisibleSongs, ...replacementRows];
-	}
-
-	async function handleSongSaved(updatedSong: SongReadable) {
-		localSongs = replaceSongInPage(visibleSongs, updatedSong);
-	}
-
-	async function handleUploadAndRefresh(files: File[]) {
-		const createdCount = await onUpload(files);
-		if (createdCount === 0) {
-			return;
-		}
-
-		localSongsCount = totalSongsCount + createdCount;
-
-		const pageOffset = currentPage * songsPerPage;
-		const incomingRows = await ipcActions.getSongsReadable(
-			Math.min(createdCount, songsPerPage),
-			pageOffset
-		);
-		localSongs = mergeIncomingPageRows(incomingRows, visibleSongs, songsPerPage);
-	}
-
+	// Every song change ends in invalidateAll, which delivers new props. Reload the
+	// current page then; showPage also moves back if that page no longer exists.
 	$effect(() => {
-		const nextPageProps = { songs: initialSongs, songsCount };
-		const syncMode = getSongsPagePropSyncMode(currentPage, previousPageProps, nextPageProps);
-		previousPageProps = nextPageProps;
-
-		if (syncMode === 'replace-visible') {
-			localSongs = initialSongs;
-			localSongsCount = songsCount;
-			return;
-		}
-
-		if (syncMode === 'refresh-current-page') {
-			localSongsCount = songsCount;
-			void refreshSongs(currentPage);
-		}
+		void firstPageSongs;
+		void songsCount;
+		untrack(() => void showPage(currentPage));
 	});
 </script>
 
@@ -123,10 +58,10 @@
 		pagination={{
 			pageIndex: currentPage,
 			pageSize: songsPerPage,
-			totalCount: totalSongsCount
+			totalCount: songsCount
 		}}
-		onPaginationChange={refreshSongs}
+		onPaginationChange={showPage}
 	/>
 {/snippet}
 
-<FileDropZone onUpload={handleUploadAndRefresh} children={table} class="contents" clickable={false} />
+<FileDropZone {onUpload} children={table} class="contents" clickable={false} />

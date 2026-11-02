@@ -24,13 +24,11 @@
 		open = $bindable(),
 		onOpenChange,
 		callback,
-		onSongSaved,
 		song
 	}: {
 		open: boolean;
 		onOpenChange?: (open: boolean) => void;
 		callback?: (recordId: number) => void | Promise<void>;
-		onSongSaved?: (song: SongReadable) => void | Promise<void>;
 		song: SongReadable | null;
 	} = $props();
 
@@ -253,7 +251,7 @@
 		}
 
 		// update existing song
-		const updatedSong = await ipcActions.updateSong({
+		await ipcActions.updateSong({
 			id: song.id,
 			name: songName,
 			albumName: albumName.trim() || undefined,
@@ -265,9 +263,6 @@
 
 		// write metadata to disk
 		await ipcActions.writeSongMetadata(song.id);
-		if (updatedSong) {
-			await onSongSaved?.(updatedSong);
-		}
 
 		return { id: song.id };
 	}

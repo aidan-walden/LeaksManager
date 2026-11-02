@@ -7,12 +7,10 @@
 
 	let {
 		song,
-		onDelete,
-		onSongSaved
+		onDelete
 	}: {
 		song: SongReadable;
 		onDelete: (id: number) => void | Promise<void>;
-		onSongSaved?: (song: SongReadable) => void | Promise<void>;
 	} = $props();
 	let editingSong = $state(false);
 	const { ipcActions } = getAppServicesContext();
@@ -30,4 +28,4 @@
 	<DropdownMenu.Item onclick={onClickShowInFileExplorer}>Show in File Explorer</DropdownMenu.Item>
 </EntityActionsMenu>
 
-<CreateSongCard bind:open={editingSong} {song} {onSongSaved} />
+<CreateSongCard bind:open={editingSong} {song} />
