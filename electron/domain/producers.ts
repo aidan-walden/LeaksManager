@@ -10,14 +10,11 @@ import type {
 import { rowToProducer, now } from './rows';
 import { writeSongsMetadata } from './songs';
 
-// Port of backend/producers.go.
-
 // A flat producer-matching term: a producer name or one of its aliases.
-// aliasArtistIds is empty for names and unrestricted aliases.
+// aliasArtistIds is absent or empty for names and unrestricted aliases.
 export interface Pattern {
 	term: string;
 	producerId: number;
-	isAlias: boolean;
 	aliasArtistIds?: number[];
 }
 
@@ -125,7 +122,7 @@ export function getProducersWithAliases(db: Database.Database): ProducerWithAlia
 	});
 }
 
-export function getAliasesForProducer(
+function getAliasesForProducer(
 	db: Database.Database,
 	producerId: number
 ): ProducerAliasWithArtists[] {
@@ -150,7 +147,7 @@ export function getAliasesForProducer(
 
 // Loads all producer-matching patterns in one query (no N+1). Each producer
 // contributes one name row + one row per alias; artist restrictions via GROUP_CONCAT.
-export function loadProducerPatterns(db: Database.Database): Pattern[] {
+function loadProducerPatterns(db: Database.Database): Pattern[] {
 	const rows = db
 		.prepare(
 			`SELECT p.id AS producer_id, p.name, pa.alias, GROUP_CONCAT(paa.artist_id) AS artist_ids
@@ -165,19 +162,14 @@ export function loadProducerPatterns(db: Database.Database): Pattern[] {
 	const patterns: Pattern[] = [];
 	for (const r of rows) {
 		if (!seenName.has(r.producer_id)) {
-			patterns.push({ term: r.name.toLowerCase(), producerId: r.producer_id, isAlias: false });
+			patterns.push({ term: r.name.toLowerCase(), producerId: r.producer_id });
 			seenName.add(r.producer_id);
 		}
 		if (r.alias != null) {
-			const ids =
-				r.artist_ids && r.artist_ids !== ''
-					? r.artist_ids.split(',').map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n))
-					: [];
 			patterns.push({
 				term: r.alias.toLowerCase(),
 				producerId: r.producer_id,
-				isAlias: true,
-				aliasArtistIds: ids
+				aliasArtistIds: r.artist_ids ? r.artist_ids.split(',').map(Number) : []
 			});
 		}
 	}
@@ -193,51 +185,34 @@ export function matchPatterns(
 ): number[] {
 	const nameWithoutExt = filename.toLowerCase().replace(/\.[^/.]+$/, '');
 
-	const sorted = [...patterns].sort((a, b) => b.term.length - a.term.length);
+	const isArtistContextValid = (aliasArtistIds?: number[]): boolean =>
+		!aliasArtistIds?.length || songArtistIds.some((aid) => aliasArtistIds.includes(aid));
 
-	const isArtistContextValid = (aliasArtistIds?: number[]): boolean => {
-		if (!aliasArtistIds || aliasArtistIds.length === 0) return true;
-		if (songArtistIds.length === 0) return false;
-		return songArtistIds.some((aid) => aliasArtistIds.includes(aid));
-	};
+	const eligible = patterns
+		.filter((p) => p.term !== '' && isArtistContextValid(p.aliasArtistIds))
+		.sort((a, b) => b.term.length - a.term.length);
 
 	const consumed: { start: number; end: number }[] = [];
-	const isRangeConsumed = (start: number, end: number): boolean =>
-		consumed.some(
-			(r) =>
-				(start >= r.start && start < r.end) ||
-				(end > r.start && end <= r.end) ||
-				(start <= r.start && end >= r.end)
-		);
-
 	const matched = new Set<number>();
 
+	const claim = (producerId: number, start: number, end: number) => {
+		if (consumed.some((r) => start < r.end && end > r.start)) return;
+		matched.add(producerId);
+		consumed.push({ start, end });
+	};
+
 	// pass 1: word-boundary matches
-	for (const p of sorted) {
-		if (p.isAlias && !isArtistContextValid(p.aliasArtistIds)) continue;
-		if (p.term === '') continue;
+	for (const p of eligible) {
 		const re = new RegExp(`\\b${escapeRegExp(p.term)}\\b`, 'g');
 		for (const m of nameWithoutExt.matchAll(re)) {
-			const start = m.index ?? 0;
-			const end = start + m[0].length;
-			if (!isRangeConsumed(start, end)) {
-				matched.add(p.producerId);
-				consumed.push({ start, end });
-			}
+			claim(p.producerId, m.index, m.index + m[0].length);
 		}
 	}
 
 	// pass 2: substring fallback
-	for (const p of sorted) {
-		if (p.isAlias && !isArtistContextValid(p.aliasArtistIds)) continue;
-		if (p.term === '') continue;
+	for (const p of eligible) {
 		const idx = nameWithoutExt.indexOf(p.term);
-		if (idx === -1) continue;
-		const end = idx + p.term.length;
-		if (!isRangeConsumed(idx, end)) {
-			matched.add(p.producerId);
-			consumed.push({ start: idx, end });
-		}
+		if (idx !== -1) claim(p.producerId, idx, idx + p.term.length);
 	}
 
 	return [...matched].sort((a, b) => a - b);
