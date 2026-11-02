@@ -1,17 +1,30 @@
 import type { Artist, Album, Song, Producer } from './models';
 
 // Row mappers: snake_case SQLite rows → camelCase domain models. better-sqlite3
-// returns INTEGER/REAL as number and NULL as null; 0/1 sync flags become booleans.
-// Go used sql.NullInt64 for timestamps (zero when null) — mirror with `?? 0`.
+// returns INTEGER/REAL as number and NULL as null. A null timestamp becomes 0.
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
+
+export const SONG_COLS =
+	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, created_at, updated_at, apple_music_id';
+export const ALBUM_COLS =
+	'id, name, artwork_path, genre, year, is_single, created_at, updated_at';
+export const ARTIST_COLS =
+	'id, name, image, career_start_year, career_end_year, created_at, updated_at';
+
+// Prefixes each column with a table alias, for SELECTs that join a junction table.
+export const qualify = (cols: string, alias: string): string =>
+	cols
+		.split(', ')
+		.map((col) => `${alias}.${col}`)
+		.join(', ');
 
 export function now(): number {
 	return Math.floor(Date.now() / 1000);
 }
 
-const int = (v: unknown): number | null => (v == null ? null : Number(v));
-const str = (v: unknown): string | null => (v == null ? null : String(v));
+export const int = (v: unknown): number | null => (v == null ? null : Number(v));
+export const str = (v: unknown): string | null => (v == null ? null : String(v));
 const bool = (v: unknown): boolean => Boolean(v);
 
 export function rowToArtist(r: Row): Artist {
@@ -22,8 +35,7 @@ export function rowToArtist(r: Row): Artist {
 		careerStartYear: int(r.career_start_year),
 		careerEndYear: int(r.career_end_year),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 
@@ -34,11 +46,9 @@ export function rowToAlbum(r: Row): Album {
 		artworkPath: str(r.artwork_path),
 		genre: str(r.genre),
 		year: int(r.year),
-		// is_single is omitted from some SELECTs (parity with Go getAlbumsByArtist) → false.
 		isSingle: bool(r.is_single),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 
@@ -53,11 +63,9 @@ export function rowToSong(r: Row): Song {
 		trackNumber: int(r.track_number),
 		duration: int(r.duration),
 		filepath: String(r.filepath),
-		fileType: str(r.file_type),
 		appleMusicId: r.apple_music_id == null ? undefined : String(r.apple_music_id),
 		createdAt: Number(r.created_at ?? 0),
-		updatedAt: Number(r.updated_at ?? 0),
-		synced: bool(r.synced)
+		updatedAt: Number(r.updated_at ?? 0)
 	};
 }
 

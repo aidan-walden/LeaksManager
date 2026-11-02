@@ -4,6 +4,7 @@
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 	import { runAsyncAction } from '$lib/errors/async-action';
+	import { getErrorMessage } from '$lib/errors/runtime-error';
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 
@@ -14,7 +15,7 @@
 		const result = await runAsyncAction(
 			() => ipcActions.syncSongsToAppleMusic(),
 			(error) => {
-				const message = error instanceof Error ? error.message : 'Unknown error';
+				const message = getErrorMessage(error);
 				syncState.finishSync(false, {
 					message,
 					failedCount: 0,

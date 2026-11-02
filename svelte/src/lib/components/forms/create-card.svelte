@@ -4,8 +4,6 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { FileDropZone } from '$lib/components/ui/file-drop-zone';
 	import { invalidateAll } from '$app/navigation';
-	import { runAsyncAction } from '$lib/errors/async-action';
-	import { handleCreateCardSuccess } from './create-card';
 
 	type UploadConfig = {
 		tabLabel: string;
@@ -21,8 +19,6 @@
 
 	let {
 		open = $bindable(),
-		onOpenChange,
-		callback,
 		title,
 		formId,
 		submitLabel = 'Create',
@@ -32,19 +28,29 @@
 		onSubmit
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
-		callback?: (recordId: number) => void | Promise<void>;
 		title: string;
 		formId: string;
 		submitLabel?: string;
 		upload?: UploadConfig;
 		formFields: Snippet<[loading: boolean]>;
 		beforeSubmit?: () => boolean;
-		onSubmit: (formData: FormData) => Promise<{ id?: number }>;
+		onSubmit: (formData: FormData) => Promise<void>;
 	} = $props();
 
 	let formElement: HTMLFormElement;
 	let loading = $state(false);
+	let previewUrl = $state<string | null>(null);
+
+	$effect(() => {
+		const preview = upload?.preview;
+		if (!preview) {
+			previewUrl = null;
+			return;
+		}
+		const url = URL.createObjectURL(preview);
+		previewUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -55,23 +61,17 @@
 
 		loading = true;
 		try {
-			const result = await runAsyncAction(async () => {
-				const formData = new FormData(formElement);
-				return onSubmit(formData);
-			});
-			if (!result) {
+			try {
+				await onSubmit(new FormData(formElement));
+			} catch {
+				// The failed action already showed a toast. Part of the submit can have
+				// succeeded, so refresh the data and keep the dialog open.
+				await invalidateAll();
 				return;
 			}
 
-			await handleCreateCardSuccess({
-				result,
-				resetForm: () => formElement.reset(),
-				invalidate: invalidateAll,
-				callback,
-				close: () => {
-					open = false;
-				}
-			});
+			await invalidateAll();
+			open = false;
 		} finally {
 			loading = false;
 		}
@@ -107,9 +107,9 @@
 						disabled={loading}
 						class="size-full"
 					>
-						{#if upload.preview}
+						{#if previewUrl}
 							<img
-								src={URL.createObjectURL(upload.preview)}
+								src={previewUrl}
 								alt="Uploaded file preview"
 								class="size-full rounded-md object-cover"
 							/>
@@ -125,7 +125,7 @@
 	</Tabs.Root>
 {/snippet}
 
-<AlertDialog.Root bind:open {onOpenChange}>
+<AlertDialog.Root bind:open>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>{title}</AlertDialog.Title>

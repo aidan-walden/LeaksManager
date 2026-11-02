@@ -2,54 +2,54 @@ import type Database from 'better-sqlite3';
 import type {
 	Album,
 	AlbumWithArtists,
-	AlbumWithSongs,
+	AlbumSummary,
 	Artist,
-	Song,
 	CreateAlbumInput,
 	UpdateAlbumInput,
 	AlbumResolutionOpts
 } from './models';
-import { rowToAlbum, rowToArtist, rowToSong, now } from './rows';
+import { ALBUM_COLS, ARTIST_COLS, qualify, rowToAlbum, rowToArtist, now } from './rows';
+import { linkOrdered, replaceOrderedLinks } from './links';
 import { saveBase64 } from '../files';
 
 // Port of backend/albums.go (+ UploadAlbumArt from files.go).
 
-const ALBUM_COLS =
-	'id, name, artwork_path, genre, year, is_single, created_at, updated_at, synced';
-const SONG_COLS =
-	'id, name, album_id, artwork_path, genre, year, track_number, duration, filepath, file_type, created_at, updated_at, synced, apple_music_id';
-
-// better-sqlite3 rejects JS booleans — bind as 0/1.
-const b = (v: boolean | undefined): number => (v ? 1 : 0);
-
-export function createAlbum(db: Database.Database, input: CreateAlbumInput): Album {
-	if (input.artistIds.length === 0) {
+function insertAlbumWithArtists(
+	tx: Database.Database,
+	fields: Pick<Album, 'name' | 'artworkPath' | 'genre' | 'year' | 'isSingle'>,
+	artistIds: number[],
+	ts: number
+): Album {
+	if (artistIds.length === 0) {
 		throw new Error('album must have at least one artist');
 	}
+	const info = tx
+		.prepare(
+			`INSERT INTO albums (name, artwork_path, genre, year, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+		)
+		// better-sqlite3 rejects JS booleans — bind as 0/1.
+		.run(fields.name, fields.artworkPath, fields.genre, fields.year, fields.isSingle ? 1 : 0, ts, ts);
+	const albumId = Number(info.lastInsertRowid);
+	linkOrdered(tx, 'album_artists', albumId, artistIds, ts);
+	return { id: albumId, ...fields, createdAt: ts, updatedAt: ts };
+}
+
+export function createAlbum(db: Database.Database, input: CreateAlbumInput): Album {
 	const ts = now();
-	return db.transaction((tx) => {
-		const info = tx
-			.prepare(
-				`INSERT INTO albums (name, genre, year, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
-			)
-			.run(input.name, input.genre ?? null, input.year ?? null, b(input.isSingle), ts, ts);
-		const albumId = Number(info.lastInsertRowid);
-		const link = tx.prepare(
-			`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
-		);
-		input.artistIds.forEach((artistId, i) => link.run(albumId, artistId, i, ts));
-		return {
-			id: albumId,
-			name: input.name,
-			artworkPath: null,
-			genre: input.genre ?? null,
-			year: input.year ?? null,
-			isSingle: input.isSingle ?? false,
-			createdAt: ts,
-			updatedAt: ts,
-			synced: false
-		};
-	})(db);
+	return db.transaction((tx) =>
+		insertAlbumWithArtists(
+			tx,
+			{
+				name: input.name,
+				artworkPath: null,
+				genre: input.genre ?? null,
+				year: input.year ?? null,
+				isSingle: input.isSingle ?? false
+			},
+			input.artistIds,
+			ts
+		)
+	)(db);
 }
 
 export function updateAlbum(db: Database.Database, input: UpdateAlbumInput): void {
@@ -60,53 +60,48 @@ export function updateAlbum(db: Database.Database, input: UpdateAlbumInput): voi
 		).run(input.name ?? null, input.genre ?? null, input.year ?? null, ts, input.id);
 
 		if (input.artistIds.length > 0) {
-			tx.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(input.id);
-			const link = tx.prepare(
-				`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
-			);
-			input.artistIds.forEach((artistId, i) => link.run(input.id, artistId, i, ts));
+			replaceOrderedLinks(tx, 'album_artists', input.id, input.artistIds, ts);
 		}
 	})(db);
 }
 
+// Foreign keys handle the rest: songs get album_id = NULL, and artist links are deleted.
 export function deleteAlbum(db: Database.Database, albumId: number): void {
-	db.transaction((tx) => {
-		// Unlink songs (album_id → NULL), then drop artist links and the album.
-		tx.prepare(`UPDATE songs SET album_id = NULL WHERE album_id = ?`).run(albumId);
-		tx.prepare(`DELETE FROM album_artists WHERE album_id = ?`).run(albumId);
-		tx.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
-	})(db);
+	db.prepare(`DELETE FROM albums WHERE id = ?`).run(albumId);
 }
 
-export function getAlbumsWithSongs(
-	db: Database.Database,
-	limit: number,
-	offset: number
-): AlbumWithSongs[] {
+export function getAlbumSummaries(db: Database.Database): AlbumSummary[] {
 	const rows = db
-		.prepare(`SELECT ${ALBUM_COLS} FROM albums ORDER BY created_at DESC LIMIT ? OFFSET ?`)
-		.all(limit, offset) as Record<string, unknown>[];
+		.prepare(
+			`SELECT ${ALBUM_COLS}, (SELECT COUNT(*) FROM songs WHERE album_id = albums.id) AS song_count
+			 FROM albums ORDER BY created_at DESC`
+		)
+		.all() as Record<string, unknown>[];
 	return rows.map((r) => {
-		const alb = rowToAlbum(r);
-		return { ...alb, artists: getArtistsForAlbum(db, alb.id), songs: getSongsForAlbum(db, alb.id) };
+		const album = rowToAlbum(r);
+		return { ...album, artists: getArtistsForAlbum(db, album.id), songCount: Number(r.song_count) };
 	});
+}
+
+export function getAlbumById(db: Database.Database, albumId: number): Album | null {
+	const row = db.prepare(`SELECT ${ALBUM_COLS} FROM albums WHERE id = ?`).get(albumId) as
+		| Record<string, unknown>
+		| undefined;
+	return row ? rowToAlbum(row) : null;
 }
 
 export function getAlbumWithArtists(
 	db: Database.Database,
 	albumId: number
 ): AlbumWithArtists | null {
-	const row = db.prepare(`SELECT ${ALBUM_COLS} FROM albums WHERE id = ?`).get(albumId) as
-		| Record<string, unknown>
-		| undefined;
-	if (!row) return null;
-	return { ...rowToAlbum(row), artists: getArtistsForAlbum(db, albumId) };
+	const album = getAlbumById(db, albumId);
+	return album ? { ...album, artists: getArtistsForAlbum(db, albumId) } : null;
 }
 
 export function getArtistsForAlbum(db: Database.Database, albumId: number): Artist[] {
 	const rows = db
 		.prepare(
-			`SELECT ar.id, ar.name, ar.image, ar.career_start_year, ar.career_end_year, ar.created_at, ar.updated_at, ar.synced
+			`SELECT ${qualify(ARTIST_COLS, 'ar')}
 			 FROM artists ar
 			 JOIN album_artists aa ON ar.id = aa.artist_id
 			 WHERE aa.album_id = ?
@@ -114,13 +109,6 @@ export function getArtistsForAlbum(db: Database.Database, albumId: number): Arti
 		)
 		.all(albumId) as Record<string, unknown>[];
 	return rows.map(rowToArtist);
-}
-
-export function getSongsForAlbum(db: Database.Database, albumId: number): Song[] {
-	const rows = db
-		.prepare(`SELECT ${SONG_COLS} FROM songs WHERE album_id = ? ORDER BY track_number, created_at`)
-		.all(albumId) as Record<string, unknown>[];
-	return rows.map(rowToSong);
 }
 
 export function findAlbumByName(db: Database.Database, name: string): Album | null {
@@ -131,7 +119,7 @@ export function findAlbumByName(db: Database.Database, name: string): Album | nu
 }
 
 // True if the album's ordered artist list equals artistIds exactly.
-export function artistSetMatches(
+function artistSetMatches(
 	db: Database.Database,
 	albumId: number,
 	artistIds: number[]
@@ -146,15 +134,15 @@ export function artistSetMatches(
 }
 
 // Finds an album by case-insensitive name with the exact ordered artist set, or
-// creates one. Empty trimmed name → { album: null, created: false }.
+// creates one. An empty trimmed name returns null.
 export function resolveOrCreateAlbum(
 	db: Database.Database,
 	name: string,
 	artistIds: number[],
 	opts: AlbumResolutionOpts = {}
-): { album: Album | null; created: boolean } {
+): Album | null {
 	const trimmed = name.trim();
-	if (trimmed === '') return { album: null, created: false };
+	if (trimmed === '') return null;
 	const ts = now();
 
 	return db.transaction((tx) => {
@@ -171,12 +159,8 @@ export function resolveOrCreateAlbum(
 					alb.isSingle = true;
 					alb.updatedAt = ts;
 				}
-				return { album: alb, created: false };
+				return alb;
 			}
-		}
-
-		if (artistIds.length === 0) {
-			throw new Error('album must have at least one artist');
 		}
 
 		let artworkPath: string | null = null;
@@ -187,31 +171,12 @@ export function resolveOrCreateAlbum(
 			artworkPath = songRow?.artwork_path ?? null;
 		}
 
-		const info = tx
-			.prepare(
-				`INSERT INTO albums (name, artwork_path, is_single, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
-			)
-			.run(trimmed, artworkPath, b(opts.isSingle), ts, ts);
-		const newId = Number(info.lastInsertRowid);
-		const link = tx.prepare(
-			`INSERT INTO album_artists (album_id, artist_id, "order", created_at) VALUES (?, ?, ?, ?)`
+		return insertAlbumWithArtists(
+			tx,
+			{ name: trimmed, artworkPath, genre: null, year: null, isSingle: opts.isSingle ?? false },
+			artistIds,
+			ts
 		);
-		artistIds.forEach((artistId, i) => link.run(newId, artistId, i, ts));
-
-		return {
-			album: {
-				id: newId,
-				name: trimmed,
-				artworkPath,
-				genre: null,
-				year: null,
-				isSingle: opts.isSingle ?? false,
-				createdAt: ts,
-				updatedAt: ts,
-				synced: false
-			},
-			created: true
-		};
 	})(db);
 }
 

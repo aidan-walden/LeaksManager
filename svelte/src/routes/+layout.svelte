@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { setAppServicesContext } from '$lib/contexts/app-services';
 	import { RuntimeErrorNotifier } from '$lib/errors/runtime-error';
-	import { createIpcActions } from '$lib/services/ipc-actions';
+	import { createIpcActions } from '$lib/services/ipc-actions.svelte';
 	import { SyncState } from '$lib/stores/sync.svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import Toaster from '$lib/components/ui/sonner/sonner.svelte';
@@ -14,7 +14,7 @@
 	let { children, data }: { children?: Snippet; data: LayoutData } = $props();
 	const syncState = new SyncState();
 	const runtimeErrors = new RuntimeErrorNotifier();
-	const ipcActions = createIpcActions({ syncState, runtimeErrors });
+	const ipcActions = createIpcActions(runtimeErrors);
 
 	setAppServicesContext({ syncState, runtimeErrors, ipcActions });
 

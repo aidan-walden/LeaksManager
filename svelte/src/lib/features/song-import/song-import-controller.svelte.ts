@@ -1,5 +1,6 @@
-import type { IpcActions } from '$lib/services/ipc-actions';
-import type { FileUpload, SongImportDraft } from '$lib/ipc';
+import type { IpcActions } from '$lib/services/ipc-actions.svelte';
+import type { SongImportDraft } from '$lib/ipc';
+import { fileToUpload } from '$lib/utils/file-upload';
 
 type StagedSongImport = {
 	filesData: SongImportDraft[];
@@ -15,11 +16,6 @@ type SongImportControllerOptions = {
 	>;
 };
 
-type PendingImportCompletion = {
-	resolve: (createdCount: number) => void;
-	reject: (error: unknown) => void;
-};
-
 export class SongImportController {
 	showArtistMappingDialog = $state(false);
 	showArtworkChoiceDialog = $state(false);
@@ -27,8 +23,7 @@ export class SongImportController {
 	filesWithArtworkCount = $state(0);
 
 	#stagedImport = $state<StagedSongImport | null>(null);
-	#pendingCompletion: PendingImportCompletion | null = null;
-	#pendingCompletionPromise: Promise<number> | null = null;
+	#pendingCompletion: PromiseWithResolvers<number> | null = null;
 	#onComplete: SongImportControllerOptions['onComplete'];
 	#ipcActions: SongImportControllerOptions['ipcActions'];
 
@@ -38,18 +33,22 @@ export class SongImportController {
 	}
 
 	async handleUpload(files: File[], albumId?: number): Promise<number> {
-		const fileUploads = await Promise.all(files.map(this.#fileToUpload));
-		const result = await this.#ipcActions.uploadAndExtractMetadata({ files: fileUploads, albumId });
+		const fileUploads = await Promise.all(files.map(fileToUpload));
+		const result = await this.#ipcActions.uploadAndExtractMetadata(fileUploads, albumId ?? null);
+
+		const hasArtwork = result.filesWithArtwork > 0;
+		const canInheritArtwork =
+			albumId != null ||
+			result.filesData.some((file) => file.metadata.artwork && file.albumId != null);
 
 		this.#stagedImport = {
 			filesData: result.filesData,
 			albumId,
-			useEmbeddedArtwork:
-				result.filesWithArtwork > 0 && !this.#canInheritArtwork(result.filesData, albumId)
+			useEmbeddedArtwork: hasArtwork && !canInheritArtwork
 		};
-		this.unmappedArtists = result.unmappedArtists ?? [];
+		this.unmappedArtists = result.unmappedArtists;
 
-		if (result.filesWithArtwork > 0 && this.#canInheritArtwork(result.filesData, albumId)) {
+		if (hasArtwork && canInheritArtwork) {
 			this.filesWithArtworkCount = result.filesWithArtwork;
 			this.showArtworkChoiceDialog = true;
 			return this.#waitForPendingCompletion();
@@ -60,10 +59,10 @@ export class SongImportController {
 			return this.#waitForPendingCompletion();
 		}
 
-		return this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
+		return this.#createSongs({});
 	}
 
-	async handleArtworkChoice(useEmbeddedArtwork: boolean): Promise<number> {
+	handleArtworkChoice = async (useEmbeddedArtwork: boolean): Promise<number> => {
 		if (!this.#stagedImport) return 0;
 
 		this.#stagedImport.useEmbeddedArtwork = useEmbeddedArtwork;
@@ -73,16 +72,13 @@ export class SongImportController {
 			return this.#waitForPendingCompletion();
 		}
 
-		return this.#createSongs({}, useEmbeddedArtwork);
-	}
+		return this.#createSongs({});
+	};
 
-	async handleArtistMapping(artistMapping: Record<string, number | 'CREATE_NEW'>): Promise<number> {
-		if (!this.#stagedImport) return 0;
+	handleArtistMapping = (artistMapping: Record<string, number | 'CREATE_NEW'>): Promise<number> =>
+		this.#createSongs(artistMapping);
 
-		return this.#createSongs(artistMapping, this.#stagedImport.useEmbeddedArtwork);
-	}
-
-	async handleArtistMappingCancel(): Promise<number> {
+	handleArtistMappingCancel = async (): Promise<number> => {
 		if (!this.#stagedImport) return 0;
 
 		try {
@@ -95,7 +91,7 @@ export class SongImportController {
 
 			if (filesToKeep.length > 0) {
 				this.#stagedImport.filesData = filesToKeep;
-				return this.#createSongs({}, this.#stagedImport.useEmbeddedArtwork);
+				return this.#createSongs({});
 			}
 
 			this.#reset();
@@ -106,45 +102,9 @@ export class SongImportController {
 			this.#rejectPendingCompletion(error);
 			throw error;
 		}
-	}
-
-	#canInheritArtwork(filesData: SongImportDraft[], albumId?: number) {
-		if (albumId != null) {
-			return true;
-		}
-
-		return filesData.some((file) => file.metadata.artwork && file.albumId != null);
-	}
-
-	#fileToUpload = async (file: File): Promise<FileUpload> => {
-		const base64 = await new Promise<string>((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => {
-				if (typeof reader.result !== 'string') {
-					reject(new Error('failed to read file as data URL'));
-					return;
-				}
-				const base64Data = reader.result.split(',', 2)[1];
-				if (!base64Data) {
-					reject(new Error('failed to parse base64 data from file'));
-					return;
-				}
-				resolve(base64Data);
-			};
-			reader.onerror = () => reject(reader.error ?? new Error('failed to read file'));
-			reader.readAsDataURL(file);
-		});
-
-		return {
-			filename: file.name,
-			base64Data: base64
-		};
 	};
 
-	#createSongs = async (
-		artistMapping: Record<string, number | 'CREATE_NEW'>,
-		useEmbeddedArtwork: boolean
-	): Promise<number> => {
+	#createSongs = async (artistMapping: Record<string, number | 'CREATE_NEW'>): Promise<number> => {
 		if (!this.#stagedImport) return 0;
 
 		try {
@@ -152,7 +112,7 @@ export class SongImportController {
 				filesData: this.#stagedImport.filesData,
 				artistMapping,
 				albumId: this.#stagedImport.albumId,
-				useEmbeddedArtwork
+				useEmbeddedArtwork: this.#stagedImport.useEmbeddedArtwork
 			});
 
 			this.#reset();
@@ -176,34 +136,18 @@ export class SongImportController {
 	};
 
 	#waitForPendingCompletion(): Promise<number> {
-		if (this.#pendingCompletionPromise) {
-			return this.#pendingCompletionPromise;
-		}
-
-		this.#pendingCompletionPromise = new Promise<number>((resolve, reject) => {
-			this.#pendingCompletion = { resolve, reject };
-		});
-		return this.#pendingCompletionPromise;
+		this.#pendingCompletion ??= Promise.withResolvers<number>();
+		return this.#pendingCompletion.promise;
 	}
 
 	#resolvePendingCompletion(createdCount: number) {
-		if (!this.#pendingCompletion) {
-			return;
-		}
-
-		this.#pendingCompletion.resolve(createdCount);
+		this.#pendingCompletion?.resolve(createdCount);
 		this.#pendingCompletion = null;
-		this.#pendingCompletionPromise = null;
 	}
 
 	#rejectPendingCompletion(error: unknown) {
-		if (!this.#pendingCompletion) {
-			return;
-		}
-
-		this.#pendingCompletion.reject(error);
+		this.#pendingCompletion?.reject(error);
 		this.#pendingCompletion = null;
-		this.#pendingCompletionPromise = null;
 	}
 
 	#reset() {

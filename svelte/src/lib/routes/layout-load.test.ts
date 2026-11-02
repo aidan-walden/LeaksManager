@@ -28,10 +28,7 @@ describe('+layout load', () => {
 					updatedAt: 1
 				},
 				isMac: true,
-				limits: {
-					songsPerPage: 25,
-					albumsPerPage: 25
-				},
+				songsPerPage: 25,
 				hasUnsyncedChanges: true
 			})
 		} as never);
@@ -43,6 +40,6 @@ describe('+layout load', () => {
 		expect(trailingSlash).toBe('always');
 		expect(result.songs).toEqual([]);
 		expect(result.hasUnsyncedChanges).toBe(true);
-		expect(result.limits.songsPerPage).toBe(25);
+		expect(result.songsPerPage).toBe(25);
 	});
 });

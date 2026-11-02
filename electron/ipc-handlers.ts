@@ -1,9 +1,19 @@
 import { shell } from 'electron';
-import type { Handler } from './ipc';
-import { API_CHANNELS } from './channels';
+import type { IpcDeps } from './ipc';
+import type { ApiName } from './channels';
+import type {
+	CreateAlbumInput,
+	CreateArtistInput,
+	CreateProducerInput,
+	CreateSongsWithMetadataInput,
+	FileUpload,
+	UpdateAlbumInput,
+	UpdateProducerInput,
+	UpdateSettingsInput,
+	UpdateSongInput
+} from './domain/models';
 import { cleanupFiles } from './files';
 import { uploadsFilePath } from './paths';
-import { readMetadata } from './metadata';
 import { createArtist } from './domain/artists';
 import {
 	createAlbum,
@@ -15,12 +25,9 @@ import {
 	createProducerWithAliases,
 	updateProducerWithAliases,
 	deleteProducer,
-	getProducersWithAliases,
-	writeProducerMetadata,
-	matchProducersFromFilename
+	writeProducerMetadata
 } from './domain/producers';
 import {
-	createSong,
 	updateSong,
 	deleteSong,
 	getSongsReadable,
@@ -29,78 +36,74 @@ import {
 	writeAlbumMetadata
 } from './domain/songs';
 import { updateSettings } from './domain/settings';
-import {
-	uploadAndExtractMetadata,
-	createSongsWithMetadata,
-	uploadSongs
-} from './domain/workflows';
+import { uploadAndExtractMetadata, createSongsWithMetadata } from './domain/workflows';
 import { getInitialData } from './domain/initial-data';
-import { getAppleMusicLibrary, syncSongsToAppleMusic } from './apple-music';
+import { syncSongsToAppleMusic } from './apple-music';
 
-// US1 (import + organize) + US2 (edit + write-back) handler map. Arg order mirrors
-// RawIpcBindings so the renderer reaches these unchanged.
-// Keyed by channel string.
-export const us1Handlers: Partial<Record<string, Handler>> = {
+// One handler per API_CHANNELS entry; `satisfies` makes a missing handler a compile
+// error. IpcApi derives the renderer's window.api type from these signatures.
+export const handlers = {
 	// App
-	[API_CHANNELS.GetInitialData]: (d) => getInitialData(d.db),
+	GetInitialData: (d: IpcDeps) => getInitialData(d.db),
 
 	// Artists
-	[API_CHANNELS.CreateArtist]: (d, input) => createArtist(d.db, input),
+	CreateArtist: (d: IpcDeps, input: CreateArtistInput) => createArtist(d.db, input),
 
 	// Albums
-	[API_CHANNELS.CreateAlbum]: (d, input) => createAlbum(d.db, input),
-	[API_CHANNELS.UpdateAlbum]: (d, input) => updateAlbum(d.db, input),
-	[API_CHANNELS.DeleteAlbum]: (d, albumId) => deleteAlbum(d.db, albumId),
-	[API_CHANNELS.UploadAlbumArt]: (d, albumId, filename, base64Data) =>
+	CreateAlbum: (d: IpcDeps, input: CreateAlbumInput) => createAlbum(d.db, input),
+	UpdateAlbum: (d: IpcDeps, input: UpdateAlbumInput) => updateAlbum(d.db, input),
+	DeleteAlbum: (d: IpcDeps, albumId: number) => deleteAlbum(d.db, albumId),
+	UploadAlbumArt: (d: IpcDeps, albumId: number, filename: string, base64Data: string) =>
 		uploadAlbumArt(d.db, d.staticPath, albumId, filename, base64Data),
 
 	// Producers
-	[API_CHANNELS.CreateProducerWithAliases]: (d, input) => createProducerWithAliases(d.db, input),
-	[API_CHANNELS.UpdateProducerWithAliases]: (d, input) => updateProducerWithAliases(d.db, input),
-	[API_CHANNELS.DeleteProducer]: (d, producerId) => deleteProducer(d.db, producerId),
-	[API_CHANNELS.GetProducersWithAliases]: (d) => getProducersWithAliases(d.db),
-	[API_CHANNELS.WriteProducerMetadata]: (d, producerId) =>
+	CreateProducerWithAliases: (d: IpcDeps, input: CreateProducerInput) =>
+		createProducerWithAliases(d.db, input),
+	UpdateProducerWithAliases: (d: IpcDeps, input: UpdateProducerInput) =>
+		updateProducerWithAliases(d.db, input),
+	DeleteProducer: (d: IpcDeps, producerId: number) => deleteProducer(d.db, producerId),
+	WriteProducerMetadata: (d: IpcDeps, producerId: number) =>
 		writeProducerMetadata(d.db, d.staticPath, producerId),
-	[API_CHANNELS.MatchProducersFromFilename]: (d, filename, songArtistIds) =>
-		matchProducersFromFilename(d.db, filename, songArtistIds),
 
 	// Songs
-	[API_CHANNELS.CreateSong]: (d, input) => createSong(d.db, input),
-	[API_CHANNELS.UpdateSong]: (d, input) => updateSong(d.db, input),
-	[API_CHANNELS.DeleteSong]: (d, songId) => deleteSong(d.db, d.staticPath, songId),
-	[API_CHANNELS.GetSongsReadable]: (d, limit, offset) => getSongsReadable(d.db, limit, offset),
-	[API_CHANNELS.GetSongsCount]: (d) => getSongsCount(d.db),
+	UpdateSong: (d: IpcDeps, input: UpdateSongInput) => updateSong(d.db, input),
+	DeleteSong: (d: IpcDeps, songId: number) => deleteSong(d.db, d.staticPath, songId),
+	GetSongsReadable: (d: IpcDeps, limit: number, offset: number) =>
+		getSongsReadable(d.db, limit, offset),
+	GetSongsCount: (d: IpcDeps) => getSongsCount(d.db),
 
 	// Metadata
-	// uploadsFilePath (not staticFilePath): the untrusted renderer relPath must be
-	// confined to the uploads/ subtree. staticFilePath only blocks ../ and absolute
-	// paths, which would still let a relPath like "local.db" read files elsewhere
-	// under userData. Callers already pass "uploads/..." paths.
-	[API_CHANNELS.ExtractMetadata]: (d, relPath) =>
-		readMetadata(uploadsFilePath(d.staticPath, relPath)),
-	[API_CHANNELS.WriteSongMetadata]: (d, songId) => writeSongMetadata(d.db, d.staticPath, songId),
-	[API_CHANNELS.WriteAlbumMetadata]: (d, albumId) =>
+	WriteSongMetadata: (d: IpcDeps, songId: number) => writeSongMetadata(d.db, d.staticPath, songId),
+	WriteAlbumMetadata: (d: IpcDeps, albumId: number) =>
 		writeAlbumMetadata(d.db, d.staticPath, albumId),
 
 	// Settings
-	[API_CHANNELS.UpdateSettings]: (d, input) => updateSettings(d.db, input),
+	UpdateSettings: (d: IpcDeps, input: UpdateSettingsInput) => updateSettings(d.db, input),
 
 	// Files
-	[API_CHANNELS.CleanupFiles]: (d, relPaths) => cleanupFiles(d.staticPath, relPaths),
-	[API_CHANNELS.ShowInFileExplorer]: (d, relPath) =>
+	CleanupFiles: (d: IpcDeps, relPaths: string[]) => cleanupFiles(d.staticPath, relPaths),
+	// uploadsFilePath (not staticFilePath): the untrusted renderer relPath must be
+	// confined to the uploads/ subtree. staticFilePath only blocks ../ and absolute
+	// paths, which would still let a relPath like "local.db" reach files elsewhere
+	// under userData. Callers already pass "uploads/..." paths.
+	ShowInFileExplorer: (d: IpcDeps, relPath: string) =>
 		shell.showItemInFolder(uploadsFilePath(d.staticPath, relPath)),
 
 	// Workflows
-	[API_CHANNELS.UploadAndExtractMetadata]: (d, files, albumId) =>
-		uploadAndExtractMetadata(d.db, d.staticPath, files, albumId ?? null),
-	[API_CHANNELS.CreateSongsWithMetadata]: (d, input) =>
+	UploadAndExtractMetadata: (d: IpcDeps, files: FileUpload[], albumId: number | null) =>
+		uploadAndExtractMetadata(d.db, d.staticPath, files, albumId),
+	CreateSongsWithMetadata: (d: IpcDeps, input: CreateSongsWithMetadataInput) =>
 		createSongsWithMetadata(d.db, d.staticPath, input),
-	[API_CHANNELS.UploadSongs]: (d, files, albumId) =>
-		uploadSongs(d.db, d.staticPath, files, albumId ?? null),
 
 	// Apple Music
-	[API_CHANNELS.GetAppleMusicLibrary]: (d) =>
-		getAppleMusicLibrary({ db: d.db, staticPath: d.staticPath, window: d.window }),
-	[API_CHANNELS.SyncSongsToAppleMusic]: (d) =>
-		syncSongsToAppleMusic({ db: d.db, staticPath: d.staticPath, window: d.window })
+	SyncSongsToAppleMusic: (d: IpcDeps) => syncSongsToAppleMusic(d)
+} satisfies Record<ApiName, (deps: IpcDeps, ...args: never[]) => unknown>;
+
+type WithoutDeps<Args extends unknown[]> = Args extends [IpcDeps, ...infer Rest] ? Rest : never;
+
+// The renderer's view of each handler: no deps argument, and always a promise.
+export type IpcApi = {
+	[K in ApiName]: (
+		...args: WithoutDeps<Parameters<(typeof handlers)[K]>>
+	) => Promise<Awaited<ReturnType<(typeof handlers)[K]>>>;
 };

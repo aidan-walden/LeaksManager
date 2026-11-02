@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseArtists } from './artists';
 
-// Parity mirror of backend/utils.go ParseArtists + svelte artist-parser.test.ts
+// Parity mirror of backend/utils.go ParseArtists
 // (SC-006). Same delimiter set, order-preserving dedupe, empty handling.
 describe('parseArtists', () => {
 	it('splits common collaboration delimiters and preserves order', () => {

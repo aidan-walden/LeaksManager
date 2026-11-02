@@ -1,27 +1,26 @@
 import type Database from 'better-sqlite3';
 import type { InitialData } from './models';
 import { getSongsReadable, getSongsCount } from './songs';
-import { getAlbumsWithSongs } from './albums';
-import { getArtistsWithRelations } from './artists';
+import { getAlbumSummaries } from './albums';
+import { getArtists } from './artists';
 import { getProducersWithAliases } from './producers';
-import { getSettings } from './settings';
+import { getSettings, isMac } from './settings';
 
-// Port of backend/initial_data.go — the payload for the renderer's layout load.
+// The payload for the renderer's layout load.
 
 const SONGS_PER_PAGE = 25;
-const ALBUMS_PER_PAGE = 25;
 
 export function getInitialData(db: Database.Database): InitialData {
 	const settings = getSettings(db);
 	return {
 		songs: getSongsReadable(db, SONGS_PER_PAGE, 0),
 		songsCount: getSongsCount(db),
-		albums: getAlbumsWithSongs(db, ALBUMS_PER_PAGE, 0),
-		artists: getArtistsWithRelations(db),
+		albums: getAlbumSummaries(db),
+		artists: getArtists(db),
 		producers: getProducersWithAliases(db),
 		settings,
-		isMac: process.platform === 'darwin',
-		limits: { songsPerPage: SONGS_PER_PAGE, albumsPerPage: ALBUMS_PER_PAGE },
+		isMac: isMac(),
+		songsPerPage: SONGS_PER_PAGE,
 		hasUnsyncedChanges: checkUnsyncedChanges(db, settings.importToAppleMusic)
 	};
 }

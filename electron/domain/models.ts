@@ -1,12 +1,20 @@
-// Domain DTOs shared with the renderer shape in svelte/src/lib/ipc/types.ts.
-// The renderer and main process are separate pnpm packages; these interfaces are
-// duplicated rather than cross-imported (same approach metadata.ts took).
-
-export type { ExtractedMetadata } from '../metadata';
+// The IPC data types. This file is the only source: the renderer re-exports these types
+// from svelte/src/lib/ipc/types.ts. Keep it free of runtime code and of main-process imports.
 
 export interface ArtworkData {
 	data: string; // base64
 	mimeType: string;
+}
+
+export interface ExtractedMetadata {
+	title: string | null;
+	artist: string | null;
+	album: string | null;
+	year: number | null;
+	genre: string | null;
+	trackNumber: number | null;
+	duration: number | null;
+	artwork: ArtworkData | null;
 }
 
 export interface Artist {
@@ -17,12 +25,6 @@ export interface Artist {
 	careerEndYear: number | null;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
-}
-
-export interface ArtistWithRelations extends Artist {
-	albums: Album[];
-	songs: Song[];
 }
 
 export interface Album {
@@ -34,16 +36,14 @@ export interface Album {
 	isSingle: boolean;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
 }
 
 export interface AlbumWithArtists extends Album {
 	artists: Artist[];
 }
 
-export interface AlbumWithSongs extends Album {
-	artists: Artist[];
-	songs: Song[];
+export interface AlbumSummary extends AlbumWithArtists {
+	songCount: number;
 }
 
 export interface Song {
@@ -56,11 +56,9 @@ export interface Song {
 	trackNumber: number | null;
 	duration: number | null;
 	filepath: string;
-	fileType: string | null;
 	appleMusicId?: string;
 	createdAt: number;
 	updatedAt: number;
-	synced: boolean;
 }
 
 export interface SongReadable extends Song {
@@ -77,30 +75,10 @@ export interface SongProcessingResult {
 }
 
 export interface BatchResult {
-	success: boolean;
-	message: string;
-	songsProcessed: number;
 	songsFailed: number;
-	results: SongProcessingResult[];
 }
 
 // --- Apple Music DTOs (port of backend/models.go) ---
-
-export interface AppleMusicTrack {
-	id: string; // persistent ID
-	databaseId: number;
-	name: string;
-	artist: string;
-	albumArtist: string;
-	album: string;
-	genre: string;
-	year: number;
-	duration: number;
-	trackNumber: number;
-	trackCount: number;
-	discNumber: number;
-	discCount: number;
-}
 
 export interface SyncResult {
 	totalSongs: number;
@@ -115,8 +93,8 @@ export interface SyncResult {
 export interface SyncItemResult {
 	songId: number;
 	songName: string;
-	status: string; // "success", "failed", "added", "updated"
-	appleMusicId?: string | null;
+	status: 'failed' | 'added' | 'updated';
+	appleMusicId?: string;
 	errorMessage?: string;
 }
 
@@ -140,7 +118,6 @@ export interface ProducerAliasWithArtists extends ProducerAlias {
 
 export interface ProducerWithAliases extends Producer {
 	aliases: ProducerAliasWithArtists[];
-	songs: Song[];
 }
 
 export interface Settings {
@@ -151,20 +128,15 @@ export interface Settings {
 	updatedAt: number;
 }
 
-export interface Limits {
-	songsPerPage: number;
-	albumsPerPage: number;
-}
-
 export interface InitialData {
 	songs: SongReadable[];
 	songsCount: number;
-	albums: AlbumWithSongs[];
-	artists: ArtistWithRelations[];
+	albums: AlbumSummary[];
+	artists: Artist[];
 	producers: ProducerWithAliases[];
 	settings: Settings;
 	isMac: boolean;
-	limits: Limits;
+	songsPerPage: number;
 	hasUnsyncedChanges: boolean;
 }
 
@@ -243,7 +215,7 @@ export interface UpdateSettingsInput {
 export interface SongImportDraft {
 	originalFilename: string;
 	filepath: string;
-	metadata: import('../metadata').ExtractedMetadata;
+	metadata: ExtractedMetadata;
 	parsedArtists: string[];
 	hasUnmappedArtists: boolean;
 	albumId?: number | null;

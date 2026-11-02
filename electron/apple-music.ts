@@ -1,38 +1,20 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { dialog, type BrowserWindow } from 'electron';
+import { dialog } from 'electron';
 import type Database from 'better-sqlite3';
-import type { AppleMusicTrack, SyncResult, SyncItemResult, SongReadable } from './domain/models';
+import type { IpcDeps } from './ipc';
+import type { SyncResult, SyncItemResult, SongReadable } from './domain/models';
 import { getSongReadable, writeSongMetadataInternal } from './domain/songs';
-import { getSettings } from './domain/settings';
+import { getSettings, isMac } from './domain/settings';
 import { staticFilePath } from './paths';
 import { now } from './domain/rows';
 
-// Port of backend/apple_music.go. AppleScript runs via execFile('osascript', ['-e', script, ...args])
-// (no shell — Go used exec.Command). macOS-only: process.platform replaces runtime.GOOS,
-// and a disabled import setting is a graceful no-op (FR-013 / FR-016). Song titles/paths are
-// untrusted, so they are NEVER interpolated into the script source: they are passed to
-// osascript as runtime arguments and read inside an `on run argv` handler as `item N of argv`.
-
-const isMac = (): boolean => process.platform === 'darwin';
+// Song titles and paths are untrusted, so they are NEVER interpolated into the script
+// source: they reach osascript as runtime arguments and are read inside an `on run argv`
+// handler as `item N of argv`.
 
 const execFileP = promisify(execFile);
-
-export interface AppleMusicDeps {
-	db: Database.Database;
-	staticPath: string;
-	window?: BrowserWindow | null;
-}
-
-function isImportEnabled(db: Database.Database): boolean {
-	if (!isMac()) return false;
-	try {
-		return getSettings(db).importToAppleMusic;
-	} catch {
-		return false;
-	}
-}
 
 async function isAppleMusicRunning(): Promise<boolean> {
 	try {
@@ -43,20 +25,9 @@ async function isAppleMusicRunning(): Promise<boolean> {
 	}
 }
 
-async function ensureAppleMusicRunning(deps: AppleMusicDeps): Promise<void> {
-	if (!isMac()) {
-		throw new Error('Apple Music integration is only available on macOS');
-	}
-	if (!isImportEnabled(deps.db)) {
-		return;
-	}
-
+async function ensureAppleMusicRunning(deps: IpcDeps): Promise<void> {
 	if (await isAppleMusicRunning()) {
 		return;
-	}
-
-	if (!deps.window) {
-		throw new Error('Apple Music is not running');
 	}
 
 	const { response } = await dialog.showMessageBox(deps.window, {
@@ -87,21 +58,9 @@ async function ensureAppleMusicRunning(deps: AppleMusicDeps): Promise<void> {
 	throw new Error('Apple Music did not finish opening');
 }
 
-// runAppleScriptCommand mirrors the Go helper: no-op when import disabled, ensures Music
-// is running, then runs osascript. Returns combined stdout (trimmed by callers).
-async function runAppleScriptCommand(
-	deps: AppleMusicDeps,
-	script: string,
-	args: string[] = []
-): Promise<string> {
-	if (!isImportEnabled(deps.db)) {
-		return '';
-	}
-	await ensureAppleMusicRunning(deps);
-
+async function runAppleScriptCommand(script: string, args: string[] = []): Promise<string> {
 	try {
-		// ponytail: 64 MiB covers ~300k tracks; raise if larger
-		const { stdout } = await execFileP('osascript', ['-e', script, ...args], { maxBuffer: 64 * 1024 * 1024 });
+		const { stdout } = await execFileP('osascript', ['-e', script, ...args]);
 		return stdout;
 	} catch (err) {
 		const e = err as { stderr?: string; message?: string };
@@ -116,125 +75,26 @@ async function runAppleScriptCommand(
 	}
 }
 
-async function runAppleScript(
-	deps: AppleMusicDeps,
-	script: string,
-	args: string[] = []
-): Promise<void> {
-	await runAppleScriptCommand(deps, script, args);
-}
-
 function errMsg(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-// GetAppleMusicLibrary fetches all user-saved tracks from Apple Music via AppleScript.
-export async function getAppleMusicLibrary(deps: AppleMusicDeps): Promise<AppleMusicTrack[]> {
-	if (!isMac()) {
-		throw new Error('Apple Music integration is only available on macOS');
-	}
-	if (!isImportEnabled(deps.db)) {
-		return [];
-	}
-
-	const script = `
-		tell application "Music"
-			set trackList to {}
-			set allTracks to every track of playlist "Library"
-
-			set output to ""
-
-			repeat with t in allTracks
-				try
-					set tId to persistent ID of t
-					set tName to name of t
-					set tArtist to artist of t
-					set tAlbumArtist to album artist of t
-					set tAlbum to album of t
-					set tGenre to genre of t
-					set tYear to year of t
-					set tDuration to duration of t
-					set tTrackNumber to track number of t
-					set tTrackCount to track count of t
-					set tDiscNumber to disc number of t
-					set tDiscCount to disc count of t
-
-					set output to output & tId & "|||" & tName & "|||" & tArtist & "|||" & tAlbumArtist & "|||" & tAlbum & "|||" & tGenre & "|||" & tYear & "|||" & tDuration & "|||" & tTrackNumber & "|||" & tTrackCount & "|||" & tDiscNumber & "|||" & tDiscCount & "&&&"
-				end try
-			end repeat
-
-			return output
-		end tell
-	`;
-
-	let out: string;
-	try {
-		out = await runAppleScriptCommand(deps, script);
-	} catch (err) {
-		throw new Error(`failed to execute AppleScript: ${errMsg(err)}`);
-	}
-
-	if (out === '') {
-		return [];
-	}
-
-	const tracks: AppleMusicTrack[] = [];
-
-	const atoi = (v: string): number => {
-		const n = parseInt(v, 10);
-		return Number.isNaN(n) ? 0 : n;
-	};
-	const atof = (v: string): number => {
-		const n = parseFloat(v);
-		return Number.isNaN(n) ? 0 : n;
-	};
-
-	for (const ts of out.split('&&&')) {
-		if (ts.trim() === '') continue;
-
-		const props = ts.split('|||');
-		if (props.length < 12) continue;
-
-		tracks.push({
-			id: props[0],
-			databaseId: 0,
-			name: props[1],
-			artist: props[2],
-			albumArtist: props[3],
-			album: props[4],
-			genre: props[5],
-			year: atoi(props[6]),
-			duration: atof(props[7]),
-			trackNumber: atoi(props[8]),
-			trackCount: atoi(props[9]),
-			discNumber: atoi(props[10]),
-			discCount: atoi(props[11])
-		});
-	}
-
-	return tracks;
+function logSyncError(song: SongReadable, step: string, err: unknown): void {
+	console.error(
+		`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=${step} error=${errMsg(err)}`
+	);
 }
 
-// SyncSongsToAppleMusic syncs all unsynced songs to Apple Music, returning detailed
-// per-song results (successes, failures, errors). A single song's failure is captured
-// in its result and must NOT mark that song synced.
-export async function syncSongsToAppleMusic(deps: AppleMusicDeps): Promise<SyncResult> {
+// Syncs all unsynced songs to Apple Music, returning per-song results. A disabled import
+// setting is a no-op. A single song's failure is captured in its result and must NOT mark
+// that song synced.
+export async function syncSongsToAppleMusic(deps: IpcDeps): Promise<SyncResult> {
 	if (!isMac()) {
 		throw new Error('Apple Music sync is only available on macOS');
 	}
-	if (!isImportEnabled(deps.db)) {
-		return { totalSongs: 0, successCount: 0, failureCount: 0, addedCount: 0, updatedCount: 0, results: [], completedAt: now() };
-	}
-
-	await ensureAppleMusicRunning(deps);
-
-	const rows = deps.db
-		.prepare(`SELECT id FROM songs WHERE synced = 0 ORDER BY id`)
-		.all() as { id: number }[];
-	const songIDs = rows.map((r) => r.id);
 
 	const result: SyncResult = {
-		totalSongs: songIDs.length,
+		totalSongs: 0,
 		successCount: 0,
 		failureCount: 0,
 		addedCount: 0,
@@ -242,115 +102,104 @@ export async function syncSongsToAppleMusic(deps: AppleMusicDeps): Promise<SyncR
 		results: [],
 		completedAt: now()
 	};
+	if (!getSettings(deps.db).importToAppleMusic) {
+		return result;
+	}
 
-	for (const songID of songIDs) {
-		const itemResult = await syncSingleSong(deps, songID);
+	await ensureAppleMusicRunning(deps);
+
+	const rows = deps.db
+		.prepare(`SELECT id FROM songs WHERE synced = 0 ORDER BY id`)
+		.all() as { id: number }[];
+	result.totalSongs = rows.length;
+
+	for (const { id } of rows) {
+		const itemResult = await syncSingleSong(deps, id);
 		result.results.push(itemResult);
 
-		switch (itemResult.status) {
-			case 'success':
-			case 'added':
-			case 'updated':
-				result.successCount++;
-				if (itemResult.status === 'added') result.addedCount++;
-				else if (itemResult.status === 'updated') result.updatedCount++;
-				break;
-			case 'failed':
-				result.failureCount++;
-				break;
+		if (itemResult.status === 'failed') {
+			result.failureCount++;
+		} else {
+			result.successCount++;
+			if (itemResult.status === 'added') result.addedCount++;
+			else result.updatedCount++;
 		}
 	}
 
 	return result;
 }
 
-// syncSingleSong handles syncing a single song. Any failure is returned as a "failed"
-// SyncItemResult and the song is NOT marked synced — preserving the dirty state so a
-// later sync retries it.
-async function syncSingleSong(deps: AppleMusicDeps, songID: number): Promise<SyncItemResult> {
+// Finds the song's track in Apple Music: first by its saved persistent ID, then by name
+// and artist. Returns '' when no track is found. A lookup error counts as "not found", so
+// the caller adds the track.
+async function findExistingTrack(song: SongReadable): Promise<string> {
+	if (song.appleMusicId) {
+		try {
+			if (await verifyAppleMusicTrack(song.appleMusicId)) return song.appleMusicId;
+		} catch (err) {
+			logSyncError(song, 'verify_existing_track', err);
+		}
+	}
+	try {
+		return await findAppleMusicTrack(song);
+	} catch (err) {
+		logSyncError(song, 'find_track', err);
+		return '';
+	}
+}
+
+// Any failure returns a "failed" item and leaves the song dirty, so a later sync retries it.
+async function syncSingleSong(deps: IpcDeps, songID: number): Promise<SyncItemResult> {
 	const song = getSongReadable(deps.db, songID);
 	if (!song) {
 		console.error(`[AppleMusicSync] song_id=${songID} step=load_song error=song not found`);
 		return { songId: songID, songName: '', status: 'failed', errorMessage: 'Failed to load song details' };
 	}
-
-	let appleMusicID = '';
-	let status = '';
-
-	// Check if we have an existing Apple Music ID
-	if (song.appleMusicId != null && song.appleMusicId !== '') {
-		try {
-			const exists = await verifyAppleMusicTrack(deps, song.appleMusicId);
-			if (exists) {
-				appleMusicID = song.appleMusicId;
-			}
-			// else: track not found, need to search or add
-		} catch (err) {
-			console.error(
-				`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=verify_existing_track apple_music_id=${JSON.stringify(song.appleMusicId)} error=${errMsg(err)}`
-			);
-			appleMusicID = '';
-		}
-	}
-
-	// If no valid Apple Music ID, search for track
-	if (appleMusicID === '') {
-		try {
-			const foundID = await findAppleMusicTrack(deps, song);
-			if (foundID !== '') {
-				appleMusicID = foundID;
-			}
-		} catch (err) {
-			console.error(
-				`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=find_track error=${errMsg(err)}`
-			);
-		}
-	}
-
-	// If track found, update it; otherwise, add it
-	if (appleMusicID !== '') {
-		try {
-			await updateAppleMusicTrack(deps, appleMusicID, song);
-		} catch (err) {
-			console.error(
-				`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=update_track apple_music_id=${JSON.stringify(appleMusicID)} error=${errMsg(err)}`
-			);
-			return { songId: songID, songName: song.name, status: 'failed', errorMessage: `Failed to update track: ${errMsg(err)}` };
-		}
-		status = 'updated';
-	} else {
-		try {
-			appleMusicID = await addTrackToAppleMusic(deps, song);
-		} catch (err) {
-			console.error(
-				`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=add_track filepath=${JSON.stringify(song.filepath)} error=${errMsg(err)}`
-			);
-			return { songId: songID, songName: song.name, status: 'failed', errorMessage: `Failed to add track: ${errMsg(err)}` };
-		}
-		status = 'added';
-	}
-
-	// Save Apple Music ID and mark as synced
-	try {
-		markSongSynced(deps.db, songID, appleMusicID);
-	} catch (err) {
-		console.error(
-			`[AppleMusicSync] song_id=${song.id} song=${JSON.stringify(song.name)} step=mark_synced apple_music_id=${JSON.stringify(appleMusicID)} error=${errMsg(err)}`
-		);
+	const failed = (step: string, message: string, err: unknown, appleMusicId?: string): SyncItemResult => {
+		logSyncError(song, step, err);
 		return {
 			songId: songID,
 			songName: song.name,
 			status: 'failed',
-			appleMusicId: appleMusicID,
-			errorMessage: `Failed to mark as synced: ${errMsg(err)}`
+			appleMusicId,
+			errorMessage: `${message}: ${errMsg(err)}`
 		};
+	};
+
+	try {
+		await writeSongMetadataInternal(deps.db, deps.staticPath, song.id);
+	} catch (err) {
+		return failed('write_metadata', 'Failed to write source metadata', err);
+	}
+
+	let appleMusicID = await findExistingTrack(song);
+	const status = appleMusicID !== '' ? 'updated' : 'added';
+
+	if (status === 'updated') {
+		try {
+			await updateAppleMusicTrack(deps, appleMusicID, song);
+		} catch (err) {
+			return failed('update_track', 'Failed to update track', err);
+		}
+	} else {
+		try {
+			appleMusicID = await addTrackToAppleMusic(deps, song);
+		} catch (err) {
+			return failed('add_track', 'Failed to add track', err);
+		}
+	}
+
+	try {
+		markSongSynced(deps.db, songID, appleMusicID);
+	} catch (err) {
+		return failed('mark_synced', 'Failed to mark as synced', err, appleMusicID);
 	}
 
 	return { songId: songID, songName: song.name, status, appleMusicId: appleMusicID };
 }
 
 // verifyAppleMusicTrack checks if a track with the given persistent ID exists.
-async function verifyAppleMusicTrack(deps: AppleMusicDeps, persistentID: string): Promise<boolean> {
+async function verifyAppleMusicTrack(persistentID: string): Promise<boolean> {
 	const script = `
 		on run argv
 			tell application "Music"
@@ -364,18 +213,12 @@ async function verifyAppleMusicTrack(deps: AppleMusicDeps, persistentID: string)
 		end run
 	`;
 
-	let out: string;
-	try {
-		out = await runAppleScriptCommand(deps, script, [persistentID]);
-	} catch (err) {
-		throw new Error(`failed to verify track: ${errMsg(err)}`);
-	}
-	return out.trim() === 'true';
+	return (await runAppleScriptCommand(script, [persistentID])).trim() === 'true';
 }
 
 // findAppleMusicTrack searches the Apple Music library by name + artist. Returns the
 // persistent ID if found, empty string if not.
-async function findAppleMusicTrack(deps: AppleMusicDeps, song: SongReadable): Promise<string> {
+async function findAppleMusicTrack(song: SongReadable): Promise<string> {
 	const script = `
 		on run argv
 			tell application "Music"
@@ -389,13 +232,7 @@ async function findAppleMusicTrack(deps: AppleMusicDeps, song: SongReadable): Pr
 		end run
 	`;
 
-	let out: string;
-	try {
-		out = await runAppleScriptCommand(deps, script, [song.name, song.artist]);
-	} catch (err) {
-		throw new Error(`failed to search for track: ${errMsg(err)}`);
-	}
-	return out.trim();
+	return (await runAppleScriptCommand(script, [song.name, song.artist])).trim();
 }
 
 // buildMetadataScript builds AppleScript lines to set metadata on a track variable.
@@ -438,20 +275,15 @@ function buildMetadataScript(
 	return { script: lines.join('\n\t\t'), args };
 }
 
-function resolveAppleMusicArtworkPath(deps: AppleMusicDeps, song: SongReadable): string {
-	if (song.artworkPath != null && song.artworkPath !== '') {
-		return staticFilePath(deps.staticPath, song.artworkPath);
-	}
-	if (song.album != null && song.album.artworkPath != null && song.album.artworkPath !== '') {
-		return staticFilePath(deps.staticPath, song.album.artworkPath);
-	}
-	return '';
+function resolveAppleMusicArtworkPath(deps: IpcDeps, song: SongReadable): string {
+	const artwork = song.artworkPath || song.album?.artworkPath;
+	return artwork ? staticFilePath(deps.staticPath, artwork) : '';
 }
 
 // buildArtworkScript builds AppleScript lines to set/clear artwork on a track variable.
 // The artwork path is untrusted and read from argv item `argStart` when present.
 function buildArtworkScript(
-	deps: AppleMusicDeps,
+	deps: IpcDeps,
 	trackVar: string,
 	song: SongReadable,
 	argStart: number
@@ -478,19 +310,12 @@ function buildArtworkScript(
 	};
 }
 
-// updateAppleMusicTrack updates an existing track's metadata + artwork via AppleScript,
-// after writing the source file's metadata.
+// Updates an existing track's metadata and artwork.
 async function updateAppleMusicTrack(
-	deps: AppleMusicDeps,
+	deps: IpcDeps,
 	persistentID: string,
 	song: SongReadable
 ): Promise<void> {
-	try {
-		await writeSongMetadataInternal(deps.db, deps.staticPath, song.id);
-	} catch (err) {
-		throw new Error(`failed to write source metadata before Apple Music sync: ${errMsg(err)}`);
-	}
-
 	// argv: item 1 = persistent ID, then metadata values, then the artwork path.
 	const metadata = buildMetadataScript('t', song, 2);
 	const artwork = buildArtworkScript(deps, 't', song, 2 + metadata.args.length);
@@ -505,34 +330,14 @@ async function updateAppleMusicTrack(
 		end run
 	`;
 
-	try {
-		await runAppleScript(deps, script, args);
-	} catch (err) {
-		throw new Error(`failed to update track: ${errMsg(err)}`);
-	}
+	await runAppleScriptCommand(script, args);
 }
 
-// addTrackToAppleMusic adds a new track file to the library, returning its persistent ID.
-async function addTrackToAppleMusic(deps: AppleMusicDeps, song: SongReadable): Promise<string> {
-	if (song.filepath === '') {
-		throw new Error('song has no filepath');
-	}
-	try {
-		await writeSongMetadataInternal(deps.db, deps.staticPath, song.id);
-	} catch (err) {
-		throw new Error(`failed to write source metadata before adding to Apple Music: ${errMsg(err)}`);
-	}
-
-	let absPath: string;
-	try {
-		absPath = staticFilePath(deps.staticPath, song.filepath);
-	} catch (err) {
-		throw new Error(`failed to resolve filepath: ${errMsg(err)}`);
-	}
-
+// Adds a new track file to the library, returning its persistent ID.
+async function addTrackToAppleMusic(deps: IpcDeps, song: SongReadable): Promise<string> {
 	// argv: item 1 = POSIX path, then metadata values.
 	const metadata = buildMetadataScript('newTrack', song, 2);
-	const args = [absPath, ...metadata.args];
+	const args = [staticFilePath(deps.staticPath, song.filepath), ...metadata.args];
 	const script = `
 		on run argv
 			tell application "Music"
@@ -543,17 +348,10 @@ async function addTrackToAppleMusic(deps: AppleMusicDeps, song: SongReadable): P
 		end run
 	`;
 
-	let out: string;
-	try {
-		out = await runAppleScriptCommand(deps, script, args);
-	} catch (err) {
-		throw new Error(`failed to add track: ${errMsg(err)}`);
-	}
-	return out.trim();
+	return (await runAppleScriptCommand(script, args)).trim();
 }
 
-// markSongSynced flips synced=1 and saves the Apple Music ID for a single song.
-export function markSongSynced(db: Database.Database, songID: number, appleMusicID: string): void {
+function markSongSynced(db: Database.Database, songID: number, appleMusicID: string): void {
 	db.prepare(`UPDATE songs SET synced = 1, apple_music_id = ?, updated_at = ? WHERE id = ?`).run(
 		appleMusicID,
 		now(),

@@ -1,27 +1,21 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CreateProducerCard from '$lib/components/features/create-producer-card.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import EntityActionsMenu from '$lib/components/shared/entity-actions-menu.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { EditableProducer } from '$lib/schema';
-	import type { TabViewData } from '$lib/view-models/tab-data';
-
-	type ProducerElement = TabViewData['producers'][number];
-	type ArtistElement = TabViewData['artists'][number];
+	import type { Artist, ProducerWithAliases } from '$lib/ipc';
 
 	let {
 		producers,
 		artists
 	}: {
-		producers: TabViewData['producers'];
-		artists: TabViewData['artists'];
+		producers: ProducerWithAliases[];
+		artists: Artist[];
 	} = $props();
 
 	let dialogOpen = $state(false);
-	let currentProducer = $state<EditableProducer | null>(null);
-	let resolvedArtists = $state<ArtistElement[]>(artists);
+	let currentProducer = $state<ProducerWithAliases | null>(null);
 	const { ipcActions } = getAppServicesContext();
 
 	function openCreateModal() {
@@ -29,25 +23,8 @@
 		dialogOpen = true;
 	}
 
-	function mapProducerToEditable(producer: ProducerElement): EditableProducer {
-		return {
-			id: producer.id,
-			name: producer.name,
-			producerAliases:
-				producer.aliases?.map((alias) => ({
-					id: alias.id,
-					alias: alias.alias,
-					producerAliasArtists:
-						alias.artistIds?.map((artistId) => ({
-							artistId,
-							artist: null
-						})) ?? []
-				})) ?? []
-		};
-	}
-
-	function onClickEdit(producer: ProducerElement) {
-		currentProducer = mapProducerToEditable(producer);
+	function onClickEdit(producer: ProducerWithAliases) {
+		currentProducer = producer;
 		dialogOpen = true;
 	}
 
@@ -61,43 +38,19 @@
 	<Button onclick={openCreateModal}>+</Button>
 </div>
 
-<CreateProducerCard
-	bind:open={dialogOpen}
-	producer={currentProducer}
-	onOpenChange={(value) => {
-		dialogOpen = value;
-		if (!value) {
-			currentProducer = null;
-		}
-	}}
-	artists={resolvedArtists}
-/>
+{#if dialogOpen}
+	<CreateProducerCard bind:open={dialogOpen} producer={currentProducer} {artists} />
+{/if}
 
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each producers as producer (producer.id)}
 		<div class="mb-4 flex w-[256px] flex-col gap-2 rounded border p-4">
 			<div class="flex items-start justify-between gap-2">
 				<p class="block text-sm font-medium break-words">{producer.name}</p>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-								<span class="sr-only">Open menu</span>
-								<EllipsisIcon />
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content>
-						<DropdownMenu.Group>
-							<DropdownMenu.Label>Actions</DropdownMenu.Label>
-							<DropdownMenu.Separator />
-							<DropdownMenu.Item onclick={() => onClickEdit(producer)}>Edit</DropdownMenu.Item>
-							<DropdownMenu.Item style="color: red;" onclick={() => onDelete(producer.id)}
-								>Delete</DropdownMenu.Item
-							>
-						</DropdownMenu.Group>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
+				<EntityActionsMenu
+					onEdit={() => onClickEdit(producer)}
+					onDelete={() => onDelete(producer.id)}
+				/>
 			</div>
 			{#if producer.aliases && producer.aliases.length > 0}
 				<div class="mt-2 text-xs text-muted-foreground">

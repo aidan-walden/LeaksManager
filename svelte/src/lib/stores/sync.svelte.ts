@@ -15,11 +15,6 @@ export class SyncState {
 		}
 	}
 
-	markChanged() {
-		if (!this.isAppleMusicEnabled) return;
-		this.hasChanges = true;
-	}
-
 	dismiss() {
 		this.isDismissed = true;
 	}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -9,22 +10,20 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import type { EditableProducer } from '$lib/schema';
+	import type { ProducerWithAliases } from '$lib/ipc';
+	import { notifyTagWriteFailures } from '$lib/utils/tag-write-failures';
 
 	type ArtistOption = { id: number; name: string };
 
+	// Mount this card only while its dialog is open: the form state starts from `producer`.
 	let {
 		open = $bindable(),
-		onOpenChange,
-		callback,
 		artists,
 		producer = null
 	}: {
 		open: boolean;
-		onOpenChange?: (open: boolean) => void;
-		callback?: () => void;
 		artists: ArtistOption[];
-		producer?: EditableProducer | null;
+		producer?: ProducerWithAliases | null;
 	} = $props();
 
 	type Alias = {
@@ -32,8 +31,15 @@
 		artistIds: number[];
 	};
 
-	let aliases = $state<Alias[]>([]);
-	let name = $state('');
+	const initial = untrack(() => ({
+		name: producer?.name ?? '',
+		aliases: (producer?.aliases ?? []).map(
+			(alias): Alias => ({ name: alias.alias, artistIds: [...alias.artistIds] })
+		)
+	}));
+
+	let aliases = $state(initial.aliases);
+	let name = $state(initial.name);
 	const { ipcActions } = getAppServicesContext();
 
 	function addAlias() {
@@ -44,29 +50,7 @@
 		aliases = aliases.filter((_, i) => i !== index);
 	}
 
-	// Reset state whenever producer changes or the dialog closes
-	$effect(() => {
-		if (producer) {
-			name = producer.name;
-			aliases = (producer.producerAliases ?? []).map((alias) => ({
-				name: alias.alias,
-				artistIds:
-					alias.producerAliasArtists
-						?.map((link) => link.artistId)
-						.filter((id) => !Number.isNaN(id)) ?? []
-			}));
-			return;
-		}
-
-		if (!open) {
-			name = '';
-			aliases = [];
-		}
-	});
-
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
-		const producerName = formData.get('name') as string;
-
+	async function handleSubmit(): Promise<void> {
 		// filter out aliases with empty names
 		const validAliases = aliases
 			.filter((a) => a.name.trim() !== '')
@@ -77,24 +61,22 @@
 
 		if (producer) {
 			// update existing producer
-			const updated = await ipcActions.updateProducerWithAliases({
+			await ipcActions.updateProducerWithAliases({
 				id: producer.id,
-				name: producerName,
+				name,
 				aliases: validAliases
 			});
 
-			// write metadata to all songs by this producer
-			await ipcActions.writeProducerMetadata(producer.id);
-
-			return { id: updated.id };
+			// Tags carry the producer's name but not its aliases, so only a rename needs a rewrite.
+			if (name !== producer.name) {
+				notifyTagWriteFailures(await ipcActions.writeProducerMetadata(producer.id));
+			}
 		} else {
 			// create new producer
-			const newProducer = await ipcActions.createProducerWithAliases({
-				name: producerName,
+			await ipcActions.createProducerWithAliases({
+				name,
 				aliases: validAliases
 			});
-
-			return { id: newProducer.id };
 		}
 	}
 </script>
@@ -188,8 +170,6 @@
 
 <CreateCard
 	bind:open
-	{onOpenChange}
-	{callback}
 	title={producer ? 'Edit Producer' : 'Create Producer'}
 	formId={producer ? 'update-producer-form' : 'create-producer-form'}
 	submitLabel={producer ? 'Save Changes' : 'Create'}

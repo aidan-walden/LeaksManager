@@ -9,6 +9,7 @@ import {
 	FilePathTarget,
 	FlacOutputFormat,
 	Input,
+	type InputAudioTrack,
 	Mp3OutputFormat,
 	Mp4OutputFormat,
 	OggOutputFormat,
@@ -16,25 +17,12 @@ import {
 	type MetadataTags,
 	type OutputFormat
 } from 'mediabunny';
+import type { ExtractedMetadata } from './domain/models';
 
 // Single metadata engine replacing the legacy per-format adapter stack.
 // File-level only: DB → tags (buildSongTags, inheritance/singles) lives in US2/T032.
 
 export { type MetadataTags } from 'mediabunny';
-
-// Mirror of backend ExtractedMetadata DTO (svelte/src/lib/IPC/types.ts).
-export interface ExtractedMetadata {
-	title: string | null;
-	artist: string | null;
-	albumArtist: string | null;
-	album: string | null;
-	year: number | null;
-	genre: string | null;
-	trackNumber: number | null;
-	producer: string | null;
-	duration: number | null;
-	artwork: { data: string; mimeType: string } | null;
-}
 
 function outputFormatForExt(ext: string): OutputFormat {
 	switch (ext.toLowerCase()) {
@@ -111,14 +99,10 @@ export async function readMetadata(fullPath: string): Promise<ExtractedMetadata>
 		return {
 			title: tags.title ?? null,
 			artist: tags.artist ?? null,
-			albumArtist: tags.albumArtist ?? null,
 			album: tags.album ?? null,
 			year: tags.date ? tags.date.getFullYear() : null,
 			genre: tags.genre ?? null,
 			trackNumber: tags.trackNumber ?? null,
-			// readMetadata doesn't surface producers — they only round-trip on the write
-			// side via the format-native composer/producer raw keys (see buildSongTags).
-			producer: null,
 			duration,
 			artwork: image
 				? { data: Buffer.from(image.data).toString('base64'), mimeType: image.mimeType }
@@ -132,44 +116,48 @@ export async function readMetadata(fullPath: string): Promise<ExtractedMetadata>
 }
 
 // writeMetadata remuxes (packet-copy, no re-encode) into a temp file with the new
-// tags, then atomically replaces the original. ponytail: POSIX rename-over-open is
-// fine; Windows packaging (Phase 6) may need a close-before-rename pass.
+// tags, then atomically replaces the original.
 export async function writeMetadata(fullPath: string, tags: MetadataTags): Promise<void> {
-	const ext = extname(fullPath).toLowerCase();
-	const format = outputFormatForExt(ext);
+	const format = outputFormatForExt(extname(fullPath));
 	const tmpPath = `${fullPath}.tmp-${Date.now()}`;
 
 	const input = new Input({ source: new FilePathSource(fullPath), formats: ALL_FORMATS });
-	const output = new Output({ format, target: new FilePathTarget(tmpPath) });
+	let output: Output | null = null;
 
 	try {
-		// M4A/MP4 (AAC) can't go through Conversion: mediabunny has no AAC decoder under
-		// Node, so Conversion discards the audio as `undecodable_source_codec`. The fix is
-		// a true passthrough — copy the encoded packets straight across (no decode/encode),
-		// which is all a tag-only rewrite needs. Other formats packet-copy fine via Conversion.
-		if (ext === '.m4a' || ext === '.mp4' || ext === '.m4b' || ext === '.m4p') {
-			// passthroughRemux owns the input's disposal in its own finally.
-			await passthroughRemux(input, output, tags);
-		} else {
-			// Function-form tags merge onto the file's existing metadata; a static object
-			// would drop every tag mediabunny doesn't re-supply (see mergeTags).
-			const conversion = await Conversion.init({
-				input,
-				output,
-				tags: (inputTags) => mergeTags(inputTags, tags)
-			});
-			try {
+		try {
+			const track = await input.getPrimaryAudioTrack();
+			if (!track) throw new Error('no audio track to copy');
+
+			// FilePathTarget opens the temp file on construction, and Output.cancel can't close
+			// it before start(). So create the output only after the input proves readable.
+			output = new Output({ format, target: new FilePathTarget(tmpPath) });
+
+			// M4A/MP4 (AAC) can't go through Conversion: mediabunny has no AAC decoder under
+			// Node, so Conversion discards the audio as `undecodable_source_codec`. The fix is
+			// a true passthrough — copy the encoded packets straight across (no decode/encode),
+			// which is all a tag-only rewrite needs. Other formats packet-copy fine via Conversion.
+			if (format instanceof Mp4OutputFormat) {
+				await passthroughRemux(input, track, output, tags);
+			} else {
+				// Function-form tags merge onto the file's existing metadata; a static object
+				// would drop every tag mediabunny doesn't re-supply (see mergeTags).
+				const conversion = await Conversion.init({
+					input,
+					output,
+					tags: (inputTags) => mergeTags(inputTags, tags)
+				});
 				await conversion.execute();
-			} finally {
-				disposeInput(input);
 			}
+		} finally {
+			disposeInput(input);
 		}
 
 		renameSync(tmpPath, fullPath);
 	} catch (err) {
 		// Release the output's file handle (finalize() already closed it on the success
 		// path) so the stranded temp file can be removed and no fd leaks.
-		await output.cancel().catch(() => {});
+		await output?.cancel().catch(() => {});
 		throw err;
 	} finally {
 		// A failed write (or a throw before rename) strands the temp file in
@@ -184,37 +172,32 @@ export async function writeMetadata(fullPath: string, tags: MetadataTags): Promi
 // start at zero so the ISOBMFF muxer accepts them.
 async function passthroughRemux(
 	input: Input,
+	track: InputAudioTrack,
 	output: Output,
 	tags: MetadataTags
 ): Promise<void> {
-	try {
-		// setMetadataTags replaces all output metadata, so merge onto what the file
-		// already carries (parity with the Conversion path's function-form tags).
-		const existing = await input.getMetadataTags();
-		const merged = mergeTags(existing, tags);
+	// setMetadataTags replaces all output metadata, so merge onto what the file
+	// already carries (parity with the Conversion path's function-form tags).
+	const existing = await input.getMetadataTags();
+	const merged = mergeTags(existing, tags);
 
-		const track = await input.getPrimaryAudioTrack();
-		if (!track) throw new Error('no audio track to copy');
-		const codec = await track.getCodec();
-		if (!codec) throw new Error('unknown audio codec');
-		const decoderConfig = await track.getDecoderConfig();
+	const codec = await track.getCodec();
+	if (!codec) throw new Error('unknown audio codec');
+	const decoderConfig = await track.getDecoderConfig();
 
-		output.setMetadataTags(merged);
-		const source = new EncodedAudioPacketSource(codec);
-		output.addAudioTrack(source);
-		await output.start();
+	output.setMetadataTags(merged);
+	const source = new EncodedAudioPacketSource(codec);
+	output.addAudioTrack(source);
+	await output.start();
 
-		const sink = new EncodedPacketSink(track);
-		let first = true;
-		let offset = 0;
-		for await (const packet of sink.packets()) {
-			if (first) offset = packet.timestamp;
-			const ts = Math.max(0, packet.timestamp - offset);
-			await source.add(packet.clone({ timestamp: ts }), first ? { decoderConfig: decoderConfig ?? undefined } : undefined);
-			first = false;
-		}
-		await output.finalize();
-	} finally {
-		disposeInput(input);
+	const sink = new EncodedPacketSink(track);
+	let first = true;
+	let offset = 0;
+	for await (const packet of sink.packets()) {
+		if (first) offset = packet.timestamp;
+		const ts = Math.max(0, packet.timestamp - offset);
+		await source.add(packet.clone({ timestamp: ts }), first ? { decoderConfig: decoderConfig ?? undefined } : undefined);
+		first = false;
 	}
+	await output.finalize();
 }

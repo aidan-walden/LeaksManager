@@ -3,16 +3,14 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CreateAlbumCard from '$lib/components/features/create-album-card.svelte';
 	import { AspectRatio } from '$lib/components/ui/aspect-ratio/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import EntityActionsMenu from '$lib/components/shared/entity-actions-menu.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import { editableAlbumSchema, type EditableAlbum } from '$lib/schema';
-	import type { AlbumWithSongs } from '$lib/ipc';
+	import type { AlbumSummary } from '$lib/ipc';
 	import { toAssetUrl } from '$lib/utils';
 
 	let creatingAlbum = $state(false);
-	let currentAlbum = $state<EditableAlbum | null>(null);
+	let currentAlbum = $state<AlbumSummary | null>(null);
 	const { ipcActions } = getAppServicesContext();
 
 	async function onDelete(id: number) {
@@ -25,39 +23,17 @@
 		creatingAlbum = true;
 	}
 
-	function convertToEditableAlbum(album: AlbumWithSongs): EditableAlbum {
-		const albumArtists = album.artists.map((artist, index) => ({
-			artistId: artist.id,
-			order: index,
-			artist: {
-				id: artist.id,
-				name: artist.name
-			}
-		}));
-
-		return editableAlbumSchema.parse({
-			id: album.id,
-			name: album.name,
-			artworkPath: album.artworkPath,
-			genre: album.genre,
-			year: album.year,
-			albumArtists
-		});
-	}
-
-	function onClickEdit(album: AlbumWithSongs) {
-		currentAlbum = convertToEditableAlbum(album);
+	function onClickEdit(album: AlbumSummary) {
+		currentAlbum = album;
 		creatingAlbum = true;
 	}
 
 	let {
 		albums,
-		albumsPerPage,
 		defaultThumbnail,
 		onUpload
 	}: {
-		albums: AlbumWithSongs[];
-		albumsPerPage: number;
+		albums: AlbumSummary[];
 		defaultThumbnail: string;
 		onUpload: (files: File[], albumId: number) => Promise<void>;
 	} = $props();
@@ -67,13 +43,9 @@
 	<Button onclick={openCreateModal}>+</Button>
 </div>
 
-<CreateAlbumCard
-	bind:open={creatingAlbum}
-	album={currentAlbum}
-	onOpenChange={(value) => {
-		creatingAlbum = value;
-	}}
-/>
+{#if creatingAlbum}
+	<CreateAlbumCard bind:open={creatingAlbum} album={currentAlbum} />
+{/if}
 
 <div class="mt-4 flex flex-row flex-wrap gap-4">
 	{#each albums as album (album.id)}
@@ -100,26 +72,10 @@
 							</p>
 						{/if}
 					</div>
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="ghost" size="icon" class="relative size-8 p-0">
-									<span class="sr-only">Open menu</span>
-									<EllipsisIcon />
-								</Button>
-							{/snippet}
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Content>
-							<DropdownMenu.Group>
-								<DropdownMenu.Label>Actions</DropdownMenu.Label>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item onclick={() => onClickEdit(album)}>Edit</DropdownMenu.Item>
-								<DropdownMenu.Item style="color: red;" onclick={() => onDelete(album.id)}
-									>Delete</DropdownMenu.Item
-								>
-							</DropdownMenu.Group>
-						</DropdownMenu.Content>
-					</DropdownMenu.Root>
+					<EntityActionsMenu
+						onEdit={() => onClickEdit(album)}
+						onDelete={() => onDelete(album.id)}
+					/>
 				</div>
 			</FileDropZone>
 		</div>

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -100,15 +100,19 @@ function sampleTags(): MetadataTags {
 	};
 }
 
-// Reads a single raw metadata key straight from the file (readMetadata doesn't surface
-// producers), disposing the input so the round-trip suite can't leak fds.
-async function readRawTag(path: string, key: string): Promise<unknown> {
+// Reads tags straight from the file, for tags that readMetadata doesn't surface, and
+// disposes the input so the round-trip suite can't leak fds.
+async function readTags(path: string): Promise<MetadataTags> {
 	const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS });
 	try {
-		return (await input.getMetadataTags()).raw?.[key];
+		return await input.getMetadataTags();
 	} finally {
 		input.dispose();
 	}
+}
+
+async function readRawTag(path: string, key: string): Promise<unknown> {
+	return (await readTags(path)).raw?.[key];
 }
 
 // Assert the audio stream survived the metadata write: the file still demuxes to
@@ -149,7 +153,7 @@ describe('metadata round-trip parity (SC-002)', () => {
 
 			expect(got.title).toBe('Test Title');
 			expect(got.artist).toBe('Test Artist');
-			expect(got.albumArtist).toBe('Various Artists');
+			expect((await readTags(path)).albumArtist).toBe('Various Artists');
 			expect(got.album).toBe('Test Album');
 			expect(got.genre).toBe('Hip-Hop');
 			expect(got.year).toBe(2024);
@@ -170,6 +174,21 @@ describe('metadata round-trip parity (SC-002)', () => {
 			await assertAudioIntact(path);
 		});
 	}
+
+	// /proc is Linux-only; the leak itself is not platform-specific.
+	it.runIf(process.platform === 'linux')('releases the input when a file cannot be read', async () => {
+		const path = join(dir, 'corrupt.mp3');
+		writeFileSync(path, 'not audio');
+		const openFds = () => readdirSync('/proc/self/fd').length;
+		const before = openFds();
+
+		for (let i = 0; i < 5; i++) {
+			await expect(writeMetadata(path, { title: 'x' })).rejects.toThrow();
+		}
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(openFds()).toBeLessThanOrEqual(before);
+	});
 
 	it('merge preserves existing raw tags instead of replacing all metadata', async () => {
 		// Seed a file with a producer credit, then write unrelated tags — the producer

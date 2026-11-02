@@ -6,29 +6,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import { SongImportController } from '$lib/features/song-import/song-import-controller.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
-	import { setArtistsContext } from '$lib/contexts/artists-context';
-	import { setAlbumsContext } from '$lib/contexts/albums-context';
-	import { setProducersContext } from '$lib/contexts/producers-context';
 	import ArtistMappingDialog from '$lib/components/artist-mapping-dialog.svelte';
 	import ArtworkChoiceDialog from '$lib/components/artwork-choice-dialog.svelte';
-	import type { TabViewData } from '$lib/view-models/tab-data';
+	import type { InitialData } from '$lib/ipc';
 
-	type ArtistForContext = TabViewData['artists'][number] & { image?: string | null };
-	type AlbumElement = TabViewData['albums'][number];
-	type ProducerElement = TabViewData['producers'][number];
+	let { tab, data }: { tab: string; data: InitialData } = $props();
 
-	let { tab, data }: { tab: string; data: TabViewData } = $props();
-
-	// Initialize artists state and set context synchronously
-	let resolvedArtists = $state<ArtistForContext[]>([]);
-	let resolvedAlbums = $state<AlbumElement[]>([]);
-	let resolvedProducers = $state<ProducerElement[]>([]);
-
-	// Set context with a getter function to maintain reactivity
-	// Context must be set during component initialization
-	setArtistsContext(() => resolvedArtists);
-	setAlbumsContext(() => resolvedAlbums);
-	setProducersContext(() => resolvedProducers);
 	const { ipcActions } = getAppServicesContext();
 
 	const defaultThumbnail = '/images/default-album.png';
@@ -36,26 +19,20 @@
 		onComplete: () => invalidateAll(),
 		ipcActions
 	});
-
-	$effect(() => {
-		resolvedArtists = data.artists;
-		resolvedAlbums = data.albums;
-		resolvedProducers = data.producers;
-	});
-
 </script>
 
 {#if tab === 'songs'}
 	<SongsTab
 		songs={data.songs}
-		songsPerPage={data.limits.songsPerPage}
+		songsPerPage={data.songsPerPage}
 		songsCount={data.songsCount}
-		onUpload={(files) => songImport.handleUpload(files)}
+		onUpload={async (files) => {
+			await songImport.handleUpload(files);
+		}}
 	/>
 {:else if tab === 'albums'}
 	<AlbumsTab
 		albums={data.albums}
-		albumsPerPage={data.limits.albumsPerPage}
 		{defaultThumbnail}
 		onUpload={async (files, albumId) => {
 			await songImport.handleUpload(files, albumId);
@@ -71,14 +48,14 @@
 <ArtistMappingDialog
 	bind:open={songImport.showArtistMappingDialog}
 	unmappedArtists={songImport.unmappedArtists}
-	existingArtists={resolvedArtists}
-	onResolve={songImport.handleArtistMapping.bind(songImport)}
-	onCancel={songImport.handleArtistMappingCancel.bind(songImport)}
+	existingArtists={data.artists}
+	onResolve={songImport.handleArtistMapping}
+	onCancel={songImport.handleArtistMappingCancel}
 />
 
 <!-- Artwork Choice Dialog -->
 <ArtworkChoiceDialog
 	bind:open={songImport.showArtworkChoiceDialog}
 	filesWithArtwork={songImport.filesWithArtworkCount}
-	onChoice={songImport.handleArtworkChoice.bind(songImport)}
+	onChoice={songImport.handleArtworkChoice}
 />

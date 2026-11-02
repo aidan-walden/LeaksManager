@@ -9,7 +9,7 @@ import { configureConnection } from '../db/connection';
 import { createArtist } from './artists';
 import { createAlbum } from './albums';
 import { createProducerWithAliases } from './producers';
-import { createSong, deleteSong } from './songs';
+import { createSong, deleteSong, writeAlbumMetadata } from './songs';
 import { updateSettings } from './settings';
 // buildSongTags is the T032 write-path port of backend/metadata.go buildSongTags.
 // It assembles the cross-format tag payload from the DB (mediabunny MetadataTags)
@@ -89,6 +89,27 @@ describe('buildSongTags single-vs-album track-number rule (FR-009)', () => {
 		expect(tags.raw?.TCOM).toBe('Alpha, Beta');
 		expect(tags.raw?.['©wrt']).toBe('Alpha, Beta');
 		expect(tags.raw?.PRODUCER).toBe('Alpha, Beta');
+	});
+
+	it('joins artists, album artists and producers in their linked order, not by id', () => {
+		const [first, second] = ['First', 'Second'].map((name) => createArtist(db, { name }).id);
+		const [prodFirst, prodSecond] = ['Prod A', 'Prod B'].map(
+			(name) => createProducerWithAliases(db, { name, aliases: [] }).id
+		);
+		const album = createAlbum(db, { name: 'Album', artistIds: [second, first] });
+		const songId = createSong(db, {
+			name: 'Ordered',
+			filepath: 'uploads/songs/ordered.mp3',
+			artistIds: [second, first],
+			producerIds: [prodSecond, prodFirst],
+			albumId: album.id
+		}).id;
+
+		const { tags } = buildSongTags(db, staticPath, songId);
+
+		expect(tags.artist).toBe('Second, First');
+		expect(tags.albumArtist).toBe('Second, First');
+		expect(tags.raw?.PRODUCER).toBe('Prod B, Prod A');
 	});
 
 	it('omits producer raw keys when a song has none', () => {
@@ -172,5 +193,34 @@ describe('deleteSong cascades to junction rows', () => {
 
 		expect(countArtists()).toBe(0);
 		expect(countProducers()).toBe(0);
+	});
+});
+
+describe('writeAlbumMetadata', () => {
+	it('counts songs whose files cannot be written', async () => {
+		const db = new Database(':memory:');
+		configureConnection(db);
+		migrate(db, MIGRATIONS_DIR);
+		const staticPath = mkdtempSync(join(tmpdir(), 'leaks-batch-'));
+		try {
+			const artist = createArtist(db, { name: 'Artist' });
+			const album = createAlbum(db, { name: 'Album', artistIds: [artist.id] });
+			const empty = createAlbum(db, { name: 'Empty', artistIds: [artist.id] });
+			for (const name of ['one', 'two']) {
+				createSong(db, {
+					name,
+					filepath: `uploads/songs/${name}.mp3`,
+					artistIds: [artist.id],
+					producerIds: [],
+					albumId: album.id
+				});
+			}
+
+			expect(await writeAlbumMetadata(db, staticPath, album.id)).toEqual({ songsFailed: 2 });
+			expect(await writeAlbumMetadata(db, staticPath, empty.id)).toEqual({ songsFailed: 0 });
+		} finally {
+			db.close();
+			rmSync(staticPath, { recursive: true, force: true });
+		}
 	});
 });

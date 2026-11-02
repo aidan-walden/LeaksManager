@@ -4,11 +4,10 @@
 // Names are PascalCase to match the existing RawIpcBindings shape so the
 // renderer reaches the preload bridge without a rename.
 
-export const API_CHANNELS: Record<string, string> = {
+export const API_CHANNELS = {
 	// App
 	GetInitialData: 'app:initialData',
 	// Songs
-	CreateSong: 'song:create',
 	UpdateSong: 'song:update',
 	DeleteSong: 'song:delete',
 	GetSongsReadable: 'song:list',
@@ -24,13 +23,10 @@ export const API_CHANNELS: Record<string, string> = {
 	CreateProducerWithAliases: 'producer:create',
 	UpdateProducerWithAliases: 'producer:update',
 	DeleteProducer: 'producer:delete',
-	GetProducersWithAliases: 'producer:listWithAliases',
 	WriteProducerMetadata: 'producer:writeMetadata',
-	MatchProducersFromFilename: 'producer:matchFromFilename',
 	// Settings
 	UpdateSettings: 'settings:update',
 	// Metadata
-	ExtractMetadata: 'metadata:extract',
 	WriteSongMetadata: 'metadata:writeSong',
 	WriteAlbumMetadata: 'metadata:writeAlbum',
 	// Files
@@ -39,8 +35,8 @@ export const API_CHANNELS: Record<string, string> = {
 	// Workflows
 	UploadAndExtractMetadata: 'workflow:uploadAndExtract',
 	CreateSongsWithMetadata: 'workflow:createWithMetadata',
-	UploadSongs: 'workflow:uploadSongs',
 	// Apple Music (macOS)
-	GetAppleMusicLibrary: 'applemusic:getLibrary',
 	SyncSongsToAppleMusic: 'applemusic:sync'
-};
+} as const;
+
+export type ApiName = keyof typeof API_CHANNELS;

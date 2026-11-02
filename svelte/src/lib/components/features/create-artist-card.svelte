@@ -4,16 +4,9 @@
 	import CreateCard from '$lib/components/forms/create-card.svelte';
 	import { getAppServicesContext } from '$lib/contexts/app-services';
 
-	let {
-		open = $bindable(),
-		onOpenChange,
-		callback
-	}: { open: boolean; onOpenChange?: (open: boolean) => void; callback?: () => void } = $props();
+	let { open = $bindable() }: { open: boolean } = $props();
 
 	let file = $state<File | null>(null);
-	let blob: Blob | null = $derived.by(() => {
-		return file ? new Blob([file], { type: file.type }) : null;
-	});
 	const { ipcActions } = getAppServicesContext();
 
 	const handleUpload = (files: File[]) => {
@@ -21,18 +14,16 @@
 		file = files[0];
 	};
 
-	async function handleSubmit(formData: FormData): Promise<{ id?: number }> {
+	async function handleSubmit(formData: FormData): Promise<void> {
 		const name = formData.get('name') as string;
 		const careerStartStr = formData.get('career-start') as string;
 		const careerEndStr = formData.get('career-end') as string;
 
-		const artist = await ipcActions.createArtist({
+		await ipcActions.createArtist({
 			name,
 			careerStartYear: careerStartStr ? parseInt(careerStartStr) : undefined,
 			careerEndYear: careerEndStr ? parseInt(careerEndStr) : undefined
 		});
-
-		return { id: artist.id };
 	}
 </script>
 
@@ -74,8 +65,6 @@
 
 <CreateCard
 	bind:open
-	{onOpenChange}
-	{callback}
 	title="Create Artist"
 	formId="create-artist-form"
 	upload={{
@@ -86,7 +75,7 @@
 			maxFiles: 1,
 			fileCount: file ? 1 : 0
 		},
-		preview: blob
+		preview: file
 	}}
 	formFields={artistFields}
 	onSubmit={handleSubmit}

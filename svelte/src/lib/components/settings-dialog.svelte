@@ -13,14 +13,12 @@
 
 	let {
 		editingSettings = $bindable(),
-		onOpenChange,
 		settings,
-		isServerMac
+		isMac
 	}: {
 		editingSettings?: boolean;
-		onOpenChange?: (value: boolean) => void;
 		settings: Settings;
-		isServerMac: boolean;
+		isMac: boolean;
 	} = $props();
 
 	let isSubmitting = $state(false);
@@ -58,7 +56,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open={editingSettings} {onOpenChange}>
+<Dialog.Root bind:open={editingSettings}>
 	<Dialog.Content class="sm">
 		<Dialog.Header>
 			<Dialog.Title>Settings</Dialog.Title>
@@ -92,14 +90,14 @@
 								<Checkbox
 									id="import-to-apple-music"
 									checked={importToAppleMusic}
-									disabled={!isServerMac}
+									disabled={!isMac}
 									onCheckedChange={(checked) => (importToAppleMusic = checked === true)}
 								/>
 								<div class="space-y-1">
 									<Label for="import-to-apple-music" class="text-left">
 										Import songs to Apple Music via AppleScript
 									</Label>
-									{#if !isServerMac}
+									{#if !isMac}
 										<p class="text-sm text-muted-foreground">
 											This setting is only available on macOS.
 										</p>
