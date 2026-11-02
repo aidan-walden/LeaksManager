@@ -272,11 +272,13 @@ export async function writeSongMetadata(
 		await writeSongMetadataInternal(db, staticPath, songId);
 		return { songId, success: true };
 	} catch (err) {
-		return { songId, success: false, error: err instanceof Error ? err.message : String(err) };
+		const error = err instanceof Error ? err.message : String(err);
+		console.error(`metadata write failed for song ${songId}: ${error}`);
+		return { songId, success: false, error };
 	}
 }
 
-// Writes tags to each song and counts the failures, which it also logs.
+// Writes tags to each song and counts the failures.
 export async function writeSongsMetadata(
 	db: Database.Database,
 	staticPath: string,
@@ -295,11 +297,7 @@ export async function writeSongsMetadata(
 	);
 	await Promise.all(workers);
 
-	const failures = results.filter((r) => !r.success);
-	for (const { songId, error } of failures) {
-		console.error(`metadata write failed for song ${songId}: ${error}`);
-	}
-	return { songsFailed: failures.length };
+	return { songsFailed: results.filter((r) => !r.success).length };
 }
 
 // WriteAlbumMetadata writes tags to every song in an album.

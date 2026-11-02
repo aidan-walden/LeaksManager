@@ -156,10 +156,7 @@ export async function createSongsWithMetadata(
 		created.push(song);
 
 		// The song stays created if its tags can't be written, such as for an unsupported format.
-		const result = await writeSongMetadata(db, staticPath, song.id);
-		if (!result.success) {
-			console.error(`metadata write-back failed for song ${song.id}: ${result.error}`);
-		}
+		await writeSongMetadata(db, staticPath, song.id);
 	}
 	return created;
 }

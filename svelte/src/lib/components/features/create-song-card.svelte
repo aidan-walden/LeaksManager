@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import type { SongReadable } from '$lib/ipc';
 	import { loadArtworkPreviewBlob } from '$lib/utils/artwork-preview';
+	import { notifyTagWriteFailures } from '$lib/utils/tag-write-failures';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import * as Command from '$lib/components/ui/command/index.js';
@@ -126,7 +127,8 @@
 		});
 
 		// write metadata to disk
-		await ipcActions.writeSongMetadata(song.id);
+		const { success } = await ipcActions.writeSongMetadata(song.id);
+		notifyTagWriteFailures({ songsFailed: success ? 0 : 1 });
 	}
 </script>
 
