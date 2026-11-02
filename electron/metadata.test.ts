@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -170,6 +170,21 @@ describe('metadata round-trip parity (SC-002)', () => {
 			await assertAudioIntact(path);
 		});
 	}
+
+	// /proc is Linux-only; the leak itself is not platform-specific.
+	it.runIf(process.platform === 'linux')('releases the input when a file cannot be read', async () => {
+		const path = join(dir, 'corrupt.mp3');
+		writeFileSync(path, 'not audio');
+		const openFds = () => readdirSync('/proc/self/fd').length;
+		const before = openFds();
+
+		for (let i = 0; i < 5; i++) {
+			await expect(writeMetadata(path, { title: 'x' })).rejects.toThrow();
+		}
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(openFds()).toBeLessThanOrEqual(before);
+	});
 
 	it('merge preserves existing raw tags instead of replacing all metadata', async () => {
 		// Seed a file with a producer credit, then write unrelated tags — the producer
