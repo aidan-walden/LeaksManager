@@ -1,12 +1,22 @@
-// Domain DTOs shared with the renderer shape in svelte/src/lib/ipc/types.ts.
-// The renderer and main process are separate pnpm packages; these interfaces are
-// duplicated rather than cross-imported (same approach metadata.ts took).
-
-export type { ExtractedMetadata } from '../metadata';
+// The IPC data types. This file is the only source: the renderer re-exports these types
+// from svelte/src/lib/ipc/types.ts. Keep it free of runtime code and of main-process imports.
 
 export interface ArtworkData {
 	data: string; // base64
 	mimeType: string;
+}
+
+export interface ExtractedMetadata {
+	title: string | null;
+	artist: string | null;
+	albumArtist: string | null;
+	album: string | null;
+	year: number | null;
+	genre: string | null;
+	trackNumber: number | null;
+	producer: string | null;
+	duration: number | null;
+	artwork: ArtworkData | null;
 }
 
 export interface Artist {
@@ -94,8 +104,8 @@ export interface SyncResult {
 export interface SyncItemResult {
 	songId: number;
 	songName: string;
-	status: string; // "success", "failed", "added", "updated"
-	appleMusicId?: string | null;
+	status: 'failed' | 'added' | 'updated';
+	appleMusicId?: string;
 	errorMessage?: string;
 }
 
@@ -221,7 +231,7 @@ export interface UpdateSettingsInput {
 export interface SongImportDraft {
 	originalFilename: string;
 	filepath: string;
-	metadata: import('../metadata').ExtractedMetadata;
+	metadata: ExtractedMetadata;
 	parsedArtists: string[];
 	hasUnmappedArtists: boolean;
 	albumId?: number | null;

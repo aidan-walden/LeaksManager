@@ -10,7 +10,7 @@ import { uploadAndExtractMetadata, createSongsWithMetadata } from './workflows';
 import { createArtist, findArtistByName } from './artists';
 import { createAlbum } from './albums';
 import { getSongsReadable } from './songs';
-import type { ExtractedMetadata } from '../metadata';
+import type { ExtractedMetadata } from './models';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 

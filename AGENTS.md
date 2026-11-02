@@ -27,11 +27,11 @@ cd svelte && pnpm lint    # prettier --check
 Data does not flow over HTTP. The renderer calls `window.api.MethodName(...)`, which is exposed by `electron/preload.ts` and handled in the Electron main process.
 
 **Transport layering** (each layer wraps the one below):
-1. `svelte/src/lib/ipc/bindings.ts` defines `RawIpcBindings`, the typed `window.api` surface.
-2. `svelte/src/lib/services/ipc-actions.ts` provides the camelCased component-facing API, wraps raw calls with error notification, and applies side effects such as marking songs as needing Apple Music re-sync.
+1. `svelte/src/lib/ipc/bindings.ts` exposes `RawIpcBindings`, the typed `window.api` surface. The type derives from `electron/ipc-handlers.ts`, and data types come only from `electron/domain/models.ts`.
+2. `svelte/src/lib/services/ipc-actions.svelte.ts` provides the camelCased component-facing API. It snapshots `$state` arguments and wraps raw calls with error notification.
 3. `svelte/src/lib/contexts/app-services.ts` provides the app-services context (`syncState`, `runtimeErrors`, `ipcActions`) consumed through `getAppServicesContext()`.
 
-The PascalCase `window.api` method names mirror `electron/channels.ts` and should stay stable unless the IPC channel itself changes. When adding an exposed capability, update `electron/channels.ts`, `electron/ipc-handlers.ts`, `electron/preload.ts` if needed, `svelte/src/lib/ipc/bindings.ts`, and `svelte/src/lib/services/ipc-actions.ts`.
+The PascalCase `window.api` method names mirror `electron/channels.ts` and should stay stable unless the IPC channel itself changes. When adding an exposed capability, update `electron/channels.ts`, `electron/ipc-handlers.ts`, `electron/preload.ts` if needed, and `svelte/src/lib/services/ipc-actions.svelte.ts`.
 
 ## Architecture: Electron Main Process
 
@@ -75,4 +75,4 @@ To add a migration, create matching `00000N_name.up.sql` and `00000N_name.down.s
 
 - Tests are colocated as `*.test.ts` and use real in-memory/temp SQLite where useful.
 - Run `pnpm test` before considering Electron+frontend changes done, and `cd svelte && pnpm check` for renderer type changes.
-- When changing an IPC method signature, propagate through `electron/channels.ts` and handlers, `svelte/src/lib/ipc/bindings.ts`, `ipc-actions.ts`, and all call sites.
+- When changing an IPC method signature, change the handler in `electron/ipc-handlers.ts`, then fix the call sites that the type checks report.

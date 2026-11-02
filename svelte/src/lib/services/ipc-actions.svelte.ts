@@ -7,7 +7,7 @@ export function createIpcActions(runtimeErrors: RuntimeErrorNotifier) {
 		type Method = RawIpcBindings[K];
 		return async (...args: Parameters<Method>): Promise<Awaited<ReturnType<Method>>> => {
 			try {
-				const method = getRawIpcBindings()[name] as (
+				const method = getRawIpcBindings()[name] as unknown as (
 					...args: Parameters<Method>
 				) => ReturnType<Method>;
 				// $state proxies can't cross IPC: structured clone rejects them.

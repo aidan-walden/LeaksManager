@@ -7,9 +7,9 @@ import type {
 	FileUpload,
 	UploadAndExtractResult,
 	CreateSongsWithMetadataInput,
-	CreateSongInput
+	CreateSongInput,
+	ExtractedMetadata
 } from './models';
-import type { ExtractedMetadata } from '../metadata';
 import { saveBase64, cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
 import { readMetadata } from '../metadata';

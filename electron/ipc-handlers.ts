@@ -1,6 +1,17 @@
 import { shell } from 'electron';
-import type { Handler } from './ipc';
+import type { IpcDeps } from './ipc';
 import type { ApiName } from './channels';
+import type {
+	CreateAlbumInput,
+	CreateArtistInput,
+	CreateProducerInput,
+	CreateSongsWithMetadataInput,
+	FileUpload,
+	UpdateAlbumInput,
+	UpdateProducerInput,
+	UpdateSettingsInput,
+	UpdateSongInput
+} from './domain/models';
 import { cleanupFiles } from './files';
 import { uploadsFilePath } from './paths';
 import { createArtist } from './domain/artists';
@@ -29,54 +40,70 @@ import { uploadAndExtractMetadata, createSongsWithMetadata } from './domain/work
 import { getInitialData } from './domain/initial-data';
 import { syncSongsToAppleMusic } from './apple-music';
 
-// One handler per API_CHANNELS entry; the Record type makes a missing handler a compile
-// error. Arg order mirrors RawIpcBindings so the renderer reaches these unchanged.
-export const handlers: Record<ApiName, Handler> = {
+// One handler per API_CHANNELS entry; `satisfies` makes a missing handler a compile
+// error. IpcApi derives the renderer's window.api type from these signatures.
+export const handlers = {
 	// App
-	GetInitialData: (d) => getInitialData(d.db),
+	GetInitialData: (d: IpcDeps) => getInitialData(d.db),
 
 	// Artists
-	CreateArtist: (d, input) => createArtist(d.db, input),
+	CreateArtist: (d: IpcDeps, input: CreateArtistInput) => createArtist(d.db, input),
 
 	// Albums
-	CreateAlbum: (d, input) => createAlbum(d.db, input),
-	UpdateAlbum: (d, input) => updateAlbum(d.db, input),
-	DeleteAlbum: (d, albumId) => deleteAlbum(d.db, albumId),
-	UploadAlbumArt: (d, albumId, filename, base64Data) =>
+	CreateAlbum: (d: IpcDeps, input: CreateAlbumInput) => createAlbum(d.db, input),
+	UpdateAlbum: (d: IpcDeps, input: UpdateAlbumInput) => updateAlbum(d.db, input),
+	DeleteAlbum: (d: IpcDeps, albumId: number) => deleteAlbum(d.db, albumId),
+	UploadAlbumArt: (d: IpcDeps, albumId: number, filename: string, base64Data: string) =>
 		uploadAlbumArt(d.db, d.staticPath, albumId, filename, base64Data),
 
 	// Producers
-	CreateProducerWithAliases: (d, input) => createProducerWithAliases(d.db, input),
-	UpdateProducerWithAliases: (d, input) => updateProducerWithAliases(d.db, input),
-	DeleteProducer: (d, producerId) => deleteProducer(d.db, producerId),
-	WriteProducerMetadata: (d, producerId) => writeProducerMetadata(d.db, d.staticPath, producerId),
+	CreateProducerWithAliases: (d: IpcDeps, input: CreateProducerInput) =>
+		createProducerWithAliases(d.db, input),
+	UpdateProducerWithAliases: (d: IpcDeps, input: UpdateProducerInput) =>
+		updateProducerWithAliases(d.db, input),
+	DeleteProducer: (d: IpcDeps, producerId: number) => deleteProducer(d.db, producerId),
+	WriteProducerMetadata: (d: IpcDeps, producerId: number) =>
+		writeProducerMetadata(d.db, d.staticPath, producerId),
 
 	// Songs
-	UpdateSong: (d, input) => updateSong(d.db, input),
-	DeleteSong: (d, songId) => deleteSong(d.db, d.staticPath, songId),
-	GetSongsReadable: (d, limit, offset) => getSongsReadable(d.db, limit, offset),
-	GetSongsCount: (d) => getSongsCount(d.db),
+	UpdateSong: (d: IpcDeps, input: UpdateSongInput) => updateSong(d.db, input),
+	DeleteSong: (d: IpcDeps, songId: number) => deleteSong(d.db, d.staticPath, songId),
+	GetSongsReadable: (d: IpcDeps, limit: number, offset: number) =>
+		getSongsReadable(d.db, limit, offset),
+	GetSongsCount: (d: IpcDeps) => getSongsCount(d.db),
 
 	// Metadata
-	WriteSongMetadata: (d, songId) => writeSongMetadata(d.db, d.staticPath, songId),
-	WriteAlbumMetadata: (d, albumId) => writeAlbumMetadata(d.db, d.staticPath, albumId),
+	WriteSongMetadata: (d: IpcDeps, songId: number) => writeSongMetadata(d.db, d.staticPath, songId),
+	WriteAlbumMetadata: (d: IpcDeps, albumId: number) =>
+		writeAlbumMetadata(d.db, d.staticPath, albumId),
 
 	// Settings
-	UpdateSettings: (d, input) => updateSettings(d.db, input),
+	UpdateSettings: (d: IpcDeps, input: UpdateSettingsInput) => updateSettings(d.db, input),
 
 	// Files
-	CleanupFiles: (d, relPaths) => cleanupFiles(d.staticPath, relPaths),
+	CleanupFiles: (d: IpcDeps, relPaths: string[]) => cleanupFiles(d.staticPath, relPaths),
 	// uploadsFilePath (not staticFilePath): the untrusted renderer relPath must be
 	// confined to the uploads/ subtree. staticFilePath only blocks ../ and absolute
 	// paths, which would still let a relPath like "local.db" reach files elsewhere
 	// under userData. Callers already pass "uploads/..." paths.
-	ShowInFileExplorer: (d, relPath) => shell.showItemInFolder(uploadsFilePath(d.staticPath, relPath)),
+	ShowInFileExplorer: (d: IpcDeps, relPath: string) =>
+		shell.showItemInFolder(uploadsFilePath(d.staticPath, relPath)),
 
 	// Workflows
-	UploadAndExtractMetadata: (d, files, albumId) =>
-		uploadAndExtractMetadata(d.db, d.staticPath, files, albumId ?? null),
-	CreateSongsWithMetadata: (d, input) => createSongsWithMetadata(d.db, d.staticPath, input),
+	UploadAndExtractMetadata: (d: IpcDeps, files: FileUpload[], albumId: number | null) =>
+		uploadAndExtractMetadata(d.db, d.staticPath, files, albumId),
+	CreateSongsWithMetadata: (d: IpcDeps, input: CreateSongsWithMetadataInput) =>
+		createSongsWithMetadata(d.db, d.staticPath, input),
 
 	// Apple Music
-	SyncSongsToAppleMusic: (d) => syncSongsToAppleMusic(d)
+	SyncSongsToAppleMusic: (d: IpcDeps) => syncSongsToAppleMusic(d)
+} satisfies Record<ApiName, (deps: IpcDeps, ...args: never[]) => unknown>;
+
+type WithoutDeps<Args extends unknown[]> = Args extends [IpcDeps, ...infer Rest] ? Rest : never;
+
+// The renderer's view of each handler: no deps argument, and always a promise.
+export type IpcApi = {
+	[K in ApiName]: (
+		...args: WithoutDeps<Parameters<(typeof handlers)[K]>>
+	) => Promise<Awaited<ReturnType<(typeof handlers)[K]>>>;
 };
