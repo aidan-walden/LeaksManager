@@ -7,14 +7,19 @@ import type {
 	UploadAndExtractResult,
 	CreateSongsWithMetadataInput,
 	CreateSongInput,
-	ExtractedMetadata
+	DownloadSourceSongsResult,
+	ExtractedMetadata,
+	SourceDownloadFailure,
+	SourceDownloadProgress,
+	SourceSong
 } from './models';
-import { saveBase64, cleanupFiles } from '../files';
+import type { SongSource } from '../sources/song-source';
+import { saveBase64, saveStream, cleanupFiles } from '../files';
 import { staticFilePath } from '../paths';
 import { readMetadata } from '../metadata';
 import { parseArtists, createArtist, findArtistByName } from './artists';
 import { findAlbumByName, getAlbumWithArtists } from './albums';
-import { matchProducersFromFilename } from './producers';
+import { matchProducersFromCredits, matchProducersFromFilename } from './producers';
 import { createSong, writeSongMetadata } from './songs';
 import { getSettings } from './settings';
 
@@ -53,28 +58,26 @@ function resolveUploadArtwork(
 	return null;
 }
 
-// First step of the metadata-extraction workflow: save + extract + parse, flag
-// which artists are unmapped, and map files to existing albums by name.
-export async function uploadAndExtractMetadata(
+async function readMetadataOrEmpty(staticPath: string, relPath: string): Promise<ExtractedMetadata> {
+	try {
+		return await readMetadata(staticFilePath(staticPath, relPath));
+	} catch {
+		return emptyMeta();
+	}
+}
+
+// Flags which artists are unmapped and maps files to existing albums by name.
+function summarizeDrafts(
 	db: Database.Database,
-	staticPath: string,
-	files: FileUpload[],
+	files: Pick<SongImportDraft, 'originalFilename' | 'filepath' | 'metadata' | 'producerCredits'>[],
 	albumId: number | null
-): Promise<UploadAndExtractResult> {
+): UploadAndExtractResult {
 	const filesData: SongImportDraft[] = [];
 	const unmappedArtists = new Set<string>();
 	let filesWithArtwork = 0;
 
 	for (const file of files) {
-		const relPath = saveBase64(staticPath, 'songs', file.filename, file.base64Data);
-
-		let metadata: ExtractedMetadata;
-		try {
-			metadata = await readMetadata(staticFilePath(staticPath, relPath));
-		} catch {
-			metadata = emptyMeta();
-		}
-
+		const { metadata } = file;
 		const parsedArtists = parseArtists(metadata.artist);
 		const unmapped = parsedArtists.filter((name) => !findArtistByName(db, name));
 		for (const name of unmapped) unmappedArtists.add(name);
@@ -84,9 +87,7 @@ export async function uploadAndExtractMetadata(
 		const album = albumId == null && metadata.album ? findAlbumByName(db, metadata.album) : null;
 
 		filesData.push({
-			originalFilename: file.filename,
-			filepath: relPath,
-			metadata,
+			...file,
 			parsedArtists,
 			hasUnmappedArtists: unmapped.length > 0,
 			albumId: album?.id
@@ -94,6 +95,104 @@ export async function uploadAndExtractMetadata(
 	}
 
 	return { filesData, unmappedArtists: [...unmappedArtists], filesWithArtwork };
+}
+
+// First step of the metadata-extraction workflow: save + extract + parse.
+export async function uploadAndExtractMetadata(
+	db: Database.Database,
+	staticPath: string,
+	files: FileUpload[],
+	albumId: number | null
+): Promise<UploadAndExtractResult> {
+	const saved = [];
+	for (const file of files) {
+		const filepath = saveBase64(staticPath, 'songs', file.filename, file.base64Data);
+		saved.push({
+			originalFilename: file.filename,
+			filepath,
+			metadata: await readMetadataOrEmpty(staticPath, filepath)
+		});
+	}
+	return summarizeDrafts(db, saved, albumId);
+}
+
+// The source's catalog is curated, so it wins over file tags. The file's own duration
+// is measured, so it wins over the catalog's.
+function applySourceMetadata(file: ExtractedMetadata, song: SourceSong): ExtractedMetadata {
+	return {
+		...file,
+		title: song.name,
+		artist: song.artists.length > 0 ? song.artists.join(', ') : file.artist,
+		album: song.album ?? file.album,
+		year: song.year ?? file.year,
+		duration: file.duration ?? song.duration
+	};
+}
+
+export interface DownloadSourceSongsOptions {
+	signal?: AbortSignal;
+	onProgress?: (progress: Omit<SourceDownloadProgress, 'downloadId'>) => void;
+}
+
+// Byte progress can arrive thousands of times per song. Each report crosses IPC.
+const BYTE_PROGRESS_INTERVAL_MS = 200;
+
+// Alternate first step for songs from a source: download + extract + parse. Downloads run
+// one at a time to limit load on the source. A failed song does not stop the batch. A
+// cancel stops the current song, removes its partial file, and starts no other songs.
+export async function downloadSourceSongs(
+	db: Database.Database,
+	staticPath: string,
+	source: SongSource,
+	songIds: string[],
+	albumId: number | null,
+	{ signal, onProgress }: DownloadSourceSongsOptions = {}
+): Promise<DownloadSourceSongsResult> {
+	const saved = [];
+	const failures: SourceDownloadFailure[] = [];
+	let completedSongs = 0;
+
+	const report = (
+		song: Pick<SourceDownloadProgress, 'songId' | 'songName' | 'bytesDownloaded' | 'bytesTotal'>
+	) => onProgress?.({ completedSongs, totalSongs: songIds.length, ...song });
+	const idle = { songId: null, songName: null, bytesDownloaded: 0, bytesTotal: null };
+
+	for (const songId of songIds) {
+		if (signal?.aborted) break;
+		report({ ...idle, songId });
+		try {
+			const { song, filename, size, body } = await source.downloadSong(songId, signal);
+			const current = { songId, songName: song.name, bytesTotal: size };
+			report({ ...current, bytesDownloaded: 0 });
+
+			let bytesDownloaded = 0;
+			let lastReportAt = Date.now();
+			const filepath = await saveStream(staticPath, 'songs', filename, body, (byteCount) => {
+				bytesDownloaded += byteCount;
+				if (Date.now() - lastReportAt >= BYTE_PROGRESS_INTERVAL_MS) {
+					lastReportAt = Date.now();
+					report({ ...current, bytesDownloaded });
+				}
+			});
+			saved.push({
+				originalFilename: filename,
+				filepath,
+				metadata: applySourceMetadata(await readMetadataOrEmpty(staticPath, filepath), song),
+				producerCredits: song.producers
+			});
+		} catch (err) {
+			if (signal?.aborted) break;
+			failures.push({ songId, error: err instanceof Error ? err.message : String(err) });
+		}
+		completedSongs++;
+		report(idle);
+	}
+
+	return {
+		...summarizeDrafts(db, saved, albumId),
+		failures,
+		cancelled: signal?.aborted ?? false
+	};
 }
 
 // Second step: resolve the artist mapping (CREATE_NEW → new artist), inherit album
@@ -127,11 +226,15 @@ export async function createSongsWithMetadata(
 			parsedArtistIds.length === 0 && album ? album.artists.map((a) => a.id) : parsedArtistIds;
 
 		const { metadata } = fd;
+		const producerIds = new Set([
+			...matchProducersFromFilename(db, fd.originalFilename, artistIds),
+			...matchProducersFromCredits(db, fd.producerCredits ?? [], artistIds)
+		]);
 		const songInput: CreateSongInput = {
 			name: metadata.title || fd.originalFilename,
 			filepath: fd.filepath,
 			artistIds,
-			producerIds: matchProducersFromFilename(db, fd.originalFilename, artistIds),
+			producerIds: [...producerIds],
 			albumId,
 			artworkPath: resolveUploadArtwork(staticPath, input.useEmbeddedArtwork, metadata, album),
 			genre: metadata.genre || null,

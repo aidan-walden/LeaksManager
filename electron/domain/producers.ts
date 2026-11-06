@@ -183,7 +183,15 @@ export function matchPatterns(
 	patterns: Pattern[],
 	songArtistIds: number[]
 ): number[] {
-	const nameWithoutExt = filename.toLowerCase().replace(/\.[^/.]+$/, '');
+	return matchPatternsInText(filename.replace(/\.[^/.]+$/, ''), patterns, songArtistIds);
+}
+
+function matchPatternsInText(
+	text: string,
+	patterns: Pattern[],
+	songArtistIds: number[]
+): number[] {
+	const lowerText = text.toLowerCase();
 
 	const isArtistContextValid = (aliasArtistIds?: number[]): boolean =>
 		!aliasArtistIds?.length || songArtistIds.some((aid) => aliasArtistIds.includes(aid));
@@ -204,14 +212,14 @@ export function matchPatterns(
 	// pass 1: word-boundary matches
 	for (const p of eligible) {
 		const re = new RegExp(`\\b${escapeRegExp(p.term)}\\b`, 'g');
-		for (const m of nameWithoutExt.matchAll(re)) {
+		for (const m of lowerText.matchAll(re)) {
 			claim(p.producerId, m.index, m.index + m[0].length);
 		}
 	}
 
 	// pass 2: substring fallback
 	for (const p of eligible) {
-		const idx = nameWithoutExt.indexOf(p.term);
+		const idx = lowerText.indexOf(p.term);
 		if (idx !== -1) claim(p.producerId, idx, idx + p.term.length);
 	}
 
@@ -241,4 +249,13 @@ export function matchProducersFromFilename(
 	songArtistIds: number[]
 ): number[] {
 	return matchPatterns(filename, loadProducerPatterns(db), songArtistIds);
+}
+
+// Credits are not filenames: a name such as "J. Knight" has no extension to strip.
+export function matchProducersFromCredits(
+	db: Database.Database,
+	credits: string[],
+	songArtistIds: number[]
+): number[] {
+	return matchPatternsInText(credits.join(' | '), loadProducerPatterns(db), songArtistIds);
 }

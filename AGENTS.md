@@ -40,6 +40,7 @@ The PascalCase `window.api` method names mirror `electron/channels.ts` and shoul
 - `electron/domain/` contains CRUD, workflows, settings, and initial data.
 - `electron/metadata.ts` and related domain write paths read and write audio metadata with Mediabunny.
 - `electron/apple-music.ts` handles macOS Apple Music integration via `osascript`.
+- `electron/sources/` holds song sources that can be browsed and downloaded from. Each source implements `SongSource` and is listed in `sources/index.ts`; the only source today is the Juice WRLD API. `DownloadSourceSongs` is an alternate first step of the upload workflow below, and its drafts go to `CreateSongsWithMetadata`. Main sends progress as an event (`API_EVENTS` in `channels.ts`, exposed by `preload.ts`), and `CancelSourceDownload` stops a batch.
 - `electron/assets.ts` and `electron/paths.ts` serve uploaded files through `app://uploads/...` with traversal guards.
 
 Static/uploaded files are not IPC methods. The frontend stores relative paths such as `uploads/songs/123-file.mp3`; Electron resolves and serves them through the app protocol.

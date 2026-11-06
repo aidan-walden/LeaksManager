@@ -7,6 +7,7 @@ import { openDatabase } from './db/connection';
 import { migrate } from './db/migrate';
 import { registerAppProtocolScheme, registerAppProtocol } from './assets';
 import { registerIpc, type IpcDeps } from './ipc';
+import { sourceImageOrigins } from './sources';
 
 // App lifecycle: resolve paths, open the real DB, run migrations, register the
 // app:// asset protocol and the IPC bridge, then load the SvelteKit renderer.
@@ -37,14 +38,15 @@ function hardenWebContents(contents: Electron.WebContents): void {
 // A defense-in-depth CSP for the packaged app. Not applied in dev, where the Vite
 // server needs eval + websocket HMR. SvelteKit's static build inlines its hydration
 // script and Tailwind styles (hence 'unsafe-inline'); everything else is same-origin
-// plus the app:// media protocol, and remote script/frame/object origins are blocked.
+// plus the app:// media protocol and song source artwork, and remote script/frame/object
+// origins are blocked.
 function applyContentSecurityPolicy(): void {
 	if (!app.isPackaged) return;
 	const policy = [
 		"default-src 'self' app:",
 		"script-src 'self' 'unsafe-inline'",
 		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' app: data:",
+		`img-src 'self' app: data: ${sourceImageOrigins.join(' ')}`,
 		"media-src 'self' app:",
 		"font-src 'self' app: data:",
 		"connect-src 'self' app:",

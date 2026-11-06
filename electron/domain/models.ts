@@ -219,6 +219,8 @@ export interface SongImportDraft {
 	parsedArtists: string[];
 	hasUnmappedArtists: boolean;
 	albumId?: number | null;
+	// Producer names credited by a song source, matched against known producers on import.
+	producerCredits?: string[];
 }
 
 export interface UploadAndExtractResult {
@@ -243,4 +245,84 @@ export interface FileUpload {
 export interface AlbumResolutionOpts {
 	isSingle?: boolean;
 	inheritArtworkFromSongId?: number;
+}
+
+// --- Song source DTOs ---
+
+export interface SongSourceInfo {
+	id: string;
+	name: string;
+}
+
+export interface SourceFilterOption {
+	value: string;
+	label: string;
+}
+
+// A browse filter that the source defines, such as a category or era.
+export interface SourceFilter {
+	id: string;
+	label: string;
+	options: SourceFilterOption[];
+}
+
+export interface SourceBrowseQuery {
+	search?: string;
+	// SourceFilter.id -> SourceFilterOption.value
+	filters?: Record<string, string>;
+	page?: number; // 1-based
+	pageSize?: number;
+}
+
+// Source-specific information to show as-is, such as recording dates.
+export interface SourceSongDetail {
+	label: string;
+	value: string;
+}
+
+export interface SourceSong {
+	sourceId: string;
+	id: string;
+	name: string;
+	alternateTitles: string[];
+	artists: string[];
+	producers: string[];
+	album: string | null;
+	year: number | null;
+	duration: number | null;
+	artworkUrl: string | null;
+	// False when the source lists the song but has no file for it.
+	downloadable: boolean;
+	details: SourceSongDetail[];
+}
+
+export interface SourceSongPage {
+	songs: SourceSong[];
+	totalCount: number;
+	page: number;
+	pageSize: number;
+	hasMore: boolean;
+}
+
+// Song fields are null while no song is in progress or before its details are known.
+export interface SourceDownloadProgress {
+	downloadId: string;
+	completedSongs: number; // saved or failed
+	totalSongs: number;
+	songId: string | null;
+	songName: string | null;
+	bytesDownloaded: number;
+	bytesTotal: number | null;
+}
+
+export interface SourceDownloadFailure {
+	songId: string;
+	error: string;
+}
+
+// filesData goes to CreateSongsWithMetadata, the same as a local upload. After a cancel it
+// holds the songs saved before the cancel. Import these, or remove them with CleanupFiles.
+export interface DownloadSourceSongsResult extends UploadAndExtractResult {
+	failures: SourceDownloadFailure[];
+	cancelled: boolean;
 }

@@ -35,8 +35,19 @@ export const API_CHANNELS = {
 	// Workflows
 	UploadAndExtractMetadata: 'workflow:uploadAndExtract',
 	CreateSongsWithMetadata: 'workflow:createWithMetadata',
+	// Song sources
+	GetSongSources: 'source:list',
+	GetSourceFilters: 'source:filters',
+	BrowseSource: 'source:browse',
+	DownloadSourceSongs: 'source:download',
+	CancelSourceDownload: 'source:cancelDownload',
 	// Apple Music (macOS)
 	SyncSongsToAppleMusic: 'applemusic:sync'
 } as const;
 
 export type ApiName = keyof typeof API_CHANNELS;
+
+// Events that main sends to the renderer. Not invokable, so not part of API_CHANNELS.
+export const API_EVENTS = {
+	SourceDownloadProgress: 'source:downloadProgress'
+} as const;

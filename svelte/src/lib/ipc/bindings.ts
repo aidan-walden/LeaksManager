@@ -1,4 +1,5 @@
 import type { IpcApi } from '../../../../electron/ipc-handlers';
+import type { IpcEvents } from '../../../../electron/ipc-events';
 
 declare global {
 	interface Window {
@@ -6,7 +7,7 @@ declare global {
 	}
 }
 
-export type RawIpcBindings = IpcApi;
+export type RawIpcBindings = IpcApi & IpcEvents;
 
 export function getRawIpcBindings(): RawIpcBindings {
 	return window.api;

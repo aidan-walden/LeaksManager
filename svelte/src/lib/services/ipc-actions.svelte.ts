@@ -41,6 +41,14 @@ export function createIpcActions(runtimeErrors: RuntimeErrorNotifier) {
 		writeProducerMetadata: action('WriteProducerMetadata'),
 		uploadAndExtractMetadata: action('UploadAndExtractMetadata'),
 		createSongsWithMetadata: action('CreateSongsWithMetadata'),
+		getSongSources: action('GetSongSources'),
+		getSourceFilters: action('GetSourceFilters'),
+		browseSource: action('BrowseSource'),
+		downloadSourceSongs: action('DownloadSourceSongs'),
+		cancelSourceDownload: action('CancelSourceDownload'),
+		onSourceDownloadProgress: (
+			listener: Parameters<RawIpcBindings['OnSourceDownloadProgress']>[0]
+		) => getRawIpcBindings().OnSourceDownloadProgress(listener),
 		syncSongsToAppleMusic: action('SyncSongsToAppleMusic')
 	};
 }

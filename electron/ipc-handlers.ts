@@ -7,6 +7,7 @@ import type {
 	CreateProducerInput,
 	CreateSongsWithMetadataInput,
 	FileUpload,
+	SourceBrowseQuery,
 	UpdateAlbumInput,
 	UpdateProducerInput,
 	UpdateSettingsInput,
@@ -36,7 +37,12 @@ import {
 	deleteAlbumAndClearTags
 } from './domain/songs';
 import { updateSettings } from './domain/settings';
-import { uploadAndExtractMetadata, createSongsWithMetadata } from './domain/workflows';
+import {
+	uploadAndExtractMetadata,
+	createSongsWithMetadata
+} from './domain/workflows';
+import { getSongSource, listSongSources } from './sources';
+import { cancelSourceDownload, runSourceDownload } from './sources/download-runs';
 import { getInitialData } from './domain/initial-data';
 import { syncSongsToAppleMusic } from './apple-music';
 
@@ -95,6 +101,21 @@ export const handlers = {
 		uploadAndExtractMetadata(d.db, d.staticPath, files, albumId),
 	CreateSongsWithMetadata: (d: IpcDeps, input: CreateSongsWithMetadataInput) =>
 		createSongsWithMetadata(d.db, d.staticPath, input),
+
+	// Song sources
+	GetSongSources: () => listSongSources(),
+	GetSourceFilters: (_d: IpcDeps, sourceId: string) => getSongSource(sourceId).getFilters(),
+	BrowseSource: (_d: IpcDeps, sourceId: string, query: SourceBrowseQuery) =>
+		getSongSource(sourceId).browse(query),
+	// The renderer picks downloadId, so it can match progress events and cancel from the start.
+	DownloadSourceSongs: (
+		d: IpcDeps,
+		downloadId: string,
+		sourceId: string,
+		songIds: string[],
+		albumId: number | null
+	) => runSourceDownload(d, downloadId, getSongSource(sourceId), songIds, albumId),
+	CancelSourceDownload: (_d: IpcDeps, downloadId: string) => cancelSourceDownload(downloadId),
 
 	// Apple Music
 	SyncSongsToAppleMusic: (d: IpcDeps) => syncSongsToAppleMusic(d)
